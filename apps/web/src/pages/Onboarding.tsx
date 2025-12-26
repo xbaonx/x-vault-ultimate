@@ -23,7 +23,7 @@ export default function Onboarding() {
   };
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: any;
 
     if (step === 'pairing' && sessionId) {
       interval = setInterval(async () => {
