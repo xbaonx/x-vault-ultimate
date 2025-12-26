@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { config } from './config';
 import routes from './routes';
-import { DataSource } from "typeorm";
+import { AppDataSource } from './data-source';
 
 const app = express();
 
@@ -23,30 +23,18 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', version: '0.1.0' });
 });
 
-// Database connection (Mock for now until DB is set up)
-// const AppDataSource = new DataSource({
-//     type: "postgres",
-//     host: config.database.host,
-//     port: config.database.port,
-//     username: config.database.username,
-//     password: config.database.password,
-//     database: config.database.database,
-//     synchronize: true,
-//     logging: false,
-//     entities: [],
-//     subscribers: [],
-//     migrations: [],
-// });
+async function start() {
+  try {
+    await AppDataSource.initialize();
+    console.log('Data Source has been initialized!');
 
-// AppDataSource.initialize()
-//     .then(() => {
-//         console.log("Data Source has been initialized!");
-//     })
-//     .catch((err) => {
-//         console.error("Error during Data Source initialization", err);
-//     });
+    app.listen(config.port, () => {
+      console.log(`Server running on port ${config.port}`);
+    });
+  } catch (err) {
+    console.error('Error during Data Source initialization', err);
+    process.exit(1);
+  }
+}
 
-// Start server
-app.listen(config.port, () => {
-  console.log(`Server running on port ${config.port}`);
-});
+start();

@@ -39,6 +39,12 @@ services:
     buildCommand: cd apps/admin && npm install && npm run build
     staticPublishPath: apps/admin/dist
     autoDeploy: true
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: x-vault-backend
+          property: url
     routes:
       - type: rewrite
         source: /*

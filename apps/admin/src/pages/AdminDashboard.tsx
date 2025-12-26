@@ -13,7 +13,9 @@ import {
 import { Users, CreditCard, Activity, DollarSign, Settings, Bell } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { formatCurrency } from '../lib/utils';
+import { adminApi, type AppleConfigStatus } from '../services/api';
 
 // Mock Data
 const userGrowthData = [
@@ -45,6 +47,63 @@ const recentUsers = [
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
+
+  const [adminKey, setAdminKey] = useState('');
+  const [teamId, setTeamId] = useState('');
+  const [passTypeIdentifier, setPassTypeIdentifier] = useState('');
+  const [signerKeyPassphrase, setSignerKeyPassphrase] = useState('');
+  const [wwdr, setWwdr] = useState<File | null>(null);
+  const [signerCert, setSignerCert] = useState<File | null>(null);
+  const [signerKey, setSignerKey] = useState<File | null>(null);
+
+  const [appleStatus, setAppleStatus] = useState<AppleConfigStatus | null>(null);
+  const [loadingApple, setLoadingApple] = useState(false);
+  const [appleError, setAppleError] = useState<string | null>(null);
+  const [appleSuccess, setAppleSuccess] = useState<string | null>(null);
+
+  const apiOrigin = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+  const loadAppleConfig = async () => {
+    try {
+      setAppleError(null);
+      setAppleSuccess(null);
+      setLoadingApple(true);
+      const data = await adminApi.getAppleConfig(adminKey);
+      setAppleStatus(data);
+      if (data.teamId) setTeamId(data.teamId);
+      if (data.passTypeIdentifier) setPassTypeIdentifier(data.passTypeIdentifier);
+    } catch (e: any) {
+      setAppleError(e?.message || 'Failed to load Apple config');
+    } finally {
+      setLoadingApple(false);
+    }
+  };
+
+  const uploadApple = async () => {
+    try {
+      setAppleError(null);
+      setAppleSuccess(null);
+      setLoadingApple(true);
+      await adminApi.uploadAppleCerts({
+        adminKey,
+        teamId,
+        passTypeIdentifier,
+        signerKeyPassphrase,
+        wwdr,
+        signerCert,
+        signerKey,
+      });
+      setAppleSuccess('Saved');
+      setWwdr(null);
+      setSignerCert(null);
+      setSignerKey(null);
+      await loadAppleConfig();
+    } catch (e: any) {
+      setAppleError(e?.message || 'Upload failed');
+    } finally {
+      setLoadingApple(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-black text-white flex">
@@ -96,146 +155,310 @@ export default function AdminDashboard() {
       {/* Main Content */}
       <main className="flex-1 p-8 overflow-y-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold">Dashboard Overview</h1>
+          <h1 className="text-3xl font-bold">
+            {activeTab === 'overview' && 'Dashboard Overview'}
+            {activeTab === 'users' && 'Users'}
+            {activeTab === 'transactions' && 'Transactions'}
+            {activeTab === 'settings' && 'Settings'}
+          </h1>
           <Button variant="outline" size="icon">
             <Bell className="h-4 w-4" />
           </Button>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-secondary">
-                Total Users
-              </CardTitle>
-              <Users className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">12,345</div>
-              <p className="text-xs text-success flex items-center mt-1">
-                +20.1% from last month
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-secondary">
-                Total Volume
-              </CardTitle>
-              <DollarSign className="h-4 w-4 text-success" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(45231.89)}</div>
-              <p className="text-xs text-success flex items-center mt-1">
-                +15% from last month
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-secondary">
-                Active Sessions
-              </CardTitle>
-              <Activity className="h-4 w-4 text-warning" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">573</div>
-              <p className="text-xs text-secondary flex items-center mt-1">
-                +201 since last hour
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-secondary">
-                Gas Sponsored
-              </CardTitle>
-              <CreditCard className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">4.2 ETH</div>
-              <p className="text-xs text-secondary flex items-center mt-1">
-                Via Paymaster
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        {activeTab === 'overview' && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-secondary">
+                    Total Users
+                  </CardTitle>
+                  <Users className="h-4 w-4 text-primary" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">12,345</div>
+                  <p className="text-xs text-success flex items-center mt-1">
+                    +20.1% from last month
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-secondary">
+                    Total Volume
+                  </CardTitle>
+                  <DollarSign className="h-4 w-4 text-success" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{formatCurrency(45231.89)}</div>
+                  <p className="text-xs text-success flex items-center mt-1">
+                    +15% from last month
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-secondary">
+                    Active Sessions
+                  </CardTitle>
+                  <Activity className="h-4 w-4 text-warning" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">573</div>
+                  <p className="text-xs text-secondary flex items-center mt-1">
+                    +201 since last hour
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-secondary">
+                    Gas Sponsored
+                  </CardTitle>
+                  <CreditCard className="h-4 w-4 text-primary" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">4.2 ETH</div>
+                  <p className="text-xs text-secondary flex items-center mt-1">
+                    Via Paymaster
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <Card className="col-span-1">
-            <CardHeader>
-              <CardTitle>User Growth</CardTitle>
-              <CardDescription>New user registrations over time</CardDescription>
-            </CardHeader>
-            <CardContent className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={userGrowthData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                  <XAxis dataKey="name" stroke="#888" />
-                  <YAxis stroke="#888" />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1C1C1E', border: '1px solid #333' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                  <Line type="monotone" dataKey="users" stroke="#0A84FF" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-          <Card className="col-span-1">
-            <CardHeader>
-              <CardTitle>Transaction Volume</CardTitle>
-              <CardDescription>Daily transaction volume in USD</CardDescription>
-            </CardHeader>
-            <CardContent className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={transactionVolumeData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                  <XAxis dataKey="name" stroke="#888" />
-                  <YAxis stroke="#888" />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1C1C1E', border: '1px solid #333' }}
-                    itemStyle={{ color: '#fff' }}
-                    formatter={(value: number) => [`$${value}`, 'Volume']}
-                  />
-                  <Bar dataKey="volume" fill="#30D158" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <Card className="col-span-1">
+                <CardHeader>
+                  <CardTitle>User Growth</CardTitle>
+                  <CardDescription>New user registrations over time</CardDescription>
+                </CardHeader>
+                <CardContent className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={userGrowthData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                      <XAxis dataKey="name" stroke="#888" />
+                      <YAxis stroke="#888" />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#1C1C1E', border: '1px solid #333' }}
+                        itemStyle={{ color: '#fff' }}
+                      />
+                      <Line type="monotone" dataKey="users" stroke="#0A84FF" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+              <Card className="col-span-1">
+                <CardHeader>
+                  <CardTitle>Transaction Volume</CardTitle>
+                  <CardDescription>Daily transaction volume in USD</CardDescription>
+                </CardHeader>
+                <CardContent className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={transactionVolumeData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                      <XAxis dataKey="name" stroke="#888" />
+                      <YAxis stroke="#888" />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#1C1C1E', border: '1px solid #333' }}
+                        itemStyle={{ color: '#fff' }}
+                        formatter={(value: number) => [`$${value}`, 'Volume']}
+                      />
+                      <Bar dataKey="volume" fill="#30D158" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            </div>
 
-        {/* Recent Users */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Registrations</CardTitle>
-            <CardDescription>Latest users joined via device binding</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {recentUsers.map((user) => (
-                <div key={user.id} className="flex items-center justify-between border-b border-white/5 pb-4 last:border-0 last:pb-0">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-10 h-10 rounded-full bg-surface border border-white/10 flex items-center justify-center">
-                      <Users className="w-5 h-5 text-secondary" />
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Registrations</CardTitle>
+                <CardDescription>Latest users joined via device binding</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {recentUsers.map((user) => (
+                    <div key={user.id} className="flex items-center justify-between border-b border-white/5 pb-4 last:border-0 last:pb-0">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-10 h-10 rounded-full bg-surface border border-white/10 flex items-center justify-center">
+                          <Users className="w-5 h-5 text-secondary" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-white">{user.address}</p>
+                          <p className="text-xs text-secondary">{user.joined}</p>
+                        </div>
+                      </div>
+                      <div className={`px-2 py-1 rounded-full text-xs ${
+                        user.status === 'Active' ? 'bg-success/20 text-success' : 'bg-warning/20 text-warning'
+                      }`}>
+                        {user.status}
+                      </div>
                     </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
+
+        {activeTab === 'users' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Users</CardTitle>
+              <CardDescription>Mock data</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {recentUsers.map((user) => (
+                  <div key={user.id} className="flex items-center justify-between border-b border-white/5 pb-4 last:border-0 last:pb-0">
                     <div>
                       <p className="font-medium text-white">{user.address}</p>
                       <p className="text-xs text-secondary">{user.joined}</p>
                     </div>
+                    <div className={`px-2 py-1 rounded-full text-xs ${
+                      user.status === 'Active' ? 'bg-success/20 text-success' : 'bg-warning/20 text-warning'
+                    }`}>
+                      {user.status}
+                    </div>
                   </div>
-                  <div className={`px-2 py-1 rounded-full text-xs ${
-                    user.status === 'Active' ? 'bg-success/20 text-success' : 'bg-warning/20 text-warning'
-                  }`}>
-                    {user.status}
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {activeTab === 'transactions' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card className="col-span-1">
+              <CardHeader>
+                <CardTitle>Transaction Volume</CardTitle>
+                <CardDescription>Mock data</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={transactionVolumeData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                    <XAxis dataKey="name" stroke="#888" />
+                    <YAxis stroke="#888" />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1C1C1E', border: '1px solid #333' }}
+                      itemStyle={{ color: '#fff' }}
+                      formatter={(value: number) => [`$${value}`, 'Volume']}
+                    />
+                    <Bar dataKey="volume" fill="#30D158" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+            <Card className="col-span-1">
+              <CardHeader>
+                <CardTitle>User Growth</CardTitle>
+                <CardDescription>Mock data</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={userGrowthData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                    <XAxis dataKey="name" stroke="#888" />
+                    <YAxis stroke="#888" />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1C1C1E', border: '1px solid #333' }}
+                      itemStyle={{ color: '#fff' }}
+                    />
+                    <Line type="monotone" dataKey="users" stroke="#0A84FF" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {activeTab === 'settings' && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Backend Connection</CardTitle>
+                <CardDescription>VITE_API_URL</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm text-secondary">{apiOrigin}</div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Apple Wallet Certificates</CardTitle>
+                <CardDescription>Upload WWDR / Signer Cert / Signer Key</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-sm text-secondary mb-2">Admin Key</div>
+                    <Input
+                      type="password"
+                      value={adminKey}
+                      onChange={(e) => setAdminKey(e.target.value)}
+                      placeholder="ADMIN_KEY"
+                    />
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <Button variant="secondary" onClick={loadAppleConfig} disabled={!adminKey || loadingApple}>
+                      Load
+                    </Button>
+                    <Button onClick={uploadApple} disabled={!adminKey || loadingApple}>
+                      Save
+                    </Button>
+                  </div>
+
+                  <div>
+                    <div className="text-sm text-secondary mb-2">Apple Team ID</div>
+                    <Input value={teamId} onChange={(e) => setTeamId(e.target.value)} placeholder="TEAMID1234" />
+                  </div>
+                  <div>
+                    <div className="text-sm text-secondary mb-2">Pass Type Identifier</div>
+                    <Input value={passTypeIdentifier} onChange={(e) => setPassTypeIdentifier(e.target.value)} placeholder="pass.com.xvault.wallet" />
+                  </div>
+
+                  <div>
+                    <div className="text-sm text-secondary mb-2">Signer Key Passphrase</div>
+                    <Input type="password" value={signerKeyPassphrase} onChange={(e) => setSignerKeyPassphrase(e.target.value)} placeholder="(optional)" />
+                  </div>
+                  <div />
+
+                  <div>
+                    <div className="text-sm text-secondary mb-2">WWDR (.pem)</div>
+                    <Input type="file" onChange={(e) => setWwdr(e.target.files?.[0] || null)} />
+                  </div>
+                  <div>
+                    <div className="text-sm text-secondary mb-2">Signer Cert (.pem)</div>
+                    <Input type="file" onChange={(e) => setSignerCert(e.target.files?.[0] || null)} />
+                  </div>
+                  <div>
+                    <div className="text-sm text-secondary mb-2">Signer Key (.pem)</div>
+                    <Input type="file" onChange={(e) => setSignerKey(e.target.files?.[0] || null)} />
                   </div>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+
+                {(appleError || appleSuccess) && (
+                  <div className="mt-4">
+                    {appleError && <div className="text-sm text-red-400">{appleError}</div>}
+                    {appleSuccess && <div className="text-sm text-green-400">{appleSuccess}</div>}
+                  </div>
+                )}
+
+                {appleStatus && (
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-secondary">
+                    <div>Configured: {String(appleStatus.configured)}</div>
+                    <div>Has WWDR: {String(appleStatus.hasWwdr)}</div>
+                    <div>Has Signer Cert: {String(appleStatus.hasSignerCert)}</div>
+                    <div>Has Signer Key: {String(appleStatus.hasSignerKey)}</div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </main>
     </div>
   );
