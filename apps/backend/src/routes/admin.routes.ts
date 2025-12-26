@@ -13,11 +13,11 @@ router.post("/apple/config", adminAuth, AdminController.upsertAppleConfig);
 router.post(
   "/apple/certs",
   adminAuth,
-  upload.fields([
+  (upload.fields([
     { name: "wwdr", maxCount: 1 },
     { name: "signerCert", maxCount: 1 },
     { name: "signerKey", maxCount: 1 },
-  ]),
+  ]) as any),
   AdminController.uploadAppleCerts
 );
 
