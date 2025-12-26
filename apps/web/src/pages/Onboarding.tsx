@@ -110,7 +110,7 @@ export default function Onboarding() {
                 </p>
                 {passUrl && (
                   <a 
-                    href={`http://localhost:3000${passUrl}`} 
+                    href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${passUrl}`} 
                     className="inline-block bg-black border border-white/20 rounded-lg px-4 py-2 mb-4 hover:bg-white/5 transition-colors"
                   >
                     <div className="flex items-center space-x-2">
