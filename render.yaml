@@ -1,0 +1,43 @@
+services:
+  # Backend API Service
+  - type: web
+    name: x-vault-backend
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: cd apps/backend && npm install && npm run build
+    startCommand: cd apps/backend && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+    autoDeploy: true
+
+  # Frontend Web App (Static Site)
+  - type: web
+    name: x-vault-web
+    env: static
+    plan: free
+    region: oregon
+    buildCommand: cd apps/web && npm install && npm run build
+    staticPublishPath: apps/web/dist
+    autoDeploy: true
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # Admin Dashboard (Static Site)
+  - type: web
+    name: x-vault-admin
+    env: static
+    plan: free
+    region: oregon
+    buildCommand: cd apps/admin && npm install && npm run build
+    staticPublishPath: apps/admin/dist
+    autoDeploy: true
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

@@ -1,0 +1,21 @@
+{
+  "name": "x-vault",
+  "version": "1.0.0",
+  "description": "## Giới thiệu X-Vault là Nền tảng Tài chính Web3 Tự vận hành (SaaS) theo triết lý \"Invisible Crypto\". Hệ thống sử dụng Account Abstraction (ERC-4337) và Passkeys để mang lại trải nghiệm như Fintech truyền thống nhưng bảo mật bằng Blockchain.",
+  "main": "index.js",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:all": "npm install && npm run build --workspaces --if-present",
+    "dev:backend": "npm run dev --workspace=@x-vault/backend",
+    "dev:web": "npm run dev --workspace=@x-vault/web",
+    "dev:admin": "npm run dev --workspace=@x-vault/admin"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
