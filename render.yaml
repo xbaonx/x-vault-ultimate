@@ -19,7 +19,6 @@ services:
     name: x-vault-web
     env: static
     plan: free
-    region: oregon
     buildCommand: cd apps/web && npm install && npm run build
     staticPublishPath: apps/web/dist
     autoDeploy: true
@@ -33,7 +32,6 @@ services:
     name: x-vault-admin
     env: static
     plan: free
-    region: oregon
     buildCommand: cd apps/admin && npm install && npm run build
     staticPublishPath: apps/admin/dist
     autoDeploy: true
