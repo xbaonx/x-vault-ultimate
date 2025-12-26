@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   BarChart, 
   Bar, 
@@ -10,45 +10,26 @@ import {
   LineChart,
   Line
 } from 'recharts';
-import { Users, CreditCard, Activity, DollarSign, Settings, Bell } from 'lucide-react';
+import { Users, CreditCard, Activity, DollarSign, Settings, Bell, Key } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { formatCurrency } from '../lib/utils';
-import { adminApi, type AppleConfigStatus } from '../services/api';
-
-// Mock Data
-const userGrowthData = [
-  { name: 'Mon', users: 400 },
-  { name: 'Tue', users: 300 },
-  { name: 'Wed', users: 550 },
-  { name: 'Thu', users: 450 },
-  { name: 'Fri', users: 600 },
-  { name: 'Sat', users: 800 },
-  { name: 'Sun', users: 950 },
-];
-
-const transactionVolumeData = [
-  { name: 'Mon', volume: 2400 },
-  { name: 'Tue', volume: 1398 },
-  { name: 'Wed', volume: 9800 },
-  { name: 'Thu', volume: 3908 },
-  { name: 'Fri', volume: 4800 },
-  { name: 'Sat', volume: 3800 },
-  { name: 'Sun', volume: 4300 },
-];
-
-const recentUsers = [
-  { id: 1, address: '0x742d...f44e', status: 'Active', joined: '2 mins ago' },
-  { id: 2, address: '0x1234...5678', status: 'Pending', joined: '5 mins ago' },
-  { id: 3, address: '0x8765...4321', status: 'Active', joined: '10 mins ago' },
-  { id: 4, address: '0xabcd...efgh', status: 'Active', joined: '1 hour ago' },
-];
+import { adminApi, type AppleConfigStatus, type DashboardStats, type UserData, type TransactionData } from '../services/api';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
 
+  // Global Admin Key
   const [adminKey, setAdminKey] = useState('');
+
+  // Dashboard Data
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
+  const [usersList, setUsersList] = useState<UserData[]>([]);
+  const [transactionsList, setTransactionsList] = useState<TransactionData[]>([]);
+  const [loadingData, setLoadingData] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
+
+  // Apple Config State
   const [teamId, setTeamId] = useState('');
   const [passTypeIdentifier, setPassTypeIdentifier] = useState('');
   const [signerKeyPassphrase, setSignerKeyPassphrase] = useState('');
@@ -62,6 +43,37 @@ export default function AdminDashboard() {
   const [appleSuccess, setAppleSuccess] = useState<string | null>(null);
 
   const apiOrigin = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+  useEffect(() => {
+    if (!adminKey) return;
+    fetchData();
+  }, [activeTab, adminKey]);
+
+  const fetchData = async () => {
+    setLoadingData(true);
+    setDataError(null);
+    try {
+      if (activeTab === 'overview') {
+        const stats = await adminApi.getDashboardStats(adminKey);
+        setDashboardStats(stats);
+      } else if (activeTab === 'users') {
+        const users = await adminApi.getUsers(adminKey);
+        setUsersList(users);
+      } else if (activeTab === 'transactions') {
+        const txs = await adminApi.getTransactions(adminKey);
+        setTransactionsList(txs);
+      } else if (activeTab === 'settings') {
+        loadAppleConfig();
+      }
+    } catch (err: any) {
+      console.error(err);
+      if (activeTab !== 'settings') { // Settings load handled separately
+        setDataError(err.message || 'Failed to load data. Check Admin Key.');
+      }
+    } finally {
+      setLoadingData(false);
+    }
+  };
 
   const loadAppleConfig = async () => {
     try {
@@ -108,7 +120,7 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-black text-white flex">
       {/* Sidebar */}
-      <aside className="w-64 border-r border-surface p-6 hidden md:block">
+      <aside className="w-64 border-r border-surface p-6 hidden md:flex flex-col">
         <div className="flex items-center space-x-2 mb-10">
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
             <span className="font-bold text-white">X</span>
@@ -116,7 +128,20 @@ export default function AdminDashboard() {
           <span className="font-bold text-xl">Vault Admin</span>
         </div>
         
-        <nav className="space-y-2">
+        <div className="mb-6">
+            <label className="text-xs text-secondary mb-2 block flex items-center gap-1">
+                <Key className="w-3 h-3" /> Admin Key
+            </label>
+            <Input 
+                type="password" 
+                value={adminKey} 
+                onChange={(e) => setAdminKey(e.target.value)}
+                placeholder="Enter key..."
+                className="h-8 text-xs"
+            />
+        </div>
+
+        <nav className="space-y-2 flex-1">
           <Button 
             variant={activeTab === 'overview' ? 'secondary' : 'ghost'} 
             className="w-full justify-start"
@@ -166,7 +191,19 @@ export default function AdminDashboard() {
           </Button>
         </div>
 
-        {activeTab === 'overview' && (
+        {!adminKey && (
+             <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 p-4 rounded-lg mb-6">
+                Please enter the Admin Key in the sidebar to load data.
+             </div>
+        )}
+
+        {dataError && (
+             <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-lg mb-6">
+                {dataError}
+             </div>
+        )}
+
+        {activeTab === 'overview' && dashboardStats && (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
               <Card>
@@ -177,23 +214,23 @@ export default function AdminDashboard() {
                   <Users className="h-4 w-4 text-primary" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">12,345</div>
+                  <div className="text-2xl font-bold">{dashboardStats.stats.totalUsers}</div>
                   <p className="text-xs text-success flex items-center mt-1">
-                    +20.1% from last month
+                    Registered users
                   </p>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium text-secondary">
-                    Total Volume
+                    Total Transactions
                   </CardTitle>
                   <DollarSign className="h-4 w-4 text-success" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{formatCurrency(45231.89)}</div>
+                  <div className="text-2xl font-bold">{dashboardStats.stats.totalVolume}</div>
                   <p className="text-xs text-success flex items-center mt-1">
-                    +15% from last month
+                    Processed
                   </p>
                 </CardContent>
               </Card>
@@ -205,9 +242,9 @@ export default function AdminDashboard() {
                   <Activity className="h-4 w-4 text-warning" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">573</div>
+                  <div className="text-2xl font-bold">{dashboardStats.stats.activeSessions}</div>
                   <p className="text-xs text-secondary flex items-center mt-1">
-                    +201 since last hour
+                    Estimated
                   </p>
                 </CardContent>
               </Card>
@@ -219,7 +256,7 @@ export default function AdminDashboard() {
                   <CreditCard className="h-4 w-4 text-primary" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">4.2 ETH</div>
+                  <div className="text-2xl font-bold">{dashboardStats.stats.gasSponsored}</div>
                   <p className="text-xs text-secondary flex items-center mt-1">
                     Via Paymaster
                   </p>
@@ -235,7 +272,7 @@ export default function AdminDashboard() {
                 </CardHeader>
                 <CardContent className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={userGrowthData}>
+                    <LineChart data={dashboardStats.userGrowthData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                       <XAxis dataKey="name" stroke="#888" />
                       <YAxis stroke="#888" />
@@ -255,14 +292,14 @@ export default function AdminDashboard() {
                 </CardHeader>
                 <CardContent className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={transactionVolumeData}>
+                    <BarChart data={dashboardStats.transactionVolumeData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                       <XAxis dataKey="name" stroke="#888" />
                       <YAxis stroke="#888" />
                       <Tooltip 
                         contentStyle={{ backgroundColor: '#1C1C1E', border: '1px solid #333' }}
                         itemStyle={{ color: '#fff' }}
-                        formatter={(value: number) => [`$${value}`, 'Volume']}
+                        formatter={(value: number) => [`${value}`, 'Volume']}
                       />
                       <Bar dataKey="volume" fill="#30D158" radius={[4, 4, 0, 0]} />
                     </BarChart>
@@ -278,7 +315,7 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {recentUsers.map((user) => (
+                  {dashboardStats.recentUsers.map((user) => (
                     <div key={user.id} className="flex items-center justify-between border-b border-white/5 pb-4 last:border-0 last:pb-0">
                       <div className="flex items-center space-x-4">
                         <div className="w-10 h-10 rounded-full bg-surface border border-white/10 flex items-center justify-center">
@@ -286,7 +323,7 @@ export default function AdminDashboard() {
                         </div>
                         <div>
                           <p className="font-medium text-white">{user.address}</p>
-                          <p className="text-xs text-secondary">{user.joined}</p>
+                          <p className="text-xs text-secondary">{new Date(user.joined).toLocaleString()}</p>
                         </div>
                       </div>
                       <div className={`px-2 py-1 rounded-full text-xs ${
@@ -305,73 +342,56 @@ export default function AdminDashboard() {
         {activeTab === 'users' && (
           <Card>
             <CardHeader>
-              <CardTitle>Recent Users</CardTitle>
-              <CardDescription>Mock data</CardDescription>
+              <CardTitle>All Users</CardTitle>
+              <CardDescription>Latest 50 users</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {recentUsers.map((user) => (
+                {usersList.map((user) => (
                   <div key={user.id} className="flex items-center justify-between border-b border-white/5 pb-4 last:border-0 last:pb-0">
                     <div>
                       <p className="font-medium text-white">{user.address}</p>
-                      <p className="text-xs text-secondary">{user.joined}</p>
+                      <p className="text-xs text-secondary">Joined: {new Date(user.createdAt).toLocaleString()}</p>
                     </div>
-                    <div className={`px-2 py-1 rounded-full text-xs ${
-                      user.status === 'Active' ? 'bg-success/20 text-success' : 'bg-warning/20 text-warning'
-                    }`}>
-                      {user.status}
+                    <div className="px-2 py-1 rounded-full text-xs bg-success/20 text-success">
+                      Active
                     </div>
                   </div>
                 ))}
+                {usersList.length === 0 && !loadingData && <p className="text-secondary text-sm">No users found.</p>}
               </div>
             </CardContent>
           </Card>
         )}
 
         {activeTab === 'transactions' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="col-span-1">
-              <CardHeader>
-                <CardTitle>Transaction Volume</CardTitle>
-                <CardDescription>Mock data</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={transactionVolumeData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                    <XAxis dataKey="name" stroke="#888" />
-                    <YAxis stroke="#888" />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1C1C1E', border: '1px solid #333' }}
-                      itemStyle={{ color: '#fff' }}
-                      formatter={(value: number) => [`$${value}`, 'Volume']}
-                    />
-                    <Bar dataKey="volume" fill="#30D158" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-            <Card className="col-span-1">
-              <CardHeader>
-                <CardTitle>User Growth</CardTitle>
-                <CardDescription>Mock data</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={userGrowthData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                    <XAxis dataKey="name" stroke="#888" />
-                    <YAxis stroke="#888" />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1C1C1E', border: '1px solid #333' }}
-                      itemStyle={{ color: '#fff' }}
-                    />
-                    <Line type="monotone" dataKey="users" stroke="#0A84FF" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
+           <Card>
+           <CardHeader>
+             <CardTitle>Recent Transactions</CardTitle>
+             <CardDescription>Latest 50 transactions</CardDescription>
+           </CardHeader>
+           <CardContent>
+             <div className="space-y-4">
+               {transactionsList.map((tx) => (
+                 <div key={tx.id} className="flex items-center justify-between border-b border-white/5 pb-4 last:border-0 last:pb-0">
+                   <div>
+                     <p className="font-medium text-white text-xs font-mono">{tx.userOpHash.slice(0, 20)}...</p>
+                     <p className="text-xs text-secondary">
+                        Network: {tx.network} • {new Date(tx.createdAt).toLocaleString()}
+                     </p>
+                     <p className="text-xs text-secondary/50">User: {tx.userAddress}</p>
+                   </div>
+                   <div className={`px-2 py-1 rounded-full text-xs ${
+                       tx.status === 'success' ? 'bg-success/20 text-success' : 'bg-warning/20 text-warning'
+                   }`}>
+                     {tx.status}
+                   </div>
+                 </div>
+               ))}
+               {transactionsList.length === 0 && !loadingData && <p className="text-secondary text-sm">No transactions found.</p>}
+             </div>
+           </CardContent>
+         </Card>
         )}
 
         {activeTab === 'settings' && (
@@ -393,22 +413,13 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-sm text-secondary mb-2">Admin Key</div>
-                    <Input
-                      type="password"
-                      value={adminKey}
-                      onChange={(e) => setAdminKey(e.target.value)}
-                      placeholder="ADMIN_KEY"
-                    />
-                  </div>
-                  <div className="flex items-end gap-2">
-                    <Button variant="secondary" onClick={loadAppleConfig} disabled={!adminKey || loadingApple}>
-                      Load
-                    </Button>
-                    <Button onClick={uploadApple} disabled={!adminKey || loadingApple}>
-                      Save
-                    </Button>
+                  {/* Admin Key input moved to sidebar */}
+                  <div className="md:col-span-2 flex items-center gap-2 mb-4 p-4 border border-white/10 rounded-lg bg-white/5">
+                    <Key className="w-4 h-4 text-primary" />
+                    <span className="text-sm text-secondary">
+                        Using Admin Key from sidebar. 
+                        {adminKey ? <span className="text-success ml-2">Key present</span> : <span className="text-warning ml-2">Key missing</span>}
+                    </span>
                   </div>
 
                   <div>
@@ -424,7 +435,16 @@ export default function AdminDashboard() {
                     <div className="text-sm text-secondary mb-2">Signer Key Passphrase</div>
                     <Input type="password" value={signerKeyPassphrase} onChange={(e) => setSignerKeyPassphrase(e.target.value)} placeholder="(optional)" />
                   </div>
-                  <div />
+                  <div className="flex items-end">
+                    <div className="flex gap-2 w-full">
+                        <Button variant="secondary" onClick={loadAppleConfig} disabled={!adminKey || loadingApple} className="flex-1">
+                        Load Config
+                        </Button>
+                        <Button onClick={uploadApple} disabled={!adminKey || loadingApple} className="flex-1">
+                        Save Config & Certs
+                        </Button>
+                    </div>
+                  </div>
 
                   <div>
                     <div className="text-sm text-secondary mb-2">WWDR (.pem)</div>
@@ -448,11 +468,12 @@ export default function AdminDashboard() {
                 )}
 
                 {appleStatus && (
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-secondary">
-                    <div>Configured: {String(appleStatus.configured)}</div>
-                    <div>Has WWDR: {String(appleStatus.hasWwdr)}</div>
-                    <div>Has Signer Cert: {String(appleStatus.hasSignerCert)}</div>
-                    <div>Has Signer Key: {String(appleStatus.hasSignerKey)}</div>
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-secondary border-t border-white/10 pt-4">
+                    <div>Configured: <span className={appleStatus.configured ? 'text-success' : 'text-secondary'}>{String(appleStatus.configured)}</span></div>
+                    <div>Has WWDR: <span className={appleStatus.hasWwdr ? 'text-success' : 'text-secondary'}>{String(appleStatus.hasWwdr)}</span></div>
+                    <div>Has Signer Cert: <span className={appleStatus.hasSignerCert ? 'text-success' : 'text-secondary'}>{String(appleStatus.hasSignerCert)}</span></div>
+                    <div>Has Signer Key: <span className={appleStatus.hasSignerKey ? 'text-success' : 'text-secondary'}>{String(appleStatus.hasSignerKey)}</span></div>
+                    {appleStatus.updatedAt && <div className="col-span-2 text-xs mt-2">Last updated: {new Date(appleStatus.updatedAt).toLocaleString()}</div>}
                   </div>
                 )}
               </CardContent>

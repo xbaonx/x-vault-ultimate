@@ -7,6 +7,10 @@ const router = Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+router.get("/dashboard", adminAuth, AdminController.getDashboardStats);
+router.get("/users", adminAuth, AdminController.getUsers);
+router.get("/transactions", adminAuth, AdminController.getTransactions);
+
 router.get("/apple/config", adminAuth, AdminController.getAppleConfig);
 router.post("/apple/config", adminAuth, AdminController.upsertAppleConfig);
 
