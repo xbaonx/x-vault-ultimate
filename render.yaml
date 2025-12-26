@@ -15,10 +15,8 @@ services:
     autoDeploy: true
 
   # Frontend Web App (Static Site)
-  - type: web
+  - type: pstatic
     name: x-vault-web
-    env: static
-    plan: free
     buildCommand: cd apps/web && npm install && npm run build
     staticPublishPath: apps/web/dist
     autoDeploy: true
@@ -28,10 +26,8 @@ services:
         destination: /index.html
 
   # Admin Dashboard (Static Site)
-  - type: web
+  - type: pstatic
     name: x-vault-admin
-    env: static
-    plan: free
     buildCommand: cd apps/admin && npm install && npm run build
     staticPublishPath: apps/admin/dist
     autoDeploy: true
