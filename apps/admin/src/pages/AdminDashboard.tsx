@@ -20,7 +20,11 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
 
   // Global Admin Key
-  const [adminKey, setAdminKey] = useState('');
+  const [adminKey, setAdminKey] = useState(() => localStorage.getItem('admin_key') || '');
+
+  useEffect(() => {
+    localStorage.setItem('admin_key', adminKey);
+  }, [adminKey]);
 
   // Dashboard Data
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
