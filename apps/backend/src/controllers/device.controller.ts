@@ -1,18 +1,23 @@
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { PassService } from '../services/pass.service';
-
-// In-memory storage for polling sessions (replace with Redis/DB in production)
-const pollingSessions = new Map<string, { status: 'pending' | 'completed', deviceId?: string, passUrl?: string }>();
+import { AppDataSource } from '../data-source';
+import { PollingSession } from '../entities/PollingSession';
 
 export class DeviceController {
   static async register(req: Request, res: Response) {
     try {
+      const sessionRepo = AppDataSource.getRepository(PollingSession);
+      
       // Start a new polling session
       const sessionId = uuidv4();
-      pollingSessions.set(sessionId, { status: 'pending' });
+      const newSession = sessionRepo.create({
+        id: sessionId,
+        status: 'pending'
+      });
+      await sessionRepo.save(newSession);
       
-      console.log(`[Device] Created session: ${sessionId}. Total sessions: ${pollingSessions.size}`);
+      console.log(`[Device] Created session: ${sessionId}.`);
       
       // In a real flow, this would return a URL/Token for the frontend to add to Apple Wallet
       // The Apple Wallet pass would then call back to a webhook when added (if supported)
@@ -26,16 +31,20 @@ export class DeviceController {
       const deviceLibraryId = uuidv4();
       
       // Simulate async completion (in real world, this happens when the Pass is installed)
-      setTimeout(() => {
-        if (pollingSessions.has(sessionId)) {
-            pollingSessions.set(sessionId, { 
-            status: 'completed', 
-            deviceId: deviceLibraryId,
-            passUrl: `/api/device/pass/${deviceLibraryId}`
-            });
-            console.log(`[Device] Completed session: ${sessionId}`);
-        } else {
-            console.warn(`[Device] Session ${sessionId} not found during async completion (server restarted?)`);
+      setTimeout(async () => {
+        try {
+            const session = await sessionRepo.findOneBy({ id: sessionId });
+            if (session) {
+                session.status = 'completed';
+                session.deviceId = deviceLibraryId;
+                session.passUrl = `/api/device/pass/${deviceLibraryId}`;
+                await sessionRepo.save(session);
+                console.log(`[Device] Completed session: ${sessionId}`);
+            } else {
+                console.warn(`[Device] Session ${sessionId} not found during async completion.`);
+            }
+        } catch (err) {
+            console.error(`[Device] Error updating session ${sessionId}:`, err);
         }
       }, 2000);
 
@@ -49,12 +58,12 @@ export class DeviceController {
   static async pollStatus(req: Request, res: Response) {
     try {
       const { sessionId } = req.params;
-      const session = pollingSessions.get(sessionId);
+      const sessionRepo = AppDataSource.getRepository(PollingSession);
+      const session = await sessionRepo.findOneBy({ id: sessionId });
 
       console.log(`[Device] Polling session: ${sessionId}. Found: ${!!session}`);
 
       if (!session) {
-        console.log(`[Device] Available sessions: ${Array.from(pollingSessions.keys()).join(', ')}`);
         res.status(404).json({ error: 'Session not found' });
         return;
       }

@@ -4,6 +4,7 @@ import { User } from "./entities/User";
 import { Device } from "./entities/Device";
 import { Transaction } from "./entities/Transaction";
 import { AppleConfig } from "./entities/AppleConfig";
+import { PollingSession } from "./entities/PollingSession";
 
 const dbSslEnabled = (process.env.DB_SSL || "").toLowerCase() === "true";
 const dbSslRejectUnauthorized = (process.env.DB_SSL_REJECT_UNAUTHORIZED || "").toLowerCase() === "true";
@@ -23,5 +24,5 @@ export const AppDataSource = new DataSource({
         rejectUnauthorized: dbSslRejectUnauthorized,
       }
     : undefined,
-  entities: [User, Device, Transaction, AppleConfig],
+  entities: [User, Device, Transaction, AppleConfig, PollingSession],
 });
