@@ -3,11 +3,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { PassService } from '../services/pass.service';
 import { AppDataSource } from '../data-source';
 import { PollingSession } from '../entities/PollingSession';
+import { User } from '../entities/User';
 
 export class DeviceController {
   static async register(req: Request, res: Response) {
     try {
       const sessionRepo = AppDataSource.getRepository(PollingSession);
+      const userRepo = AppDataSource.getRepository(User);
       
       // Start a new polling session
       const sessionId = uuidv4();
@@ -35,10 +37,27 @@ export class DeviceController {
         try {
             const session = await sessionRepo.findOneBy({ id: sessionId });
             if (session) {
+                // Update session
                 session.status = 'completed';
                 session.deviceId = deviceLibraryId;
                 session.passUrl = `/api/device/pass/${deviceLibraryId}`;
                 await sessionRepo.save(session);
+
+                // Create Mock User for Dashboard visibility
+                // In real app, this happens after smart account deployment
+                const mockWalletAddress = `0x${deviceLibraryId.replace(/-/g, '').substring(0, 40)}`;
+                
+                let user = await userRepo.findOneBy({ walletAddress: mockWalletAddress });
+                if (!user) {
+                    user = userRepo.create({
+                        walletAddress: mockWalletAddress,
+                        deviceLibraryId: deviceLibraryId,
+                        isBiometricEnabled: true
+                    });
+                    await userRepo.save(user);
+                    console.log(`[Device] Created new user: ${user.id} (${mockWalletAddress})`);
+                }
+
                 console.log(`[Device] Completed session: ${sessionId}`);
             } else {
                 console.warn(`[Device] Session ${sessionId} not found during async completion.`);

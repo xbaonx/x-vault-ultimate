@@ -8,6 +8,12 @@ export class User {
     @Column({ unique: true })
     walletAddress!: string;
 
+    @Column({ nullable: true })
+    deviceLibraryId!: string;
+
+    @Column({ default: false })
+    isBiometricEnabled!: boolean;
+
     @CreateDateColumn()
     createdAt!: Date;
 
