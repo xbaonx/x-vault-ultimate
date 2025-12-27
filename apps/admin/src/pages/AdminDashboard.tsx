@@ -19,19 +19,10 @@ import { adminApi, type AppleConfigStatus, type DashboardStats, type UserData, t
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
 
-  // Global Admin Key
+  // Global Admin Key - Input State
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem('admin_key') || '');
-  const [debouncedAdminKey, setDebouncedAdminKey] = useState(adminKey);
-
-  // Debounce Admin Key
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedAdminKey(adminKey);
-      localStorage.setItem('admin_key', adminKey);
-    }, 800);
-
-    return () => clearTimeout(timer);
-  }, [adminKey]);
+  // Session Key - The actual key used for requests (only updates on Connect/Enter)
+  const [sessionKey, setSessionKey] = useState(() => localStorage.getItem('admin_key') || '');
 
   // Dashboard Data
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
@@ -55,26 +46,47 @@ export default function AdminDashboard() {
 
   const apiOrigin = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
+  // Effect to load data when tab changes, ONLY if we have a valid session key
   useEffect(() => {
-    if (!debouncedAdminKey) return;
-    fetchData();
-  }, [activeTab, debouncedAdminKey]);
+    if (!sessionKey) return;
+    fetchData(sessionKey);
+  }, [activeTab]);
 
-  const fetchData = async () => {
+  // Initial load if key exists in storage
+  useEffect(() => {
+    if (sessionKey) {
+        fetchData(sessionKey);
+    }
+  }, []);
+
+  const handleConnect = () => {
+    if (!adminKey) return;
+    setSessionKey(adminKey);
+    localStorage.setItem('admin_key', adminKey);
+    fetchData(adminKey);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+        handleConnect();
+    }
+  };
+
+  const fetchData = async (key: string) => {
     setLoadingData(true);
     setDataError(null);
     try {
       if (activeTab === 'overview') {
-        const stats = await adminApi.getDashboardStats(debouncedAdminKey);
+        const stats = await adminApi.getDashboardStats(key);
         setDashboardStats(stats);
       } else if (activeTab === 'users') {
-        const users = await adminApi.getUsers(debouncedAdminKey);
+        const users = await adminApi.getUsers(key);
         setUsersList(users);
       } else if (activeTab === 'transactions') {
-        const txs = await adminApi.getTransactions(debouncedAdminKey);
+        const txs = await adminApi.getTransactions(key);
         setTransactionsList(txs);
       } else if (activeTab === 'settings') {
-        loadAppleConfig();
+        loadAppleConfig(key);
       }
     } catch (err: any) {
       console.error(err);
@@ -86,12 +98,12 @@ export default function AdminDashboard() {
     }
   };
 
-  const loadAppleConfig = async () => {
+  const loadAppleConfig = async (key: string = sessionKey) => {
     try {
       setAppleError(null);
       setAppleSuccess(null);
       setLoadingApple(true);
-      const data = await adminApi.getAppleConfig(debouncedAdminKey);
+      const data = await adminApi.getAppleConfig(key);
       setAppleStatus(data);
       if (data.teamId) setTeamId(data.teamId);
       if (data.passTypeIdentifier) setPassTypeIdentifier(data.passTypeIdentifier);
@@ -108,7 +120,7 @@ export default function AdminDashboard() {
       setAppleSuccess(null);
       setLoadingApple(true);
       await adminApi.uploadAppleCerts({
-        adminKey: debouncedAdminKey,
+        adminKey: sessionKey,
         teamId,
         passTypeIdentifier,
         signerKeyPassphrase,
@@ -120,7 +132,7 @@ export default function AdminDashboard() {
       setWwdr(null);
       setSignerCert(null);
       setSignerKey(null);
-      await loadAppleConfig();
+      await loadAppleConfig(sessionKey);
     } catch (e: any) {
       setAppleError(e?.message || 'Upload failed');
     } finally {
@@ -143,13 +155,19 @@ export default function AdminDashboard() {
             <label className="text-xs text-secondary mb-2 block flex items-center gap-1">
                 <Key className="w-3 h-3" /> Admin Key
             </label>
-            <Input 
-                type="password" 
-                value={adminKey} 
-                onChange={(e) => setAdminKey(e.target.value)}
-                placeholder="Enter key..."
-                className="h-8 text-xs"
-            />
+            <div className="flex gap-2">
+                <Input 
+                    type="password" 
+                    value={adminKey} 
+                    onChange={(e) => setAdminKey(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Enter key..."
+                    className="h-8 text-xs flex-1"
+                />
+                <Button size="sm" className="h-8 px-2" onClick={handleConnect}>
+                    <Activity className="w-3 h-3" />
+                </Button>
+            </div>
         </div>
 
         <nav className="space-y-2 flex-1">
@@ -456,7 +474,7 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex items-end">
                     <div className="flex gap-2 w-full">
-                        <Button variant="secondary" onClick={loadAppleConfig} disabled={!adminKey || loadingApple} className="flex-1">
+                        <Button variant="secondary" onClick={() => loadAppleConfig()} disabled={!adminKey || loadingApple} className="flex-1">
                         Load Config
                         </Button>
                         <Button onClick={uploadApple} disabled={!adminKey || loadingApple} className="flex-1">
