@@ -12,6 +12,22 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: ADMIN_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_PASS_TYPE_ID
+        sync: false
+      - key: APPLE_WWDR_CERT
+        sync: false
+      - key: APPLE_SIGNER_CERT
+        sync: false
+      - key: APPLE_SIGNER_KEY
+        sync: false
+      - key: APPLE_SIGNER_KEY_PASSPHRASE
+        sync: false
     autoDeploy: true
 
   # Frontend Web App (Static Site)
