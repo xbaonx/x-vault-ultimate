@@ -21,9 +21,16 @@ export default function AdminDashboard() {
 
   // Global Admin Key
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem('admin_key') || '');
+  const [debouncedAdminKey, setDebouncedAdminKey] = useState(adminKey);
 
+  // Debounce Admin Key
   useEffect(() => {
-    localStorage.setItem('admin_key', adminKey);
+    const timer = setTimeout(() => {
+      setDebouncedAdminKey(adminKey);
+      localStorage.setItem('admin_key', adminKey);
+    }, 800);
+
+    return () => clearTimeout(timer);
   }, [adminKey]);
 
   // Dashboard Data
@@ -49,22 +56,22 @@ export default function AdminDashboard() {
   const apiOrigin = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
   useEffect(() => {
-    if (!adminKey) return;
+    if (!debouncedAdminKey) return;
     fetchData();
-  }, [activeTab, adminKey]);
+  }, [activeTab, debouncedAdminKey]);
 
   const fetchData = async () => {
     setLoadingData(true);
     setDataError(null);
     try {
       if (activeTab === 'overview') {
-        const stats = await adminApi.getDashboardStats(adminKey);
+        const stats = await adminApi.getDashboardStats(debouncedAdminKey);
         setDashboardStats(stats);
       } else if (activeTab === 'users') {
-        const users = await adminApi.getUsers(adminKey);
+        const users = await adminApi.getUsers(debouncedAdminKey);
         setUsersList(users);
       } else if (activeTab === 'transactions') {
-        const txs = await adminApi.getTransactions(adminKey);
+        const txs = await adminApi.getTransactions(debouncedAdminKey);
         setTransactionsList(txs);
       } else if (activeTab === 'settings') {
         loadAppleConfig();
@@ -84,7 +91,7 @@ export default function AdminDashboard() {
       setAppleError(null);
       setAppleSuccess(null);
       setLoadingApple(true);
-      const data = await adminApi.getAppleConfig(adminKey);
+      const data = await adminApi.getAppleConfig(debouncedAdminKey);
       setAppleStatus(data);
       if (data.teamId) setTeamId(data.teamId);
       if (data.passTypeIdentifier) setPassTypeIdentifier(data.passTypeIdentifier);
@@ -101,7 +108,7 @@ export default function AdminDashboard() {
       setAppleSuccess(null);
       setLoadingApple(true);
       await adminApi.uploadAppleCerts({
-        adminKey,
+        adminKey: debouncedAdminKey,
         teamId,
         passTypeIdentifier,
         signerKeyPassphrase,
