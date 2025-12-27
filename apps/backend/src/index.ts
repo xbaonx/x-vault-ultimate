@@ -27,14 +27,14 @@ async function start() {
   try {
     await AppDataSource.initialize();
     console.log('Data Source has been initialized!');
-
-    app.listen(config.port, () => {
-      console.log(`Server running on port ${config.port}`);
-    });
   } catch (err) {
-    console.error('Error during Data Source initialization', err);
-    process.exit(1);
+    console.error('Error during Data Source initialization. Starting in OFFLINE/MOCK mode.', err);
+    // Do not exit, allow server to start for frontend testing
   }
+
+  app.listen(config.port, () => {
+    console.log(`Server running on port ${config.port}`);
+  });
 }
 
 start();
