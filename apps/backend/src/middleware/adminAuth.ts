@@ -2,12 +2,13 @@ import { Request, Response, NextFunction } from "express";
 import { config } from "../config";
 
 export function adminAuth(req: Request, res: Response, next: NextFunction) {
-  const adminKey = req.headers["x-admin-key"];
+  const receivedKey = (req.headers["x-admin-key"] as string || "").trim();
+  const expectedKey = (config.security.adminKey || "").trim();
 
   // Debug logging
-  console.log(`[AdminAuth] Received key: '${adminKey}', Expected: '${config.security.adminKey}'`);
+  console.log(`[AdminAuth] Received key: '${receivedKey}', Expected: '${expectedKey}'`);
 
-  if (!adminKey || adminKey !== config.security.adminKey) {
+  if (!receivedKey || receivedKey !== expectedKey) {
     console.log('[AdminAuth] Unauthorized access attempt');
     res.status(401).json({ error: "Unauthorized" });
     return;

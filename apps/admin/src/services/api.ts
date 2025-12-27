@@ -68,6 +68,10 @@ export const adminApi = {
       headers: buildHeaders(adminKey),
     });
 
+    if (res.status === 401) {
+      throw new Error('Invalid Admin Key. Please check your key.');
+    }
+
     if (!res.ok) {
       throw new Error('Failed to fetch dashboard stats');
     }
@@ -78,6 +82,10 @@ export const adminApi = {
     const res = await fetch(`${API_URL}/admin/users`, {
       headers: buildHeaders(adminKey),
     });
+
+    if (res.status === 401) {
+      throw new Error('Invalid Admin Key. Please check your key.');
+    }
 
     if (!res.ok) {
       throw new Error('Failed to fetch users');
@@ -90,6 +98,10 @@ export const adminApi = {
       headers: buildHeaders(adminKey),
     });
 
+    if (res.status === 401) {
+      throw new Error('Invalid Admin Key. Please check your key.');
+    }
+
     if (!res.ok) {
       throw new Error('Failed to fetch transactions');
     }
@@ -100,6 +112,10 @@ export const adminApi = {
     const res = await fetch(`${API_URL}/admin/apple/config`, {
       headers: buildHeaders(adminKey),
     });
+
+    if (res.status === 401) {
+      throw new Error('Invalid Admin Key. Please check your key.');
+    }
 
     if (!res.ok) {
       const text = await res.text();
