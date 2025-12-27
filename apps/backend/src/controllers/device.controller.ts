@@ -12,6 +12,8 @@ export class DeviceController {
       const sessionId = uuidv4();
       pollingSessions.set(sessionId, { status: 'pending' });
       
+      console.log(`[Device] Created session: ${sessionId}. Total sessions: ${pollingSessions.size}`);
+      
       // In a real flow, this would return a URL/Token for the frontend to add to Apple Wallet
       // The Apple Wallet pass would then call back to a webhook when added (if supported)
       // or the user manually confirms.
@@ -25,11 +27,16 @@ export class DeviceController {
       
       // Simulate async completion (in real world, this happens when the Pass is installed)
       setTimeout(() => {
-        pollingSessions.set(sessionId, { 
-          status: 'completed', 
-          deviceId: deviceLibraryId,
-          passUrl: `/api/device/pass/${deviceLibraryId}`
-        });
+        if (pollingSessions.has(sessionId)) {
+            pollingSessions.set(sessionId, { 
+            status: 'completed', 
+            deviceId: deviceLibraryId,
+            passUrl: `/api/device/pass/${deviceLibraryId}`
+            });
+            console.log(`[Device] Completed session: ${sessionId}`);
+        } else {
+            console.warn(`[Device] Session ${sessionId} not found during async completion (server restarted?)`);
+        }
       }, 2000);
 
       res.status(200).json({ sessionId });
@@ -44,7 +51,10 @@ export class DeviceController {
       const { sessionId } = req.params;
       const session = pollingSessions.get(sessionId);
 
+      console.log(`[Device] Polling session: ${sessionId}. Found: ${!!session}`);
+
       if (!session) {
+        console.log(`[Device] Available sessions: ${Array.from(pollingSessions.keys()).join(', ')}`);
         res.status(404).json({ error: 'Session not found' });
         return;
       }
