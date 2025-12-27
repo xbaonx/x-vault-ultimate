@@ -28,6 +28,10 @@ services:
         sync: false
       - key: APPLE_SIGNER_KEY_PASSPHRASE
         sync: false
+      - key: DB_SSL
+        sync: false
+      - key: DB_SSL_REJECT_UNAUTHORIZED
+        sync: false
     autoDeploy: true
 
   # Frontend Web App (Static Site)
