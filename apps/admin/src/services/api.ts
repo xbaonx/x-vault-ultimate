@@ -1,4 +1,16 @@
-const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+const ENV_API_URL = import.meta.env.VITE_API_URL;
+const FALLBACK_URL = 'http://localhost:3000';
+const API_URL = (ENV_API_URL || FALLBACK_URL) + '/api';
+
+console.log('[AdminAPI] Initialization:', {
+  envViteApiUrl: ENV_API_URL,
+  finalApiUrl: API_URL,
+  windowLocation: window.location.origin
+});
+
+if (window.location.hostname !== 'localhost' && API_URL.includes('localhost')) {
+  console.error('[AdminAPI] CRITICAL WARNING: Running on production domain but connecting to localhost API. VITE_API_URL is likely missing from build configuration.');
+}
 
 export type AppleConfigStatus = {
   configured: boolean;
