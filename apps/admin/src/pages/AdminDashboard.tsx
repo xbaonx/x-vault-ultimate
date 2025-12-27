@@ -201,6 +201,14 @@ export default function AdminDashboard() {
              </div>
         )}
 
+        {/* Debug Info */}
+        <div className="bg-blue-500/10 border border-blue-500/20 text-blue-400 p-4 rounded-lg mb-6 text-xs font-mono">
+            <div><strong>DEBUG INFO:</strong></div>
+            <div>API URL: {apiOrigin}</div>
+            <div>Admin Key Length: {adminKey.length} chars</div>
+            <div>Status: {loadingData ? 'Loading...' : 'Ready'}</div>
+        </div>
+
         {dataError && (
              <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-lg mb-6">
                 {dataError}

@@ -10,7 +10,10 @@ import { AppDataSource } from './data-source';
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key'],
+  origin: '*' // In production, you might want to restrict this to your frontend domains
+}));
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
