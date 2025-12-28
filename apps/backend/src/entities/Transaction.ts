@@ -15,6 +15,12 @@ export class Transaction {
     @Column()
     status!: string; // pending, success, failed
 
+    @Column({ nullable: true })
+    value!: string; // Amount in wei or token units
+
+    @Column({ nullable: true })
+    asset!: string; // ETH, USDC, etc.
+
     @ManyToOne(() => User)
     @JoinColumn({ name: "userId" })
     user!: User;

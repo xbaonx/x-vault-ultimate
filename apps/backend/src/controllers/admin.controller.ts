@@ -352,4 +352,33 @@ export class AdminController {
         res.status(500).json({ error: "Internal server error" });
     }
   }
+
+  static async updateUserLimit(req: Request, res: Response) {
+    try {
+        const { userId } = req.params;
+        const { limit } = req.body;
+        
+        if (typeof limit !== 'number' || limit < 0) {
+            res.status(400).json({ error: "Invalid limit value" });
+            return;
+        }
+
+        const userRepo = AppDataSource.getRepository(User);
+        const user = await userRepo.findOneBy({ id: userId });
+
+        if (!user) {
+            res.status(404).json({ error: "User not found" });
+            return;
+        }
+
+        user.dailyLimitUsd = limit;
+        await userRepo.save(user);
+
+        console.log(`[Admin] User ${userId} limit updated to $${limit}.`);
+        res.status(200).json({ id: user.id, dailyLimitUsd: user.dailyLimitUsd });
+    } catch (error) {
+        console.error("Error in updateUserLimit:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+  }
 }

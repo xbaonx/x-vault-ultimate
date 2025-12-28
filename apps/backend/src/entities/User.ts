@@ -33,6 +33,9 @@ export class User {
     @Column({ default: false })
     isFrozen!: boolean;
 
+    @Column({ type: 'float', default: 2000.0 })
+    dailyLimitUsd!: number;
+
     @CreateDateColumn()
     createdAt!: Date;
 
