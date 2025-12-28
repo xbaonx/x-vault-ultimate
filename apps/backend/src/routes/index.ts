@@ -5,6 +5,7 @@ import walletRoutes from './wallet.routes';
 import adminRoutes from './admin.routes';
 import securityRoutes from './security.routes';
 import authRoutes from './auth.routes';
+import migrationRoutes from './migration.routes';
 
 const router = Router();
 
@@ -14,5 +15,6 @@ router.use('/wallet', walletRoutes);
 router.use('/admin', adminRoutes);
 router.use('/security', securityRoutes);
 router.use('/auth', authRoutes);
+router.use('/migration', migrationRoutes);
 
 export default router;

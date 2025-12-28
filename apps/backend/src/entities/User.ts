@@ -48,6 +48,13 @@ export class User {
     @Column({ nullable: true, select: false }) // Do not return by default
     spendingPinHash!: string;
 
+    // Device Migration Fields
+    @Column({ nullable: true })
+    pendingDeviceLibraryId!: string;
+
+    @Column({ nullable: true })
+    migrationExpiry!: Date;
+
     @CreateDateColumn()
     createdAt!: Date;
 

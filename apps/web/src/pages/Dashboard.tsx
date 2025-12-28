@@ -3,9 +3,10 @@ import { motion } from 'framer-motion';
 import { ArrowUpRight, ArrowDownLeft, CreditCard, Plus } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
-import { walletService, securityService } from '../services/api';
+import { walletService, securityService, migrationService } from '../services/api';
 import { formatCurrency, shortenAddress } from '../lib/utils';
 import { PinModal } from '../components/PinModal';
+import { MigrationModal } from '../components/MigrationModal';
 
 export default function Dashboard() {
   const [portfolio, setPortfolio] = useState<any>(null);
@@ -15,6 +16,11 @@ export default function Dashboard() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinError, setPinError] = useState<string | undefined>(undefined);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Migration State
+  const [showMigrationModal, setShowMigrationModal] = useState(false);
+  const [migrationStatus, setMigrationStatus] = useState<'initial' | 'pending' | 'ready'>('initial');
+  const [migrationExpiry, setMigrationExpiry] = useState<string | undefined>(undefined);
 
   // Mock user ID for MVP
   const userId = localStorage.getItem('x_user_id') || 'user-123';
@@ -33,8 +39,35 @@ export default function Dashboard() {
         console.error('Error fetching dashboard data:', error);
       }
     };
+    
+    const checkDevice = async () => {
+      try {
+        const status = await migrationService.checkStatus(userId, deviceId);
+        
+        if (status.status === 'active') {
+          // Device is good
+          return;
+        }
+
+        if (status.status === 'pending') {
+          setMigrationStatus(status.canFinalize ? 'ready' : 'pending');
+          setMigrationExpiry(status.expiry);
+          setShowMigrationModal(true);
+        }
+
+      } catch (error: any) {
+        // If 403/Unauthorized, it means device is new/unknown
+        if (error.response?.status === 403) {
+             setMigrationStatus('initial');
+             setShowMigrationModal(true);
+        }
+        console.error('Device status check failed:', error);
+      }
+    };
+
     fetchData();
-  }, [userId]);
+    checkDevice();
+  }, [userId, deviceId]);
 
   const handleSend = async () => {
       // 1. Simulate initiating a transaction
@@ -68,6 +101,12 @@ export default function Dashboard() {
       } finally {
           setIsProcessing(false);
       }
+  };
+
+  const handleMigrationSuccess = () => {
+      setShowMigrationModal(false);
+      // Refresh data or show success toast
+      alert("Device successfully linked!");
   };
 
   if (!portfolio) {
@@ -201,6 +240,15 @@ export default function Dashboard() {
         description="Please enter your Spending PIN to authorize this $1,000 transaction."
         isLoading={isProcessing}
         error={pinError}
+      />
+
+      <MigrationModal
+        isOpen={showMigrationModal}
+        userId={userId}
+        deviceId={deviceId}
+        initialStatus={migrationStatus}
+        expiryDate={migrationExpiry}
+        onSuccess={handleMigrationSuccess}
       />
     </div>
   );

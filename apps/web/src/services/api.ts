@@ -99,6 +99,34 @@ export const securityService = {
   }
 };
 
+export const migrationService = {
+  initiateMigration: async (userId: string, deviceId: string) => {
+    const response = await api.post('/migration/initiate', { userId }, {
+      headers: { 'x-device-library-id': deviceId }
+    });
+    return response.data;
+  },
+
+  checkStatus: async (userId: string, deviceId: string) => {
+    const response = await api.get(`/migration/status/${userId}`, {
+      headers: { 'x-device-library-id': deviceId }
+    });
+    return response.data;
+  },
+
+  finalizeMigration: async (userId: string, deviceId: string) => {
+    const response = await api.post('/migration/finalize', { userId }, {
+      headers: { 'x-device-library-id': deviceId }
+    });
+    return response.data;
+  },
+
+  cancelMigration: async (userId: string) => {
+    const response = await api.post('/migration/cancel', { userId });
+    return response.data;
+  }
+};
+
 export const walletService = {
   getPortfolio: async (userId: string) => {
     const response = await api.get(`/wallet/portfolio/${userId}`);

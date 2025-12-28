@@ -381,4 +381,31 @@ export class AdminController {
         res.status(500).json({ error: "Internal server error" });
     }
   }
+
+  static async forceResetDeviceLock(req: Request, res: Response) {
+    try {
+        const { userId } = req.params;
+        
+        const userRepo = AppDataSource.getRepository(User);
+        const user = await userRepo.findOneBy({ id: userId });
+
+        if (!user) {
+            res.status(404).json({ error: "User not found" });
+            return;
+        }
+
+        // Force clear device lock
+        user.deviceLibraryId = "";
+        user.pendingDeviceLibraryId = "";
+        // user.migrationExpiry = null; // Ideally clear this too
+
+        await userRepo.save(user);
+
+        console.log(`[Admin] FORCE RESET Device Lock for user ${userId}.`);
+        res.status(200).json({ success: true, message: "Device lock reset. User can now link new device." });
+    } catch (error) {
+        console.error("Error in forceResetDeviceLock:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+  }
 }

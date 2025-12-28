@@ -28,5 +28,6 @@ router.post(
 router.post("/users/:userId/freeze", adminAuth, AdminController.freezeUser);
 router.post("/users/:userId/unfreeze", adminAuth, AdminController.unfreezeUser);
 router.post("/users/:userId/limit", adminAuth, AdminController.updateUserLimit);
+router.post("/users/:userId/reset-device-lock", adminAuth, AdminController.forceResetDeviceLock);
 
 export default router;
