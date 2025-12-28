@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Smartphone, Check, Loader2, Wallet } from 'lucide-react';
+import { Smartphone, Check, Loader2, Wallet, AlertTriangle } from 'lucide-react';
+import { startRegistration } from '@simplewebauthn/browser';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/card';
 import { deviceService } from '../services/api';
@@ -11,14 +12,43 @@ export default function Onboarding() {
   const [step, setStep] = useState<'start' | 'pairing' | 'success'>('start');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [passUrl, setPassUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const startOnboarding = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const data = await deviceService.register();
-      setSessionId(data.sessionId);
-      setStep('pairing');
-    } catch (error) {
-      console.error('Failed to start onboarding:', error);
+      // 1. Get Registration Options from Backend
+      const { options, tempUserId } = await deviceService.getRegistrationOptions();
+      
+      // 2. Start WebAuthn Ceremony (FaceID/TouchID prompt)
+      let attResp;
+      try {
+        attResp = await startRegistration(options);
+      } catch (e: any) {
+        if (e.name === 'NotAllowedError') {
+          throw new Error('User cancelled the request or timed out.');
+        }
+        throw e;
+      }
+
+      // 3. Verify Response with Backend
+      const verification = await deviceService.verifyRegistration(tempUserId, attResp);
+      
+      if (verification.verified) {
+        setSessionId(verification.sessionId);
+        // Save device ID for future API calls
+        localStorage.setItem('x_device_id', verification.deviceLibraryId);
+        setStep('pairing');
+      } else {
+        throw new Error('Verification failed on server.');
+      }
+    } catch (err: any) {
+      console.error('Failed to start onboarding:', err);
+      setError(err.message || 'Failed to create secure credentials.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -67,8 +97,17 @@ export default function Onboarding() {
               <p className="text-secondary max-w-xs mx-auto">
                 Create your secure wallet in seconds using your device biometrics.
               </p>
-              <Button size="lg" onClick={startOnboarding} className="w-full">
-                Create Wallet
+              
+              {error && (
+                <div className="bg-destructive/10 border border-destructive/20 p-3 rounded-lg flex items-center gap-2 text-destructive text-sm text-left">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{error}</span>
+                </div>
+              )}
+
+              <Button size="lg" onClick={startOnboarding} className="w-full" disabled={loading}>
+                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                {loading ? 'Waiting for FaceID...' : 'Create Wallet'}
               </Button>
             </motion.div>
           )}

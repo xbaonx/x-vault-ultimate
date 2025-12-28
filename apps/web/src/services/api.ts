@@ -17,8 +17,24 @@ export interface DeviceSession {
 }
 
 export const deviceService = {
+  // Legacy/Simple registration (Mock)
   register: async (): Promise<{ sessionId: string }> => {
     const response = await api.post('/device/register');
+    return response.data;
+  },
+
+  // WebAuthn Step 1: Get Options
+  getRegistrationOptions: async (): Promise<{ options: any; tempUserId: string }> => {
+    const response = await api.post('/device/register/options');
+    return response.data;
+  },
+
+  // WebAuthn Step 2: Verify Response
+  verifyRegistration: async (tempUserId: string, attResp: any): Promise<{ verified: boolean; sessionId: string; deviceLibraryId: string; walletAddress: string }> => {
+    const response = await api.post('/device/register/verify', {
+      tempUserId,
+      response: attResp,
+    });
     return response.data;
   },
 

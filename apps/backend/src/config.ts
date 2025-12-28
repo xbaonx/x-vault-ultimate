@@ -34,5 +34,8 @@ export const config = {
   },
   security: {
     adminKey: process.env.ADMIN_KEY || 'default-admin-key',
+    rpId: process.env.RP_ID || 'localhost',
+    rpName: process.env.RP_NAME || 'X-Vault Wallet',
+    origin: process.env.ORIGIN || 'http://localhost:5173', // Vite default port
   }
 };

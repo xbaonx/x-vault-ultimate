@@ -140,6 +140,28 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleFreeze = async (userId: string) => {
+    if (!confirm('Are you sure you want to FREEZE this user? They will lose access immediately.')) return;
+    try {
+        await adminApi.freezeUser(sessionKey, userId);
+        // Refresh
+        fetchData(sessionKey);
+    } catch (err: any) {
+        alert(err.message || 'Failed to freeze user');
+    }
+  };
+
+  const handleUnfreeze = async (userId: string) => {
+    if (!confirm('Unfreeze this user?')) return;
+    try {
+        await adminApi.unfreezeUser(sessionKey, userId);
+        // Refresh
+        fetchData(sessionKey);
+    } catch (err: any) {
+        alert(err.message || 'Failed to unfreeze user');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-black text-white flex">
       {/* Sidebar */}
@@ -389,9 +411,23 @@ export default function AdminDashboard() {
                     <div>
                       <p className="font-medium text-white">{user.address}</p>
                       <p className="text-xs text-secondary">Joined: {new Date(user.createdAt).toLocaleString()}</p>
+                      <p className="text-xs text-secondary/50">ID: {user.id}</p>
                     </div>
-                    <div className="px-2 py-1 rounded-full text-xs bg-success/20 text-success">
-                      Active
+                    <div className="flex items-center gap-3">
+                        <div className={`px-2 py-1 rounded-full text-xs ${
+                            user.isFrozen ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success'
+                        }`}>
+                            {user.isFrozen ? 'FROZEN' : 'Active'}
+                        </div>
+                        {user.isFrozen ? (
+                            <Button size="sm" variant="outline" className="h-7 text-xs border-success/50 text-success hover:text-success" onClick={() => handleUnfreeze(user.id)}>
+                                Unfreeze
+                            </Button>
+                        ) : (
+                            <Button size="sm" variant="outline" className="h-7 text-xs border-destructive/50 text-destructive hover:text-destructive" onClick={() => handleFreeze(user.id)}>
+                                Freeze
+                            </Button>
+                        )}
                     </div>
                   </div>
                 ))}

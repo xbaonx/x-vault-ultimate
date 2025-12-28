@@ -45,6 +45,7 @@ export type UserData = {
   address: string;
   createdAt: string;
   updatedAt: string;
+  isFrozen?: boolean;
 };
 
 export type TransactionData = {
