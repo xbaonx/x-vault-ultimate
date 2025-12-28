@@ -13,11 +13,34 @@ import { ethers } from 'ethers';
 
 export class DeviceController {
   
+  // Helper to determine RP_ID and Origin dynamically if not set in env
+  static getSecurityConfig(req: Request) {
+    const requestOrigin = req.get('Origin') || '';
+    let { rpId, origin } = config.security;
+
+    // If we are in production or receiving a request from a real domain,
+    // and the config is still default 'localhost', try to adapt.
+    if (rpId === 'localhost' && requestOrigin && !requestOrigin.includes('localhost')) {
+      try {
+        const url = new URL(requestOrigin);
+        rpId = url.hostname;
+        origin = requestOrigin;
+        console.log(`[Device] Adapted RP_ID to ${rpId} and Origin to ${origin} from request.`);
+      } catch (e) {
+        console.warn('[Device] Failed to parse request origin for dynamic RP_ID fallback');
+      }
+    }
+
+    return { rpId, origin };
+  }
+
   /**
    * Step 1: Generate WebAuthn Registration Options
    */
   static async generateRegistrationOptions(req: Request, res: Response) {
     try {
+      const { rpId } = DeviceController.getSecurityConfig(req);
+      
       // In a real flow, you might ask for a username or just generate one for a new wallet
       const username = `user-${uuidv4().slice(0, 8)}`;
       
@@ -32,7 +55,7 @@ export class DeviceController {
       
       const options = await generateRegistrationOptions({
         rpName: config.security.rpName,
-        rpID: config.security.rpId,
+        rpID: rpId,
         userID: new Uint8Array(Buffer.from(newUser.id || uuidv4())), // Convert string to Uint8Array
         userName: username,
         // Don't exclude credentials for now as we are creating a new one
@@ -66,6 +89,7 @@ export class DeviceController {
   static async verifyRegistration(req: Request, res: Response) {
     try {
       const { tempUserId, response } = req.body;
+      const { rpId, origin } = DeviceController.getSecurityConfig(req);
       
       const userRepo = AppDataSource.getRepository(User);
       const user = await userRepo.findOneBy({ id: tempUserId });
@@ -78,8 +102,8 @@ export class DeviceController {
       const verification = await verifyRegistrationResponse({
         response,
         expectedChallenge: user.currentChallenge,
-        expectedOrigin: config.security.origin,
-        expectedRPID: config.security.rpId,
+        expectedOrigin: origin,
+        expectedRPID: rpId,
       });
 
       if (verification.verified && verification.registrationInfo) {
