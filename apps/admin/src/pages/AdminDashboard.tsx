@@ -44,8 +44,16 @@ export default function AdminDashboard() {
   const [appleError, setAppleError] = useState<string | null>(null);
   const [appleSuccess, setAppleSuccess] = useState<string | null>(null);
 
-  const envApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-  const apiOrigin = envApiUrl.startsWith('http') ? envApiUrl : `https://${envApiUrl}`;
+  const normalizeApiUrl = (url: string | undefined) => {
+    if (!url) return 'http://localhost:3000';
+    if (url.startsWith('http')) return url;
+    if (url.includes('localhost')) return `http://${url}`;
+    if (!url.includes('.')) return `https://${url}.onrender.com`;
+    return `https://${url}`;
+  };
+
+  const envApiUrl = import.meta.env.VITE_API_URL;
+  const apiOrigin = normalizeApiUrl(envApiUrl);
 
   // Effect to load data when tab changes, ONLY if we have a valid session key
   useEffect(() => {

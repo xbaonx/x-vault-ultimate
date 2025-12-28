@@ -73,6 +73,16 @@ export default function Onboarding() {
     return () => clearInterval(interval);
   }, [step, sessionId]);
 
+  // Helper to normalize API URL for display/links
+  const getNormalizedApiUrl = () => {
+    const url = import.meta.env.VITE_API_URL;
+    if (!url) return 'http://localhost:3000';
+    if (url.startsWith('http')) return url;
+    if (url.includes('localhost')) return `http://${url}`;
+    if (!url.includes('.')) return `https://${url}.onrender.com`;
+    return `https://${url}`;
+  };
+
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-4">
       <Card className="w-full max-w-md bg-surface border-surface/50">
@@ -149,7 +159,7 @@ export default function Onboarding() {
                 </p>
                 {passUrl && (
                   <a 
-                    href={`${(import.meta.env.VITE_API_URL || 'http://localhost:3000').startsWith('http') ? (import.meta.env.VITE_API_URL || 'http://localhost:3000') : `https://${import.meta.env.VITE_API_URL}`}${passUrl}`} 
+                    href={`${getNormalizedApiUrl()}${passUrl}`} 
                     className="inline-block bg-black border border-white/20 rounded-lg px-4 py-2 mb-4 hover:bg-white/5 transition-colors"
                   >
                     <div className="flex items-center space-x-2">

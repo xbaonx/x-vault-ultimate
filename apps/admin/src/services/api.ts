@@ -1,11 +1,15 @@
-const ENV_API_URL = import.meta.env.VITE_API_URL;
-const FALLBACK_URL = 'http://localhost:3000';
-const baseApiUrl = ENV_API_URL || FALLBACK_URL;
-const normalizedApiUrl = baseApiUrl.startsWith('http') ? baseApiUrl : `https://${baseApiUrl}`;
-const API_URL = normalizedApiUrl + '/api';
+const normalizeApiUrl = (url: string | undefined) => {
+  if (!url) return 'http://localhost:3000';
+  if (url.startsWith('http')) return url;
+  if (url.includes('localhost')) return `http://${url}`;
+  if (!url.includes('.')) return `https://${url}.onrender.com`;
+  return `https://${url}`;
+};
+
+const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL) + '/api';
 
 console.log('[AdminAPI] Initialization:', {
-  envViteApiUrl: ENV_API_URL,
+  envViteApiUrl: import.meta.env.VITE_API_URL,
   finalApiUrl: API_URL,
   windowLocation: window.location.origin
 });

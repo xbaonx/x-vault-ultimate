@@ -1,7 +1,16 @@
 import axios from 'axios';
 
-const envUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-const API_URL = (envUrl.startsWith('http') ? envUrl : `https://${envUrl}`) + '/api';
+const normalizeApiUrl = (url: string) => {
+  if (!url) return 'http://localhost:3000';
+  if (url.startsWith('http')) return url;
+  if (url.includes('localhost')) return `http://${url}`;
+  // If it has no dot, it's likely a Render service slug, so append .onrender.com
+  if (!url.includes('.')) return `https://${url}.onrender.com`;
+  return `https://${url}`;
+};
+
+const envUrl = import.meta.env.VITE_API_URL;
+const API_URL = normalizeApiUrl(envUrl) + '/api';
 
 export const api = axios.create({
   baseURL: API_URL,
