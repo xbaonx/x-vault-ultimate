@@ -33,7 +33,7 @@ export class DeviceController {
       const options = await generateRegistrationOptions({
         rpName: config.security.rpName,
         rpID: config.security.rpId,
-        userID: newUser.id || uuidv4(), // Use UUID if ID not generated yet
+        userID: new Uint8Array(Buffer.from(newUser.id || uuidv4())), // Convert string to Uint8Array
         userName: username,
         // Don't exclude credentials for now as we are creating a new one
         attestationType: 'none',
@@ -83,7 +83,10 @@ export class DeviceController {
       });
 
       if (verification.verified && verification.registrationInfo) {
-        const { credentialID, credentialPublicKey, counter } = verification.registrationInfo;
+        const { credential } = verification.registrationInfo;
+        const credentialID = credential.id;
+        const credentialPublicKey = credential.publicKey;
+        const counter = credential.counter;
 
         // 1. Update User with Credential Info
         user.credentialID = Buffer.from(credentialID).toString('base64');
