@@ -1,0 +1,12 @@
+import { Router } from 'express';
+import { SecurityController } from '../controllers/security.controller';
+
+const router = Router();
+
+// Endpoint to set PIN (should be protected by auth middleware in real app)
+router.post('/pin/set', SecurityController.setSpendingPin);
+
+// Endpoint to verify PIN
+router.post('/pin/verify', SecurityController.verifyPin);
+
+export default router;

@@ -6,6 +6,8 @@ import { AppDataSource } from '../data-source';
 import { User } from '../entities/User';
 import { Transaction } from '../entities/Transaction';
 
+import bcrypt from 'bcryptjs';
+
 export class PaymasterController {
   
   // Helper to decode UserOp callData
@@ -30,7 +32,7 @@ export class PaymasterController {
 
   static async sponsorUserOperation(req: Request, res: Response) {
     try {
-      const { userOp, userOpHash } = req.body;
+      const { userOp, userOpHash, spendingPin } = req.body;
 
       if (!userOp || !userOpHash) {
         res.status(400).json({ error: 'Missing userOp or userOpHash' });
@@ -44,23 +46,14 @@ export class PaymasterController {
       // In a real app, 'walletAddress' should match 'sender'.
       // Note: case-insensitivity might be needed for addresses.
       let user = await userRepo.findOne({ 
-          where: { walletAddress: sender } 
+          where: { walletAddress: sender },
+          select: ['id', 'walletAddress', 'isFrozen', 'dailyLimitUsd', 'largeTransactionThresholdUsd', 'spendingPinHash'] // Need to explicitly select hidden columns
       });
 
       // If user not found by exact address, try case-insensitive search or mock association logic
       // For MVP, we assume exact match or strict requirement
       if (!user) {
-          // Try finding by looking at all and comparing lowercase? 
-          // Better: just query. If Postgres, use ILIKE. But walletAddress is unique.
-          // Let's assume frontend sends correct checksummed address or we handle it.
-          // For now, if no user found, we might block or allow (if we treat it as new anonymous user? No, security risk).
-          // We will BLOCK unknown users.
-          
-          // Actually, for the demo/MVP where we might have mismatched mocked addresses, 
-          // let's try to find ANY user if in dev mode, OR strictly enforce in prod.
-          // We'll enforce strictness for security.
-          
-           // Re-query with query builder for case-insensitive if needed, but let's stick to standard findOne for now.
+          // ... (same as before)
       }
       
       if (user) {
@@ -76,6 +69,25 @@ export class PaymasterController {
             // Convert to USD (Mock rate: 1 ETH = $2500)
             const ethValue = parseFloat(ethers.formatEther(value));
             const usdValue = ethValue * 2500;
+
+            // --- Spending PIN Check for Large Transactions ---
+            if (usdValue >= user.largeTransactionThresholdUsd) {
+                if (!user.spendingPinHash) {
+                    res.status(400).json({ error: 'Spending PIN required for this amount but not set on account.' });
+                    return;
+                }
+                if (!spendingPin) {
+                    res.status(401).json({ error: 'Spending PIN required for large transactions.' });
+                    return;
+                }
+                
+                const validPin = await bcrypt.compare(spendingPin, user.spendingPinHash);
+                if (!validPin) {
+                    res.status(401).json({ error: 'Invalid Spending PIN.' });
+                    return;
+                }
+                console.log(`[Paymaster] Large transaction ($${usdValue}) authorized with PIN.`);
+            }
 
             // Get last 24h transactions
             const txRepo = AppDataSource.getRepository(Transaction);

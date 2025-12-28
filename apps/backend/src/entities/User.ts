@@ -36,6 +36,12 @@ export class User {
     @Column({ type: 'float', default: 2000.0 })
     dailyLimitUsd!: number;
 
+    @Column({ type: 'float', default: 500.0 })
+    largeTransactionThresholdUsd!: number;
+
+    @Column({ nullable: true, select: false }) // Do not return by default
+    spendingPinHash!: string;
+
     @CreateDateColumn()
     createdAt!: Date;
 
