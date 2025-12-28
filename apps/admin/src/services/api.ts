@@ -1,6 +1,8 @@
 const ENV_API_URL = import.meta.env.VITE_API_URL;
 const FALLBACK_URL = 'http://localhost:3000';
-const API_URL = (ENV_API_URL || FALLBACK_URL) + '/api';
+const baseApiUrl = ENV_API_URL || FALLBACK_URL;
+const normalizedApiUrl = baseApiUrl.startsWith('http') ? baseApiUrl : `https://${baseApiUrl}`;
+const API_URL = normalizedApiUrl + '/api';
 
 console.log('[AdminAPI] Initialization:', {
   envViteApiUrl: ENV_API_URL,
@@ -45,6 +47,7 @@ export type UserData = {
   address: string;
   createdAt: string;
   updatedAt: string;
+  isFrozen?: boolean;
 };
 
 export type TransactionData = {
@@ -155,5 +158,37 @@ export const adminApi = {
     }
 
     return res.json();
+  },
+
+  freezeUser: async (adminKey: string, userId: string): Promise<void> => {
+    const res = await fetch(`${API_URL}/admin/users/${userId}/freeze`, {
+      method: 'POST',
+      headers: buildHeaders(adminKey),
+    });
+
+    if (res.status === 401) {
+      throw new Error('Invalid Admin Key. Please check your key.');
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || 'Failed to freeze user');
+    }
+  },
+
+  unfreezeUser: async (adminKey: string, userId: string): Promise<void> => {
+    const res = await fetch(`${API_URL}/admin/users/${userId}/unfreeze`, {
+      method: 'POST',
+      headers: buildHeaders(adminKey),
+    });
+
+    if (res.status === 401) {
+      throw new Error('Invalid Admin Key. Please check your key.');
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || 'Failed to unfreeze user');
+    }
   },
 };

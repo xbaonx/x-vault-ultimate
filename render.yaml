@@ -46,7 +46,7 @@ services:
         fromService:
           type: web
           name: x-vault-backend
-          property: url
+          property: host
     routes:
       - type: rewrite
         source: /*
@@ -64,7 +64,7 @@ services:
         fromService:
           type: web
           name: x-vault-backend
-          property: url
+          property: host
     routes:
       - type: rewrite
         source: /*

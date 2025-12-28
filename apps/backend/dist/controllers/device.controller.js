@@ -3,14 +3,22 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DeviceController = void 0;
 const uuid_1 = require("uuid");
 const pass_service_1 = require("../services/pass.service");
-// In-memory storage for polling sessions (replace with Redis/DB in production)
-const pollingSessions = new Map();
+const data_source_1 = require("../data-source");
+const PollingSession_1 = require("../entities/PollingSession");
+const User_1 = require("../entities/User");
 class DeviceController {
     static async register(req, res) {
         try {
+            const sessionRepo = data_source_1.AppDataSource.getRepository(PollingSession_1.PollingSession);
+            const userRepo = data_source_1.AppDataSource.getRepository(User_1.User);
             // Start a new polling session
             const sessionId = (0, uuid_1.v4)();
-            pollingSessions.set(sessionId, { status: 'pending' });
+            const newSession = sessionRepo.create({
+                id: sessionId,
+                status: 'pending'
+            });
+            await sessionRepo.save(newSession);
+            console.log(`[Device] Created session: ${sessionId}.`);
             // In a real flow, this would return a URL/Token for the frontend to add to Apple Wallet
             // The Apple Wallet pass would then call back to a webhook when added (if supported)
             // or the user manually confirms.
@@ -20,12 +28,37 @@ class DeviceController {
             // To simulate "Device Binding", we generate a unique device ID here
             const deviceLibraryId = (0, uuid_1.v4)();
             // Simulate async completion (in real world, this happens when the Pass is installed)
-            setTimeout(() => {
-                pollingSessions.set(sessionId, {
-                    status: 'completed',
-                    deviceId: deviceLibraryId,
-                    passUrl: `/api/device/pass/${deviceLibraryId}`
-                });
+            setTimeout(async () => {
+                try {
+                    const session = await sessionRepo.findOneBy({ id: sessionId });
+                    if (session) {
+                        // Update session
+                        session.status = 'completed';
+                        session.deviceId = deviceLibraryId;
+                        session.passUrl = `/api/device/pass/${deviceLibraryId}`;
+                        await sessionRepo.save(session);
+                        // Create Mock User for Dashboard visibility
+                        // In real app, this happens after smart account deployment
+                        const mockWalletAddress = `0x${deviceLibraryId.replace(/-/g, '').substring(0, 40)}`;
+                        let user = await userRepo.findOneBy({ walletAddress: mockWalletAddress });
+                        if (!user) {
+                            user = userRepo.create({
+                                walletAddress: mockWalletAddress,
+                                deviceLibraryId: deviceLibraryId,
+                                isBiometricEnabled: true
+                            });
+                            await userRepo.save(user);
+                            console.log(`[Device] Created new user: ${user.id} (${mockWalletAddress})`);
+                        }
+                        console.log(`[Device] Completed session: ${sessionId}`);
+                    }
+                    else {
+                        console.warn(`[Device] Session ${sessionId} not found during async completion.`);
+                    }
+                }
+                catch (err) {
+                    console.error(`[Device] Error updating session ${sessionId}:`, err);
+                }
             }, 2000);
             res.status(200).json({ sessionId });
         }
@@ -37,7 +70,9 @@ class DeviceController {
     static async pollStatus(req, res) {
         try {
             const { sessionId } = req.params;
-            const session = pollingSessions.get(sessionId);
+            const sessionRepo = data_source_1.AppDataSource.getRepository(PollingSession_1.PollingSession);
+            const session = await sessionRepo.findOneBy({ id: sessionId });
+            console.log(`[Device] Polling session: ${sessionId}. Found: ${!!session}`);
             if (!session) {
                 res.status(404).json({ error: 'Session not found' });
                 return;

@@ -25,4 +25,7 @@ router.post(
   AdminController.uploadAppleCerts
 );
 
+router.post("/users/:userId/freeze", adminAuth, AdminController.freezeUser);
+router.post("/users/:userId/unfreeze", adminAuth, AdminController.unfreezeUser);
+
 export default router;

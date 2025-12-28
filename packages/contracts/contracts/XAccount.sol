@@ -22,8 +22,19 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     // Device binding mapping: deviceIdHash => isActive
     mapping(bytes32 => bool) public activeDevices;
 
+    // Security: Spending Limits
+    uint256 public dailyLimit;
+    mapping(uint256 => uint256) public dailySpent; // day => amount spent
+
+    // Security: TimeLock for Critical Actions (Delay: 48 hours)
+    uint256 public constant SECURITY_DELAY = 2 days;
+    mapping(bytes32 => uint256) public timelockedActions; // actionHash => executableTimestamp
+
     event DeviceAdded(bytes32 indexed deviceIdHash);
     event DeviceRemoved(bytes32 indexed deviceIdHash);
+    event SpendingLimitChanged(uint256 newLimit);
+    event CriticalActionScheduled(bytes32 indexed actionHash, uint256 executableTime);
+    event CriticalActionCancelled(bytes32 indexed actionHash);
 
     modifier onlyOwner() {
         _checkOwner();
@@ -42,6 +53,9 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     function initialize(address _owner) public virtual initializer {
         _entryPoint; // access to immutable to prevent unused warning if any
         owner = _owner;
+        dailyLimit = 2000 * 10**18; // Default limit: 2000 "Units" (e.g., if USD peg used, otherwise ETH)
+                                    // For ETH, this is huge, let's assume this is in WEI and we want 1 ETH limit by default for safety
+        dailyLimit = 1 ether; 
     }
 
     /**
@@ -73,10 +87,23 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     }
 
     /**
+     * @dev Internal function to enforce spending limits.
+     */
+    function _enforceLimits(uint256 value) internal {
+        if (value > 0) {
+            uint256 currentDay = block.timestamp / 1 days;
+            uint256 spent = dailySpent[currentDay];
+            require(spent + value <= dailyLimit, "XAccount: Daily spending limit exceeded");
+            dailySpent[currentDay] = spent + value;
+        }
+    }
+
+    /**
      * @dev Execute a transaction (called directly from entryPoint).
      */
     function execute(address dest, uint256 value, bytes calldata func) external {
         _requireFromEntryPoint();
+        _enforceLimits(value);
         _call(dest, value, func);
     }
 
@@ -87,9 +114,12 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
         _requireFromEntryPoint();
         require(dest.length == value.length && value.length == func.length, "XAccount: length mismatch");
         
+        uint256 totalValue = 0;
         for (uint256 i = 0; i < dest.length; i++) {
+            totalValue += value[i];
             _call(dest[i], value[i], func[i]);
         }
+        _enforceLimits(totalValue);
     }
 
     function _call(address target, uint256 value, bytes memory data) internal {
@@ -102,9 +132,40 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     }
 
     /**
-     * @dev Implementation for UUPS upgradeability.
+     * @dev Set daily spending limit.
      */
-    function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {}
+    function setDailyLimit(uint256 _newLimit) external onlyOwner {
+        dailyLimit = _newLimit;
+        emit SpendingLimitChanged(_newLimit);
+    }
+
+    /**
+     * @dev Schedule a critical action (like upgrade).
+     */
+    function scheduleUpgrade(address newImplementation) external onlyOwner {
+        bytes32 actionHash = keccak256(abi.encodePacked("UPGRADE", newImplementation));
+        uint256 executableTime = block.timestamp + SECURITY_DELAY;
+        timelockedActions[actionHash] = executableTime;
+        emit CriticalActionScheduled(actionHash, executableTime);
+    }
+
+    /**
+     * @dev Cancel a scheduled critical action.
+     */
+    function cancelUpgrade(address newImplementation) external onlyOwner {
+        bytes32 actionHash = keccak256(abi.encodePacked("UPGRADE", newImplementation));
+        delete timelockedActions[actionHash];
+        emit CriticalActionCancelled(actionHash);
+    }
+
+    /**
+     * @dev Implementation for UUPS upgradeability with TimeLock.
+     */
+    function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
+        bytes32 actionHash = keccak256(abi.encodePacked("UPGRADE", newImplementation));
+        require(timelockedActions[actionHash] != 0, "XAccount: Upgrade not scheduled");
+        require(block.timestamp >= timelockedActions[actionHash], "XAccount: TimeLock active");
+    }
 
     /**
      * @dev Add a device binding (hash of device ID).

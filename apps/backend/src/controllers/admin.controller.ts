@@ -305,4 +305,51 @@ export class AdminController {
       res.status(500).json({ error: "Internal server error" });
     }
   }
+
+  static async freezeUser(req: Request, res: Response) {
+    try {
+        const { userId } = req.params;
+        const userRepo = AppDataSource.getRepository(User);
+        const user = await userRepo.findOneBy({ id: userId });
+
+        if (!user) {
+            res.status(404).json({ error: "User not found" });
+            return;
+        }
+
+        user.isFrozen = true;
+        await userRepo.save(user);
+
+        console.log(`[Admin] User ${userId} frozen.`);
+        res.status(200).json({ id: user.id, isFrozen: true });
+    } catch (error) {
+        console.error("Error in freezeUser:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+  }
+
+  static async unfreezeUser(req: Request, res: Response) {
+    try {
+        const { userId } = req.params;
+        const userRepo = AppDataSource.getRepository(User);
+        const user = await userRepo.findOneBy({ id: userId });
+
+        if (!user) {
+            res.status(404).json({ error: "User not found" });
+            return;
+        }
+
+        // Apply Security Delay check here?
+        // For MVP, allow admin to unfreeze immediately or maybe warn.
+        
+        user.isFrozen = false;
+        await userRepo.save(user);
+
+        console.log(`[Admin] User ${userId} unfrozen.`);
+        res.status(200).json({ id: user.id, isFrozen: false });
+    } catch (error) {
+        console.error("Error in unfreezeUser:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+  }
 }

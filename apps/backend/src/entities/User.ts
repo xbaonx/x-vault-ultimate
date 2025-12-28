@@ -14,6 +14,25 @@ export class User {
     @Column({ default: false })
     isBiometricEnabled!: boolean;
 
+    // WebAuthn Credentials
+    @Column({ nullable: true })
+    currentChallenge!: string; // Temporary storage for registration challenge
+
+    @Column({ nullable: true })
+    credentialID!: string;
+
+    @Column({ type: 'bytea', nullable: true })
+    credentialPublicKey!: Buffer;
+
+    @Column({ default: 0 })
+    counter!: number;
+
+    @Column("simple-array", { nullable: true })
+    transports!: string[];
+
+    @Column({ default: false })
+    isFrozen!: boolean;
+
     @CreateDateColumn()
     createdAt!: Date;
 
