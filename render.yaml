@@ -32,6 +32,12 @@ services:
         sync: false
       - key: DB_SSL_REJECT_UNAUTHORIZED
         sync: false
+      - key: RP_ID
+        sync: false
+      - key: ORIGIN
+        sync: false
+      - key: RP_NAME
+        value: X-Vault Wallet
     autoDeploy: true
 
   # Frontend Web App (Static Site)
