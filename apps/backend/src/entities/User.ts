@@ -11,6 +11,12 @@ export class User {
     @Column({ nullable: true })
     deviceLibraryId!: string;
 
+    @Column({ unique: true, nullable: true })
+    email!: string;
+
+    @Column({ unique: true, nullable: true })
+    appleUserId!: string;
+
     @Column({ default: false })
     isBiometricEnabled!: boolean;
 

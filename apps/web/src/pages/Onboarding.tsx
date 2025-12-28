@@ -1,26 +1,77 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Smartphone, Check, Loader2, Wallet, AlertTriangle } from 'lucide-react';
+import { Smartphone, Check, Loader2, Wallet, AlertTriangle, ShieldCheck, Lock } from 'lucide-react';
 import { startRegistration } from '@simplewebauthn/browser';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/card';
-import { deviceService } from '../services/api';
+import { deviceService, authService, securityService } from '../services/api';
+import { AppleSignInButton } from '../components/AppleSignInButton';
+import { PinInput } from '../components/PinInput';
+
+type OnboardingStep = 'siwa' | 'biometric' | 'pin-setup' | 'pairing' | 'success';
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'start' | 'pairing' | 'success'>('start');
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [passUrl, setPassUrl] = useState<string | null>(null);
+  const [step, setStep] = useState<OnboardingStep>('siwa');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // State for flow data
+  const [userId, setUserId] = useState<string | null>(null);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
+  const [passUrl, setPassUrl] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
-  const startOnboarding = async () => {
+  // --- Step 1: Sign in with Apple ---
+  const handleAppleSignIn = async () => {
     setLoading(true);
     setError(null);
     try {
-      // 1. Get Registration Options from Backend
-      const { options, tempUserId } = await deviceService.getRegistrationOptions();
+        // Mock Identity Token for Dev
+        const mockToken = `mock-identity-token-${Date.now()}`;
+        const mockUser = JSON.stringify({
+            name: { firstName: 'Demo', lastName: 'User' },
+            email: 'demo@xvault.app'
+        });
+
+        const data = await authService.loginWithApple(mockToken, mockUser);
+        
+        setUserId(data.userId);
+        setEmail(data.email);
+
+        // Determine next step based on user status
+        if (data.hasWallet && data.hasPin) {
+            // Existing user with everything setup -> Go to dashboard (or maybe verify PIN/Bio first?)
+            // For onboarding flow, if they have wallet, we might just be logging in on new device?
+            // If new device, they need to setup Passkey for THIS device.
+            setStep('biometric');
+        } else if (data.hasWallet && !data.hasPin) {
+             // Has wallet but no PIN -> Setup PIN
+             setStep('pin-setup'); // Actually need device first? Passkey binds device.
+             // Wait, Passkey is per device. So we always need 'biometric' step for new device.
+             setStep('biometric');
+        } else {
+            // Brand new user
+            setStep('biometric');
+        }
+
+    } catch (err: any) {
+        console.error("SIWA Error:", err);
+        setError("Failed to sign in with Apple.");
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  // --- Step 2: Biometric (Passkey) Registration ---
+  const startBiometricSetup = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // 1. Get Registration Options (linked to userId from SIWA)
+      const { options, tempUserId } = await deviceService.getRegistrationOptions(userId || undefined);
       
       // 2. Start WebAuthn Ceremony (FaceID/TouchID prompt)
       let attResp;
@@ -34,24 +85,49 @@ export default function Onboarding() {
       }
 
       // 3. Verify Response with Backend
+      // Note: verifyRegistration now returns walletAddress and deviceLibraryId
       const verification = await deviceService.verifyRegistration(tempUserId, attResp);
       
       if (verification.verified) {
         setSessionId(verification.sessionId);
-        // Save device ID for future API calls
+        setDeviceId(verification.deviceLibraryId);
+        
+        // Save device ID locally
         localStorage.setItem('x_device_id', verification.deviceLibraryId);
-        setStep('pairing');
+        if (userId) localStorage.setItem('x_user_id', userId);
+
+        // Move to PIN setup
+        setStep('pin-setup');
       } else {
         throw new Error('Verification failed on server.');
       }
     } catch (err: any) {
-      console.error('Failed to start onboarding:', err);
+      console.error('Failed to create passkey:', err);
       setError(err.message || 'Failed to create secure credentials.');
     } finally {
       setLoading(false);
     }
   };
 
+  // --- Step 3: PIN Setup ---
+  const handlePinComplete = async (pin: string) => {
+      if (!userId || !deviceId) {
+          setError("Session invalid. Please restart.");
+          return;
+      }
+      setLoading(true);
+      try {
+          await securityService.setPin(userId, pin, deviceId);
+          // Success -> Start polling for Pass generation or just finish
+          setStep('pairing');
+      } catch (err: any) {
+          setError(err.response?.data?.error || "Failed to set PIN");
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  // --- Polling for Apple Wallet Pass ---
   useEffect(() => {
     let interval: any;
 
@@ -85,29 +161,72 @@ export default function Onboarding() {
 
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-4">
-      <Card className="w-full max-w-md bg-surface border-surface/50">
+      <Card className="w-full max-w-md bg-surface border-surface/50 overflow-hidden relative">
+        {loading && (
+            <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm">
+                <Loader2 className="w-10 h-10 text-primary animate-spin" />
+            </div>
+        )}
+
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold tracking-tighter mb-2">
             X-Vault
           </CardTitle>
           <CardDescription className="text-lg">
-            Next Gen Web3 Wallet
+            {step === 'siwa' && "Sign in to get started"}
+            {step === 'biometric' && "Secure your Vault"}
+            {step === 'pin-setup' && "Create Spending PIN"}
+            {step === 'pairing' && "Finalizing Setup"}
+            {step === 'success' && "You're all set!"}
           </CardDescription>
         </CardHeader>
+        
         <CardContent className="flex flex-col items-center justify-center min-h-[300px] space-y-8">
-          {step === 'start' && (
+          
+          {/* STEP 1: SIWA */}
+          {step === 'siwa' && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="text-center space-y-6"
+              className="w-full space-y-6"
+            >
+               <div className="flex justify-center mb-8">
+                   <div className="bg-white/5 p-6 rounded-full">
+                       <ShieldCheck className="w-16 h-16 text-white" />
+                   </div>
+               </div>
+               
+               <div className="space-y-4">
+                  <AppleSignInButton onClick={handleAppleSignIn} isLoading={loading} />
+                  <p className="text-xs text-center text-secondary">
+                      By signing in, you agree to our Terms of Service and Privacy Policy.
+                  </p>
+               </div>
+            </motion.div>
+          )}
+
+          {/* STEP 2: BIOMETRIC */}
+          {step === 'biometric' && (
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="text-center space-y-6 w-full"
             >
               <div className="bg-primary/10 p-6 rounded-full inline-block">
                 <Wallet className="w-12 h-12 text-primary" />
               </div>
-              <p className="text-secondary max-w-xs mx-auto">
-                Create your secure wallet in seconds using your device biometrics.
-              </p>
-              
+              <div className="space-y-2">
+                  <h3 className="font-semibold text-xl text-white">Enable FaceID</h3>
+                  {email && (
+                    <p className="text-sm text-secondary font-medium bg-white/5 py-1 px-3 rounded-full inline-block mb-2">
+                        {email}
+                    </p>
+                  )}
+                  <p className="text-secondary max-w-xs mx-auto">
+                    X-Vault uses Secure Enclave to protect your private keys.
+                  </p>
+              </div>
+
               {error && (
                 <div className="bg-destructive/10 border border-destructive/20 p-3 rounded-lg flex items-center gap-2 text-destructive text-sm text-left">
                     <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -115,13 +234,40 @@ export default function Onboarding() {
                 </div>
               )}
 
-              <Button size="lg" onClick={startOnboarding} className="w-full" disabled={loading}>
-                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                {loading ? 'Waiting for FaceID...' : 'Create Wallet'}
+              <Button size="lg" onClick={startBiometricSetup} className="w-full">
+                Create Passkey
               </Button>
             </motion.div>
           )}
 
+          {/* STEP 3: PIN SETUP */}
+          {step === 'pin-setup' && (
+             <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="text-center space-y-6 w-full"
+             >
+                <div className="bg-orange-500/10 p-6 rounded-full inline-block">
+                    <Lock className="w-12 h-12 text-orange-500" />
+                </div>
+                
+                <div className="space-y-2">
+                    <h3 className="font-semibold text-xl text-white">Set Spending PIN</h3>
+                    <p className="text-secondary max-w-xs mx-auto text-sm">
+                        This 6-digit PIN will be required for transactions over $500.
+                    </p>
+                </div>
+
+                <PinInput 
+                    length={6} 
+                    onComplete={handlePinComplete} 
+                    disabled={loading}
+                    error={error || undefined}
+                />
+             </motion.div>
+          )}
+
+          {/* STEP 4: PAIRING/LOADING */}
           {step === 'pairing' && (
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
@@ -135,14 +281,15 @@ export default function Onboarding() {
                 </div>
               </div>
               <div>
-                <h3 className="text-xl font-semibold mb-2">Creating Secure Pass</h3>
+                <h3 className="text-xl font-semibold mb-2">Finalizing</h3>
                 <p className="text-secondary text-sm">
-                  Generating cryptographic keys on your device...
+                  Generating your Apple Wallet Pass...
                 </p>
               </div>
             </motion.div>
           )}
 
+          {/* STEP 5: SUCCESS */}
           {step === 'success' && (
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
@@ -153,9 +300,9 @@ export default function Onboarding() {
                 <Check className="w-12 h-12 text-success" />
               </div>
               <div>
-                <h3 className="text-xl font-semibold mb-2">Wallet Created!</h3>
+                <h3 className="text-xl font-semibold mb-2">Welcome to X-Vault</h3>
                 <p className="text-secondary text-sm mb-4">
-                  Your X-Vault Pass is ready.
+                  Your secure wallet is ready.
                 </p>
                 {passUrl && (
                   <a 
@@ -174,6 +321,7 @@ export default function Onboarding() {
               </Button>
             </motion.div>
           )}
+
         </CardContent>
         <CardFooter className="justify-center border-t border-white/5 pt-6">
           <p className="text-xs text-secondary">

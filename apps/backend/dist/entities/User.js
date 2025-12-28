@@ -27,9 +27,54 @@ __decorate([
     __metadata("design:type", String)
 ], User.prototype, "deviceLibraryId", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ unique: true, nullable: true }),
+    __metadata("design:type", String)
+], User.prototype, "email", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ unique: true, nullable: true }),
+    __metadata("design:type", String)
+], User.prototype, "appleUserId", void 0);
+__decorate([
     (0, typeorm_1.Column)({ default: false }),
     __metadata("design:type", Boolean)
 ], User.prototype, "isBiometricEnabled", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], User.prototype, "currentChallenge", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], User.prototype, "credentialID", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'bytea', nullable: true }),
+    __metadata("design:type", Buffer)
+], User.prototype, "credentialPublicKey", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ default: 0 }),
+    __metadata("design:type", Number)
+], User.prototype, "counter", void 0);
+__decorate([
+    (0, typeorm_1.Column)("simple-array", { nullable: true }),
+    __metadata("design:type", Array)
+], User.prototype, "transports", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ default: false }),
+    __metadata("design:type", Boolean)
+], User.prototype, "isFrozen", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'float', default: 2000.0 }),
+    __metadata("design:type", Number)
+], User.prototype, "dailyLimitUsd", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'float', default: 500.0 }),
+    __metadata("design:type", Number)
+], User.prototype, "largeTransactionThresholdUsd", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true, select: false }) // Do not return by default
+    ,
+    __metadata("design:type", String)
+], User.prototype, "spendingPinHash", void 0);
 __decorate([
     (0, typeorm_1.CreateDateColumn)(),
     __metadata("design:type", Date)

@@ -34,8 +34,8 @@ export const deviceService = {
   },
 
   // WebAuthn Step 1: Get Options
-  getRegistrationOptions: async (): Promise<{ options: any; tempUserId: string }> => {
-    const response = await api.post('/device/register/options');
+  getRegistrationOptions: async (userId?: string): Promise<{ options: any; tempUserId: string }> => {
+    const response = await api.post('/device/register/options', { userId });
     return response.data;
   },
 
@@ -55,6 +55,42 @@ export const deviceService = {
 
   verifyDevice: async (deviceId: string): Promise<{ valid: boolean }> => {
     const response = await api.post('/device/verify', {}, {
+      headers: {
+        'x-device-library-id': deviceId
+      }
+    });
+    return response.data;
+  }
+};
+
+export const authService = {
+  loginWithApple: async (identityToken: string, user?: any) => {
+    const response = await api.post('/auth/apple/login', {
+      identityToken,
+      user
+    });
+    return response.data; // Returns { userId, email, hasWallet, hasPin }
+  }
+};
+
+export const securityService = {
+  setPin: async (userId: string, pin: string, deviceId: string) => {
+    const response = await api.post('/security/pin/set', {
+      userId,
+      pin
+    }, {
+      headers: {
+        'x-device-library-id': deviceId
+      }
+    });
+    return response.data;
+  },
+  
+  verifyPin: async (userId: string, pin: string, deviceId: string) => {
+    const response = await api.post('/security/pin/verify', {
+      userId,
+      pin
+    }, {
       headers: {
         'x-device-library-id': deviceId
       }
