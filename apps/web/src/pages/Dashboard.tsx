@@ -3,14 +3,22 @@ import { motion } from 'framer-motion';
 import { ArrowUpRight, ArrowDownLeft, CreditCard, Plus } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
-import { walletService } from '../services/api';
+import { walletService, securityService } from '../services/api';
 import { formatCurrency, shortenAddress } from '../lib/utils';
+import { PinModal } from '../components/PinModal';
 
 export default function Dashboard() {
   const [portfolio, setPortfolio] = useState<any>(null);
   const [address, setAddress] = useState<string>('');
+  
+  // Transaction State
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinError, setPinError] = useState<string | undefined>(undefined);
+  const [isProcessing, setIsProcessing] = useState(false);
+
   // Mock user ID for MVP
-  const userId = 'user-123';
+  const userId = localStorage.getItem('x_user_id') || 'user-123';
+  const deviceId = localStorage.getItem('x_device_id') || 'device-123';
 
   useEffect(() => {
     const fetchData = async () => {
@@ -27,6 +35,40 @@ export default function Dashboard() {
     };
     fetchData();
   }, [userId]);
+
+  const handleSend = async () => {
+      // 1. Simulate initiating a transaction
+      const amount = 1000; // Mock amount > $500
+      console.log(`[Dashboard] Attempting to send $${amount}...`);
+
+      // 2. Check if PIN is needed (Frontend check or Backend intercept)
+      // For Demo: We assume Backend returned "401 Spending PIN Required"
+      // So we open the modal.
+      setShowPinModal(true);
+  };
+
+  const handlePinSubmit = async (pin: string) => {
+      setIsProcessing(true);
+      setPinError(undefined);
+      try {
+          // 3. Verify PIN with Backend
+          const result = await securityService.verifyPin(userId, pin, deviceId);
+          
+          if (result.valid) {
+              // 4. If valid, retry transaction (Mock success)
+              console.log("[Dashboard] PIN verified. Transaction sent!");
+              setShowPinModal(false);
+              alert("Transaction of $1,000 sent successfully!");
+          } else {
+              setPinError("Incorrect PIN. Please try again.");
+          }
+      } catch (error) {
+          console.error("PIN verification error:", error);
+          setPinError("Failed to verify PIN.");
+      } finally {
+          setIsProcessing(false);
+      }
+  };
 
   if (!portfolio) {
     return (
@@ -63,7 +105,10 @@ export default function Dashboard() {
         </div>
         
         <div className="flex justify-center gap-4">
-          <Button className="rounded-full w-14 h-14 p-0 flex flex-col items-center justify-center gap-1 bg-surface border border-white/10 hover:bg-white/10">
+          <Button 
+            onClick={handleSend}
+            className="rounded-full w-14 h-14 p-0 flex flex-col items-center justify-center gap-1 bg-surface border border-white/10 hover:bg-white/10"
+          >
             <ArrowUpRight className="w-5 h-5 text-primary" />
             <span className="text-[10px] text-secondary">Send</span>
           </Button>
@@ -147,6 +192,16 @@ export default function Dashboard() {
           </motion.div>
         ))}
       </div>
+
+      <PinModal 
+        isOpen={showPinModal}
+        onClose={() => setShowPinModal(false)}
+        onComplete={handlePinSubmit}
+        title="High Value Transaction"
+        description="Please enter your Spending PIN to authorize this $1,000 transaction."
+        isLoading={isProcessing}
+        error={pinError}
+      />
     </div>
   );
 }
