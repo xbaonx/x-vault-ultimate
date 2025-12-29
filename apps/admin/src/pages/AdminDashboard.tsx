@@ -546,6 +546,10 @@ export default function AdminDashboard() {
                             Export your certificate and private key together as a .p12 file from Keychain Access.
                         </div>
                         <Input type="file" accept=".p12" onChange={(e) => setSignerP12(e.target.files?.[0] || null)} />
+                        <p className="text-[10px] text-yellow-500/80 mt-2">
+                          * Tip: If upload fails, re-export from Keychain with a simple password (e.g. "123"). 
+                          Some "no password" formats are not supported.
+                        </p>
                     </div>
                   </div>
                   
