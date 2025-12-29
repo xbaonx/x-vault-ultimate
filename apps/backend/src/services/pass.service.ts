@@ -143,7 +143,8 @@ export class PassService {
             wwdr: Buffer.from(cleanWwdr, 'utf8'),
             signerCert: Buffer.from(cleanSignerCert, 'utf8'),
             signerKey: Buffer.from(cleanSignerKey, 'utf8'),
-            signerKeyPassphrase: signerKeyPassphraseFromDb || '',
+            // We normalized the key to unencrypted PEM using Forge, so we MUST NOT pass a passphrase
+            signerKeyPassphrase: undefined, 
           } as any,
         },
         {
