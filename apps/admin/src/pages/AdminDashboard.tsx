@@ -491,7 +491,7 @@ export default function AdminDashboard() {
                 <CardDescription>Upload WWDR / Signer Cert / Signer Key</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <form onSubmit={(e) => e.preventDefault()} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Admin Key input moved to sidebar */}
                   <div className="md:col-span-2 flex items-center gap-2 mb-4 p-4 border border-white/10 rounded-lg bg-white/5">
                     <Key className="w-4 h-4 text-primary" />
@@ -544,7 +544,7 @@ export default function AdminDashboard() {
                   </div>
                   
                   {/* Remove old separate inputs to avoid duplication */}
-                </div>
+                </form>
 
                 {(appleError || appleSuccess) && (
                   <div className="mt-4">

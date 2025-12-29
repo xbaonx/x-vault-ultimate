@@ -143,7 +143,8 @@ export const adminApi = {
     const form = new FormData();
     if (params.teamId) form.append('teamId', params.teamId);
     if (params.passTypeIdentifier) form.append('passTypeIdentifier', params.passTypeIdentifier);
-    if (params.signerKeyPassphrase) form.append('signerKeyPassphrase', params.signerKeyPassphrase);
+    // Allow empty string to be sent to clear/set empty password
+    if (params.signerKeyPassphrase !== undefined) form.append('signerKeyPassphrase', params.signerKeyPassphrase);
 
     if (params.wwdr) form.append('wwdr', params.wwdr);
     if (params.signerP12) form.append('signerP12', params.signerP12);
