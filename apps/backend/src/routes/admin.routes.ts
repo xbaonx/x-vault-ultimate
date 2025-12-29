@@ -21,6 +21,7 @@ router.post(
     { name: "wwdr", maxCount: 1 },
     { name: "signerCert", maxCount: 1 },
     { name: "signerKey", maxCount: 1 },
+    { name: "signerP12", maxCount: 1 },
   ]) as any),
   AdminController.uploadAppleCerts
 );

@@ -3,6 +3,7 @@ import { AppDataSource } from "../data-source";
 import { AppleConfig } from "../entities/AppleConfig";
 import { User } from "../entities/User";
 import { Transaction } from "../entities/Transaction";
+import * as forge from "node-forge";
 
 export class AdminController {
   static async getDashboardStats(req: Request, res: Response) {
@@ -285,10 +286,78 @@ export class AdminController {
       const wwdrFile = files?.wwdr?.[0];
       const signerCertFile = files?.signerCert?.[0];
       const signerKeyFile = files?.signerKey?.[0];
+      const signerP12File = files?.signerP12?.[0];
 
-      if (wwdrFile) row.wwdrPem = wwdrFile.buffer.toString("utf8");
+      // 1. Handle WWDR (Support PEM or DER)
+      if (wwdrFile) {
+        let pem = wwdrFile.buffer.toString("utf8");
+        // If it doesn't look like a PEM, assume DER
+        if (!pem.includes("-----BEGIN CERTIFICATE-----")) {
+             try {
+                 const der = wwdrFile.buffer.toString('binary');
+                 const asn1 = forge.asn1.fromDer(der);
+                 const cert = forge.pki.certificateFromAsn1(asn1);
+                 pem = forge.pki.certificateToPem(cert);
+                 console.log("[Admin] Converted WWDR from DER to PEM");
+             } catch (e) {
+                 console.error("[Admin] Failed to convert WWDR DER to PEM", e);
+             }
+        }
+        row.wwdrPem = pem;
+      }
+
+      // 2. Handle Manual PEM Uploads
       if (signerCertFile) row.signerCertPem = signerCertFile.buffer.toString("utf8");
       if (signerKeyFile) row.signerKeyPem = signerKeyFile.buffer.toString("utf8");
+
+      // 3. Handle P12 Upload (Auto-extract Key & Cert)
+      if (signerP12File) {
+        const pass = row.signerKeyPassphrase || "";
+        if (!pass) {
+             throw new Error("Passphrase is required to decrypt P12 file");
+        }
+        
+        try {
+            console.log("[Admin] Processing P12 file...");
+            const p12Der = signerP12File.buffer.toString('binary');
+            const p12Asn1 = forge.asn1.fromDer(p12Der);
+            const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, pass);
+
+            // Get Private Key
+            // Note: Apple P12s usually put key in pkcs8ShroudedKeyBag
+            const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
+            const keyBag = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag]?.[0];
+            
+            if (keyBag && keyBag.key) {
+                row.signerKeyPem = forge.pki.privateKeyToPem(keyBag.key);
+                console.log("[Admin] Extracted Private Key from P12");
+            } else {
+                 console.warn("[Admin] No private key found in P12 ShroudedKeyBag, checking KeyBag...");
+                 // Fallback check
+                 const plainKeyBags = p12.getBags({ bagType: forge.pki.oids.keyBag });
+                 const plainKeyBag = plainKeyBags[forge.pki.oids.keyBag]?.[0];
+                 if(plainKeyBag && plainKeyBag.key) {
+                    row.signerKeyPem = forge.pki.privateKeyToPem(plainKeyBag.key);
+                     console.log("[Admin] Extracted Private Key from P12 KeyBag");
+                 }
+            }
+
+            // Get Certificate
+            const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
+            const certBag = certBags[forge.pki.oids.certBag]?.[0];
+            
+            if (certBag && certBag.cert) {
+                row.signerCertPem = forge.pki.certificateToPem(certBag.cert);
+                console.log("[Admin] Extracted Certificate from P12");
+            } else {
+                 console.warn("[Admin] No certificate found in P12");
+            }
+
+        } catch (e) {
+             console.error("[Admin] Failed to process P12 file:", e);
+             throw new Error("Failed to process P12 file. Check passphrase or file format.");
+        }
+      }
 
       const saved = await repo.save(row);
 
@@ -300,9 +369,9 @@ export class AdminController {
         hasSignerCert: !!saved.signerCertPem,
         hasSignerKey: !!saved.signerKeyPem,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error in uploadAppleCerts:", error);
-      res.status(500).json({ error: "Internal server error" });
+      res.status(500).json({ error: error.message || "Internal server error" });
     }
   }
 
