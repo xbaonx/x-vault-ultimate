@@ -200,8 +200,24 @@ export class AdminController {
             console.log("[Admin] Processing P12 file...");
             const p12Der = signerP12File.buffer.toString('binary');
             const p12Asn1 = forge.asn1.fromDer(p12Der);
-            // forge requires a password argument, even if empty string
-            const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, pass);
+            
+            let p12;
+            try {
+                // Try 1: Use provided pass (usually empty string "")
+                p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, pass);
+            } catch (e1) {
+                // Try 2: If pass is empty string, try strict null (some formats need this)
+                if (pass === "") {
+                    console.log("[Admin] Retrying P12 decryption with null password...");
+                    try {
+                        p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, null as any);
+                    } catch (e2) {
+                        throw e1; // Throw original error if both fail
+                    }
+                } else {
+                    throw e1;
+                }
+            }
 
             // Get Private Key
             // Note: Apple P12s usually put key in pkcs8ShroudedKeyBag
