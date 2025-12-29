@@ -170,9 +170,23 @@ export const MigrationModal: React.FC<MigrationModalProps> = ({
                       Security delay has passed. You can now finalize the migration to this device.
                     </p>
                   </div>
-                  <Button onClick={handleFinalize} disabled={isLoading} className="w-full bg-success hover:bg-success/80 text-white">
-                    {isLoading ? "Finalizing..." : "Add to Apple Wallet"}
-                  </Button>
+                  <button 
+                    onClick={handleFinalize} 
+                    disabled={isLoading} 
+                    className="w-full flex justify-center hover:opacity-80 transition-opacity disabled:opacity-50"
+                  >
+                    {isLoading ? (
+                        <div className="h-12 flex items-center justify-center bg-black text-white border border-white/20 rounded-lg px-6 w-full font-medium">
+                            Finalizing...
+                        </div>
+                    ) : (
+                        <img 
+                            src="https://developer.apple.com/assets/elements/badges/add-to-apple-wallet.svg" 
+                            alt="Add to Apple Wallet" 
+                            className="h-12"
+                        />
+                    )}
+                  </button>
                 </>
               )}
 
