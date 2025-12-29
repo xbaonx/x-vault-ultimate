@@ -135,14 +135,15 @@ export class PassService {
       }
       
       console.log(`[PassService] Certs normalized. WWDR length: ${cleanWwdr.length}`);
+      console.log(`[PassService] Normalized WWDR Start: ${cleanWwdr.substring(0, 40)}...`);
 
       const pass = new PKPass(
         {
           model: modelPath as any, // Directory containing pass.json, icon.png, etc.
           certificates: {
-            wwdr: Buffer.from(cleanWwdr, 'utf8'),
-            signerCert: Buffer.from(cleanSignerCert, 'utf8'),
-            signerKey: Buffer.from(cleanSignerKey, 'utf8'),
+            wwdr: cleanWwdr,
+            signerCert: cleanSignerCert,
+            signerKey: cleanSignerKey,
             // We normalized the key to unencrypted PEM using Forge, so we MUST NOT pass a passphrase
             signerKeyPassphrase: undefined, 
           } as any,
