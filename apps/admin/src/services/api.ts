@@ -138,8 +138,6 @@ export const adminApi = {
     passTypeIdentifier?: string;
     signerKeyPassphrase?: string;
     wwdr?: File | null;
-    signerCert?: File | null;
-    signerKey?: File | null;
     signerP12?: File | null;
   }) => {
     const form = new FormData();
@@ -148,8 +146,6 @@ export const adminApi = {
     if (params.signerKeyPassphrase) form.append('signerKeyPassphrase', params.signerKeyPassphrase);
 
     if (params.wwdr) form.append('wwdr', params.wwdr);
-    if (params.signerCert) form.append('signerCert', params.signerCert);
-    if (params.signerKey) form.append('signerKey', params.signerKey);
     if (params.signerP12) form.append('signerP12', params.signerP12);
 
     const res = await fetch(`${API_URL}/admin/apple/certs`, {

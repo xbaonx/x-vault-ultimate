@@ -153,42 +153,6 @@ export class AdminController {
     }
   }
 
-  static async upsertAppleConfig(req: Request, res: Response) {
-    try {
-      const {
-        teamId,
-        passTypeIdentifier,
-        signerKeyPassphrase,
-        wwdrPem,
-        signerCertPem,
-        signerKeyPem,
-      } = req.body || {};
-
-      const repo = AppDataSource.getRepository(AppleConfig);
-      const existing = await repo.findOne({ where: { name: "default" } });
-
-      const row = existing || repo.create({ name: "default" });
-
-      if (typeof teamId === "string") row.teamId = teamId;
-      if (typeof passTypeIdentifier === "string") row.passTypeIdentifier = passTypeIdentifier;
-      if (typeof signerKeyPassphrase === "string") row.signerKeyPassphrase = signerKeyPassphrase;
-      if (typeof wwdrPem === "string") row.wwdrPem = wwdrPem;
-      if (typeof signerCertPem === "string") row.signerCertPem = signerCertPem;
-      if (typeof signerKeyPem === "string") row.signerKeyPem = signerKeyPem;
-
-      const saved = await repo.save(row);
-
-      res.status(200).json({
-        ok: true,
-        id: saved.id,
-        updatedAt: saved.updatedAt,
-      });
-    } catch (error) {
-      console.error("Error in upsertAppleConfig:", error);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  }
-
   static async uploadAppleCerts(req: Request, res: Response) {
     try {
       const repo = AppDataSource.getRepository(AppleConfig);
@@ -207,8 +171,6 @@ export class AdminController {
         | undefined;
 
       const wwdrFile = files?.wwdr?.[0];
-      const signerCertFile = files?.signerCert?.[0];
-      const signerKeyFile = files?.signerKey?.[0];
       const signerP12File = files?.signerP12?.[0];
 
       // 1. Handle WWDR (Support PEM or DER)
@@ -229,11 +191,7 @@ export class AdminController {
         row.wwdrPem = pem;
       }
 
-      // 2. Handle Manual PEM Uploads
-      if (signerCertFile) row.signerCertPem = signerCertFile.buffer.toString("utf8");
-      if (signerKeyFile) row.signerKeyPem = signerKeyFile.buffer.toString("utf8");
-
-      // 3. Handle P12 Upload (Auto-extract Key & Cert)
+      // 2. Handle P12 Upload (Auto-extract Key & Cert)
       if (signerP12File) {
         const pass = row.signerKeyPassphrase || "";
         if (!pass) {
