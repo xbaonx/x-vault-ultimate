@@ -65,9 +65,9 @@ export class PassService {
         {
           model: modelPath as any, // Directory containing pass.json, icon.png, etc.
           certificates: {
-            wwdr: Buffer.from(wwdrFromDb!, 'utf8'),
-            signerCert: Buffer.from(signerCertFromDb!, 'utf8'),
-            signerKey: Buffer.from(signerKeyFromDb!, 'utf8'),
+            wwdr: Buffer.from(wwdrFromDb!.trim(), 'utf8'),
+            signerCert: Buffer.from(signerCertFromDb!.trim(), 'utf8'),
+            signerKey: Buffer.from(signerKeyFromDb!.trim(), 'utf8'),
             signerKeyPassphrase: signerKeyPassphraseFromDb || '',
           } as any,
         },

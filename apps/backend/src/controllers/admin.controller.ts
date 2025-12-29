@@ -289,6 +289,29 @@ export class AdminController {
         }
       }
 
+      // Final Validation before saving
+      if (!row.wwdrPem || !row.wwdrPem.includes("BEGIN CERTIFICATE")) {
+          // If we are just updating config strings, this might be okay if certs already exist.
+          // But if we are uploading certs, we must check.
+          // For now, let's just warn if we are saving potentially incomplete config,
+          // OR if the user specifically uploaded a file that turned out invalid.
+          if (wwdrFile) {
+             res.status(400).json({ error: "Invalid WWDR Certificate. Must be a valid PEM or DER file." });
+             return;
+          }
+      }
+
+      if (signerP12File) {
+          if (!row.signerCertPem || !row.signerCertPem.includes("BEGIN CERTIFICATE")) {
+               res.status(400).json({ error: "Invalid P12. Could not extract Signer Certificate." });
+               return;
+          }
+          if (!row.signerKeyPem || (!row.signerKeyPem.includes("PRIVATE KEY") && !row.signerKeyPem.includes("RSA PRIVATE KEY"))) {
+               res.status(400).json({ error: "Invalid P12. Could not extract Private Key." });
+               return;
+          }
+      }
+
       const saved = await repo.save(row);
 
       res.status(200).json({
