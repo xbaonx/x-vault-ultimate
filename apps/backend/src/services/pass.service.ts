@@ -54,7 +54,7 @@ export class PassService {
         },
         {
           serialNumber: userData.address,
-          description: 'X-Vault Web3 Account',
+          description: 'Zaur Web3 Account',
         } as any
       );
 

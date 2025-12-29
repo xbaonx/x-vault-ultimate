@@ -180,9 +180,9 @@ export default function AdminDashboard() {
       <aside className="w-64 border-r border-surface p-6 hidden md:flex flex-col">
         <div className="flex items-center space-x-2 mb-10">
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <span className="font-bold text-white">X</span>
+            <span className="font-bold text-white">Z</span>
           </div>
-          <span className="font-bold text-xl">Vault Admin</span>
+          <span className="font-bold text-xl">Zaur Admin</span>
         </div>
         
         <div className="mb-6">

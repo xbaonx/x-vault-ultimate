@@ -118,7 +118,7 @@ export const MigrationModal: React.FC<MigrationModalProps> = ({
                   <div className="space-y-2">
                     <h3 className="text-xl font-bold text-white">New Device Detected</h3>
                     <p className="text-secondary text-sm">
-                      This device is not linked to your X-Vault. 
+                      This device is not linked to your Zaur. 
                       To use it, you must initiate a device migration.
                     </p>
                     <div className="bg-yellow-500/10 border border-yellow-500/20 p-3 rounded-lg text-xs text-yellow-500 text-left mt-4">

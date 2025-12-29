@@ -123,9 +123,9 @@ export default function Dashboard() {
       <header className="flex justify-between items-center mb-8 pt-4">
         <div className="flex items-center space-x-2">
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <span className="font-bold text-white">X</span>
+            <span className="font-bold text-white">Z</span>
           </div>
-          <span className="font-bold text-lg">Vault</span>
+          <span className="font-bold text-lg">Zaur</span>
         </div>
         <div className="bg-surface px-3 py-1.5 rounded-full border border-white/10 text-sm font-mono text-secondary">
           {shortenAddress(address)}

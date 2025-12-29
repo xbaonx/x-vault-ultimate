@@ -63,7 +63,7 @@ export default function Onboarding() {
       console.warn("Using Mock Apple Sign In");
       handleAppleResponse({
           authorization: { id_token: `mock-identity-token-${Date.now()}` },
-          user: { name: { firstName: 'Demo', lastName: 'User' }, email: 'demo@xvault.app' }
+          user: { name: { firstName: 'Demo', lastName: 'User' }, email: 'demo@zaur.at' }
       });
   }
 
@@ -172,7 +172,7 @@ export default function Onboarding() {
 
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold tracking-tighter mb-2">
-            X-Vault
+            Zaur
           </CardTitle>
           <CardDescription className="text-lg">
             {step === 'siwa' && "Sign in to get started"}
@@ -203,7 +203,7 @@ export default function Onboarding() {
                   <div className="flex justify-center w-full">
                     <AppleSignin
                         authOptions={{
-                            clientId: import.meta.env.VITE_APPLE_CLIENT_ID || 'com.xvault.app',
+                            clientId: import.meta.env.VITE_APPLE_CLIENT_ID || 'at.zaur.service',
                             scope: 'email name',
                             redirectURI: import.meta.env.VITE_APPLE_REDIRECT_URI || window.location.origin,
                             usePopup: true,
@@ -265,7 +265,7 @@ export default function Onboarding() {
                     </p>
                   )}
                   <p className="text-secondary max-w-xs mx-auto">
-                    X-Vault uses Secure Enclave to protect your private keys.
+                    Zaur uses Secure Enclave to protect your private keys.
                   </p>
               </div>
 
@@ -342,7 +342,7 @@ export default function Onboarding() {
                 <Check className="w-12 h-12 text-success" />
               </div>
               <div>
-                <h3 className="text-xl font-semibold mb-2">Welcome to X-Vault</h3>
+                <h3 className="text-xl font-semibold mb-2">Welcome to Zaur</h3>
                 <p className="text-secondary text-sm mb-4">
                   Your secure wallet is ready.
                 </p>
