@@ -42,6 +42,7 @@ export default function AdminDashboard() {
   const [loadingApple, setLoadingApple] = useState(false);
   const [appleError, setAppleError] = useState<string | null>(null);
   const [appleSuccess, setAppleSuccess] = useState<string | null>(null);
+  const [testPassResult, setTestPassResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const normalizeApiUrl = (url: string | undefined) => {
     if (!url) return 'http://localhost:3000';
@@ -541,6 +542,7 @@ export default function AdminDashboard() {
                         className="w-full border-primary/50 text-primary hover:bg-primary/10"
                         onClick={async () => {
                             try {
+                                setTestPassResult(null);
                                 setLoadingApple(true);
                                 const response = await fetch(`${apiOrigin}/api/admin/apple/test-pass`, {
                                     headers: { 'x-admin-key': sessionKey }
@@ -560,17 +562,27 @@ export default function AdminDashboard() {
                                 a.click();
                                 window.URL.revokeObjectURL(url);
                                 document.body.removeChild(a);
-                                alert("Success! 'test.pkpass' downloaded. Double click to preview on Mac, or AirDrop to iPhone.");
+                                setTestPassResult({ success: true, message: "Success! 'test.pkpass' downloaded. Check your Downloads folder." });
                             } catch (e: any) {
-                                alert("Test Failed: " + e.message);
+                                setTestPassResult({ success: false, message: e.message });
                             } finally {
                                 setLoadingApple(false);
                             }
                         }}
                         disabled={!appleStatus?.configured || loadingApple}
                     >
-                        Test Configuration (Generate Pass)
+                        {loadingApple ? 'Generating...' : 'Test Configuration (Generate Pass)'}
                     </Button>
+                    
+                    {testPassResult && (
+                        <div className={`mt-2 p-3 rounded text-xs border ${
+                            testPassResult.success 
+                                ? 'bg-success/10 border-success/20 text-success' 
+                                : 'bg-red-500/10 border-red-500/20 text-red-400'
+                        }`}>
+                            <strong>{testPassResult.success ? '✓ Test Passed' : '✕ Test Failed'}:</strong> {testPassResult.message}
+                        </div>
+                    )}
                   </div>
 
                   <div>
