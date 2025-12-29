@@ -12,6 +12,7 @@ router.get("/users", adminAuth, AdminController.getUsers);
 router.get("/transactions", adminAuth, AdminController.getTransactions);
 
 router.get("/apple/config", adminAuth, AdminController.getAppleConfig);
+router.get("/apple/test-pass", adminAuth, AdminController.testGeneratePass);
 
 router.post(
   "/apple/certs",

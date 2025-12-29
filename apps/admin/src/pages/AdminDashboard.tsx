@@ -531,6 +531,44 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
+                  <div className="md:col-span-2">
+                    <Button 
+                        variant="outline" 
+                        className="w-full border-primary/50 text-primary hover:bg-primary/10"
+                        onClick={async () => {
+                            try {
+                                setLoadingApple(true);
+                                const response = await fetch(`${apiOrigin}/api/admin/apple/test-pass`, {
+                                    headers: { 'x-admin-key': sessionKey }
+                                });
+                                
+                                if (!response.ok) {
+                                    const err = await response.json();
+                                    throw new Error(err.error || 'Failed to generate test pass');
+                                }
+                                
+                                const blob = await response.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'test.pkpass';
+                                document.body.appendChild(a);
+                                a.click();
+                                window.URL.revokeObjectURL(url);
+                                document.body.removeChild(a);
+                                alert("Success! 'test.pkpass' downloaded. Double click to preview on Mac, or AirDrop to iPhone.");
+                            } catch (e: any) {
+                                alert("Test Failed: " + e.message);
+                            } finally {
+                                setLoadingApple(false);
+                            }
+                        }}
+                        disabled={!appleStatus?.configured || loadingApple}
+                    >
+                        Test Configuration (Generate Pass)
+                    </Button>
+                  </div>
+
                   <div>
                     <div className="text-sm text-secondary mb-2">WWDR Certificate (.cer or .pem)</div>
                     <Input type="file" onChange={(e) => setWwdr(e.target.files?.[0] || null)} />

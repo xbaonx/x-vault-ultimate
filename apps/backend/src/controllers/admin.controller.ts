@@ -5,7 +5,35 @@ import { User } from "../entities/User";
 import { Transaction } from "../entities/Transaction";
 import * as forge from "node-forge";
 
+import { PassService } from "../services/pass.service";
+
 export class AdminController {
+  static async testGeneratePass(req: Request, res: Response) {
+    try {
+        console.log("[Admin] Generating test pass...");
+        // Use dummy data
+        const dummyData = {
+            address: "0x1234567890123456789012345678901234567890",
+            balance: "100.00"
+        };
+        
+        const passBuffer = await PassService.generatePass(dummyData);
+        
+        // Check if it's the mock buffer (simple length check or content check)
+        // PassService returns "Mock PKPass File Content" if certs missing
+        if (passBuffer.length < 100 && passBuffer.toString().includes("Mock")) {
+             return res.status(400).json({ error: "System is using Mock Pass. Certificates might be missing or invalid in DB." });
+        }
+
+        res.setHeader('Content-Type', 'application/vnd.apple.pkpass');
+        res.setHeader('Content-Disposition', 'attachment; filename=test.pkpass');
+        res.send(passBuffer);
+    } catch (error: any) {
+        console.error("Error generating test pass:", error);
+        res.status(500).json({ error: error.message || "Failed to generate pass" });
+    }
+  }
+
   static async getDashboardStats(req: Request, res: Response) {
     if (!AppDataSource.isInitialized) {
       return res.status(503).json({ error: "Database not initialized" });
