@@ -155,8 +155,16 @@ export const adminApi = {
     });
 
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || 'Upload failed');
+      let errorMessage = 'Upload failed';
+      try {
+        const errorData = await res.json();
+        errorMessage = errorData.error || errorMessage;
+      } catch (e) {
+        // If not JSON, try text
+        const text = await res.text();
+        if (text) errorMessage = text;
+      }
+      throw new Error(errorMessage);
     }
 
     return res.json();

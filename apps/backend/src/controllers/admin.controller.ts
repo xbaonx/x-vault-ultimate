@@ -195,7 +195,8 @@ export class AdminController {
       if (signerP12File) {
         const pass = row.signerKeyPassphrase || "";
         if (!pass) {
-             throw new Error("Passphrase is required to decrypt P12 file");
+             res.status(400).json({ error: "Passphrase is required to decrypt P12 file" });
+             return;
         }
         
         try {
