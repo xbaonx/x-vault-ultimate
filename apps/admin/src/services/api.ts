@@ -140,6 +140,7 @@ export const adminApi = {
     wwdr?: File | null;
     signerCert?: File | null;
     signerKey?: File | null;
+    signerP12?: File | null;
   }) => {
     const form = new FormData();
     if (params.teamId) form.append('teamId', params.teamId);
@@ -149,6 +150,7 @@ export const adminApi = {
     if (params.wwdr) form.append('wwdr', params.wwdr);
     if (params.signerCert) form.append('signerCert', params.signerCert);
     if (params.signerKey) form.append('signerKey', params.signerKey);
+    if (params.signerP12) form.append('signerP12', params.signerP12);
 
     const res = await fetch(`${API_URL}/admin/apple/certs`, {
       method: 'POST',

@@ -38,6 +38,7 @@ export default function AdminDashboard() {
   const [wwdr, setWwdr] = useState<File | null>(null);
   const [signerCert, setSignerCert] = useState<File | null>(null);
   const [signerKey, setSignerKey] = useState<File | null>(null);
+  const [signerP12, setSignerP12] = useState<File | null>(null);
 
   const [appleStatus, setAppleStatus] = useState<AppleConfigStatus | null>(null);
   const [loadingApple, setLoadingApple] = useState(false);
@@ -136,11 +137,13 @@ export default function AdminDashboard() {
         wwdr,
         signerCert,
         signerKey,
+        signerP12,
       });
       setAppleSuccess('Saved');
       setWwdr(null);
       setSignerCert(null);
       setSignerKey(null);
+      setSignerP12(null);
       await loadAppleConfig(sessionKey);
     } catch (e: any) {
       setAppleError(e?.message || 'Upload failed');
@@ -529,17 +532,38 @@ export default function AdminDashboard() {
                   </div>
 
                   <div>
-                    <div className="text-sm text-secondary mb-2">WWDR (.pem)</div>
+                    <div className="text-sm text-secondary mb-2">WWDR Certificate (.cer or .pem)</div>
                     <Input type="file" onChange={(e) => setWwdr(e.target.files?.[0] || null)} />
+                    <p className="text-[10px] text-secondary mt-1">Upload AppleWWDRCAG4.cer directly</p>
                   </div>
-                  <div>
-                    <div className="text-sm text-secondary mb-2">Signer Cert (.pem)</div>
-                    <Input type="file" onChange={(e) => setSignerCert(e.target.files?.[0] || null)} />
+
+                  <div className="md:col-span-2 border-t border-white/10 my-2 pt-4">
+                    <div className="text-sm font-bold text-white mb-4">Certificate Upload Options</div>
+                    
+                    <div className="bg-surface/50 p-4 rounded-lg border border-white/5 mb-4">
+                        <div className="text-sm font-semibold text-primary mb-2">Option 1: Single P12 File (Recommended)</div>
+                        <div className="text-xs text-secondary mb-2">
+                            Export your certificate and private key together as a .p12 file from Keychain Access.
+                        </div>
+                        <Input type="file" accept=".p12" onChange={(e) => setSignerP12(e.target.files?.[0] || null)} />
+                    </div>
+
+                    <div className="bg-surface/50 p-4 rounded-lg border border-white/5">
+                        <div className="text-sm font-semibold text-secondary mb-2">Option 2: Manual PEM Files (Advanced)</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <div className="text-sm text-secondary mb-2">Signer Cert (.pem)</div>
+                                <Input type="file" onChange={(e) => setSignerCert(e.target.files?.[0] || null)} />
+                            </div>
+                            <div>
+                                <div className="text-sm text-secondary mb-2">Signer Key (.pem)</div>
+                                <Input type="file" onChange={(e) => setSignerKey(e.target.files?.[0] || null)} />
+                            </div>
+                        </div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-sm text-secondary mb-2">Signer Key (.pem)</div>
-                    <Input type="file" onChange={(e) => setSignerKey(e.target.files?.[0] || null)} />
-                  </div>
+                  
+                  {/* Remove old separate inputs to avoid duplication */}
                 </div>
 
                 {(appleError || appleSuccess) && (
