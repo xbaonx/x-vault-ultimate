@@ -11,7 +11,19 @@ export class PassService {
       const hasModel = fs.existsSync(modelPath);
 
       if (!hasModel) {
-        console.warn('Apple pass model not found. Returning mock pass buffer.');
+        console.error(`[PassService] Apple pass model not found at: ${modelPath}`);
+        // List contents of parent dir to help debug
+        try {
+            const parentDir = path.resolve(__dirname, '../../');
+            console.log(`[PassService] Contents of ${parentDir}:`, fs.readdirSync(parentDir));
+             const assetsDir = path.resolve(__dirname, '../../assets');
+             if (fs.existsSync(assetsDir)) {
+                 console.log(`[PassService] Contents of ${assetsDir}:`, fs.readdirSync(assetsDir));
+             } else {
+                 console.log(`[PassService] Assets dir does not exist at ${assetsDir}`);
+             }
+        } catch (e) { console.log("[PassService] Failed to list dir contents", e); }
+        
         return Buffer.from('Mock PKPass File Content') as any;
       }
 
@@ -28,6 +40,13 @@ export class PassService {
       const teamIdFromDb = dbConfig?.teamId;
       const passTypeIdentifierFromDb = dbConfig?.passTypeIdentifier;
 
+      // Debug log for missing items
+      if (!wwdrFromDb) console.warn("[PassService] Missing WWDR Certificate");
+      if (!signerCertFromDb) console.warn("[PassService] Missing Signer Certificate");
+      if (!signerKeyFromDb) console.warn("[PassService] Missing Signer Private Key");
+      if (!teamIdFromDb) console.warn("[PassService] Missing Team ID");
+      if (!passTypeIdentifierFromDb) console.warn("[PassService] Missing Pass Type ID");
+
       // In a real environment, we would load real certificates
       // For this MVP/Demo, we will mock the pass generation if certs are missing
       // or try to generate if they exist.
@@ -40,6 +59,8 @@ export class PassService {
         return Buffer.from("Mock PKPass File Content") as any;
       }
 
+      console.log(`[PassService] Generating pass with TeamID: ${teamIdFromDb}, PassType: ${passTypeIdentifierFromDb}`);
+      
       const pass = new PKPass(
         {
           model: modelPath as any, // Directory containing pass.json, icon.png, etc.

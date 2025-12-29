@@ -1,0 +1,24 @@
+{
+  "formatVersion": 1,
+  "passTypeIdentifier": "pass.com.placeholder",
+  "serialNumber": "placeholder",
+  "teamIdentifier": "placeholder",
+  "organizationName": "Zaur Wallet",
+  "description": "Zaur Web3 Account",
+  "logoText": "Zaur",
+  "foregroundColor": "rgb(255, 255, 255)",
+  "backgroundColor": "rgb(0, 0, 0)",
+  "labelColor": "rgb(142, 142, 147)",
+  "generic": {
+    "primaryFields": [],
+    "secondaryFields": [],
+    "auxiliaryFields": [],
+    "backFields": [
+      {
+        "key": "poweredBy",
+        "label": "Powered by",
+        "value": "X-Vault Ultimate"
+      }
+    ]
+  }
+}

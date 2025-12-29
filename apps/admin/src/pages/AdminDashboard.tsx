@@ -74,12 +74,6 @@ export default function AdminDashboard() {
     fetchData(adminKey);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-        handleConnect();
-    }
-  };
-
   const fetchData = async (key: string) => {
     setLoadingData(true);
     setDataError(null);
@@ -183,19 +177,19 @@ export default function AdminDashboard() {
             <label className="text-xs text-secondary mb-2 block flex items-center gap-1">
                 <Key className="w-3 h-3" /> Admin Key
             </label>
-            <div className="flex gap-2">
+            <form onSubmit={(e) => { e.preventDefault(); handleConnect(); }} className="flex gap-2">
                 <Input 
                     type="password" 
                     value={adminKey} 
                     onChange={(e) => setAdminKey(e.target.value)}
-                    onKeyDown={handleKeyDown}
                     placeholder="Enter key..."
                     className="h-8 text-xs flex-1"
+                    autoComplete="current-password"
                 />
-                <Button size="sm" className="h-8 px-2" onClick={handleConnect}>
+                <Button type="submit" size="sm" className="h-8 px-2">
                     <Activity className="w-3 h-3" />
                 </Button>
-            </div>
+            </form>
         </div>
 
         <nav className="space-y-2 flex-1">
@@ -503,11 +497,21 @@ export default function AdminDashboard() {
 
                   <div>
                     <div className="text-sm text-secondary mb-2">Apple Team ID</div>
-                    <Input value={teamId} onChange={(e) => setTeamId(e.target.value)} placeholder="TEAMID1234" />
+                    <Input 
+                        value={teamId} 
+                        onChange={(e) => setTeamId(e.target.value)} 
+                        placeholder="TEAMID1234" 
+                        autoComplete="off"
+                    />
                   </div>
                   <div>
                     <div className="text-sm text-secondary mb-2">Pass Type Identifier</div>
-                    <Input value={passTypeIdentifier} onChange={(e) => setPassTypeIdentifier(e.target.value)} placeholder="pass.at.zaur.wallet" />
+                    <Input 
+                        value={passTypeIdentifier} 
+                        onChange={(e) => setPassTypeIdentifier(e.target.value)} 
+                        placeholder="pass.at.zaur.wallet" 
+                        autoComplete="off"
+                    />
                   </div>
 
                   <div>
