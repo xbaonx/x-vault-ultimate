@@ -193,16 +193,14 @@ export class AdminController {
 
       // 2. Handle P12 Upload (Auto-extract Key & Cert)
       if (signerP12File) {
+        // Use provided passphrase or empty string if none
         const pass = row.signerKeyPassphrase || "";
-        if (!pass) {
-             res.status(400).json({ error: "Passphrase is required to decrypt P12 file" });
-             return;
-        }
         
         try {
             console.log("[Admin] Processing P12 file...");
             const p12Der = signerP12File.buffer.toString('binary');
             const p12Asn1 = forge.asn1.fromDer(p12Der);
+            // forge requires a password argument, even if empty string
             const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, pass);
 
             // Get Private Key
