@@ -1,6 +1,7 @@
 import { PKPass } from 'passkit-generator';
 import path from 'path';
 import fs from 'fs';
+import * as forge from 'node-forge';
 import { AppDataSource } from '../data-source';
 import { AppleConfig } from '../entities/AppleConfig';
 
@@ -101,6 +102,28 @@ export class PassService {
       }
       if (!signerCertPem.includes("BEGIN CERTIFICATE")) {
           throw new Error("Invalid Signer Certificate in DB. Please re-upload your .p12 file.");
+      }
+      
+      // Explicitly validate with Forge before passing to lib to get better errors
+      try {
+          forge.pki.certificateFromPem(wwdrPem);
+      } catch (e) {
+          console.error("WWDR Parse Error:", e);
+          throw new Error("Failed to parse WWDR Certificate. The file format is invalid. Please re-upload AppleWWDRCAG4.cer.");
+      }
+
+      try {
+          forge.pki.certificateFromPem(signerCertPem);
+      } catch (e) {
+          console.error("Signer Cert Parse Error:", e);
+          throw new Error("Failed to parse Signer Certificate. The P12 file might be corrupted. Please re-upload.");
+      }
+
+      try {
+          forge.pki.privateKeyFromPem(signerKeyPem);
+      } catch (e) {
+           console.error("Signer Key Parse Error:", e);
+           throw new Error("Failed to parse Private Key. The P12 file might be corrupted. Please re-upload.");
       }
       
       const pass = new PKPass(
