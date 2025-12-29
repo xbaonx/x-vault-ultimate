@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Smartphone, Check, Loader2, Wallet, AlertTriangle, ShieldCheck, Lock } from 'lucide-react';
+import { Check, Loader2, Wallet, AlertTriangle, ShieldCheck, Lock } from 'lucide-react';
 import { startRegistration } from '@simplewebauthn/browser';
 import AppleSignin from 'react-apple-signin-auth';
 import { Button } from '../components/ui/button';
@@ -349,12 +349,13 @@ export default function Onboarding() {
                 {passUrl && (
                   <a 
                     href={`${getNormalizedApiUrl()}${passUrl}`} 
-                    className="inline-block bg-black border border-white/20 rounded-lg px-4 py-2 mb-4 hover:bg-white/5 transition-colors"
+                    className="inline-block hover:opacity-80 transition-opacity"
                   >
-                    <div className="flex items-center space-x-2">
-                       <Smartphone className="w-5 h-5" />
-                       <span>Add to Apple Wallet</span>
-                    </div>
+                    <img 
+                      src="https://developer.apple.com/assets/elements/badges/add-to-apple-wallet.svg" 
+                      alt="Add to Apple Wallet" 
+                      className="h-12"
+                    />
                   </a>
                 )}
               </div>
