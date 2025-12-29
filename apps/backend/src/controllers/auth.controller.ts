@@ -31,8 +31,10 @@ export class AuthController {
           
           appleUserId = sub;
           email = tokenEmail || '';
-      } catch (err) {
-          console.error('Apple Token Verification Failed:', err);
+      } catch (err: any) {
+          console.error('Apple Token Verification Failed:', JSON.stringify(err, null, 2));
+          console.error('Configured Client ID:', config.apple.clientId);
+          
           // Fallback for Dev/Mock environment if token is obviously fake
           if (config.nodeEnv === 'development' && identityToken.startsWith('mock-')) {
               appleUserId = `mock-apple-${uuidv4()}`;
