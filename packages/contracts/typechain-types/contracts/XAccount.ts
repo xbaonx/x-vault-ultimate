@@ -68,15 +68,18 @@ export interface XAccountInterface extends Interface {
     nameOrSignature:
       | "UPGRADE_INTERFACE_VERSION"
       | "activeDevices"
-      | "addDevice"
+      | "dailyLimit"
+      | "dailySpent"
       | "entryPoint"
       | "execute"
       | "executeBatch"
       | "getNonce"
       | "initialize"
-      | "owner"
       | "proxiableUUID"
-      | "removeDevice"
+      | "publicKeyX"
+      | "publicKeyY"
+      | "setDailyLimit"
+      | "updatePublicKey"
       | "upgradeToAndCall"
       | "validateUserOp"
   ): FunctionFragment;
@@ -86,6 +89,8 @@ export interface XAccountInterface extends Interface {
       | "DeviceAdded"
       | "DeviceRemoved"
       | "Initialized"
+      | "PublicKeyUpdated"
+      | "SpendingLimitChanged"
       | "Upgraded"
   ): EventFragment;
 
@@ -98,8 +103,12 @@ export interface XAccountInterface extends Interface {
     values: [BytesLike]
   ): string;
   encodeFunctionData(
-    functionFragment: "addDevice",
-    values: [BytesLike]
+    functionFragment: "dailyLimit",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "dailySpent",
+    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "entryPoint",
@@ -116,16 +125,27 @@ export interface XAccountInterface extends Interface {
   encodeFunctionData(functionFragment: "getNonce", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "initialize",
-    values: [AddressLike]
+    values: [BigNumberish, BigNumberish]
   ): string;
-  encodeFunctionData(functionFragment: "owner", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "proxiableUUID",
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "removeDevice",
-    values: [BytesLike]
+    functionFragment: "publicKeyX",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "publicKeyY",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setDailyLimit",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "updatePublicKey",
+    values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "upgradeToAndCall",
@@ -144,7 +164,8 @@ export interface XAccountInterface extends Interface {
     functionFragment: "activeDevices",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "addDevice", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "dailyLimit", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "dailySpent", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "entryPoint", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "execute", data: BytesLike): Result;
   decodeFunctionResult(
@@ -153,13 +174,18 @@ export interface XAccountInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "getNonce", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "initialize", data: BytesLike): Result;
-  decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "proxiableUUID",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "publicKeyX", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "publicKeyY", data: BytesLike): Result;
   decodeFunctionResult(
-    functionFragment: "removeDevice",
+    functionFragment: "setDailyLimit",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "updatePublicKey",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -201,6 +227,31 @@ export namespace InitializedEvent {
   export type OutputTuple = [version: bigint];
   export interface OutputObject {
     version: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace PublicKeyUpdatedEvent {
+  export type InputTuple = [x: BigNumberish, y: BigNumberish];
+  export type OutputTuple = [x: bigint, y: bigint];
+  export interface OutputObject {
+    x: bigint;
+    y: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace SpendingLimitChangedEvent {
+  export type InputTuple = [newLimit: BigNumberish];
+  export type OutputTuple = [newLimit: bigint];
+  export interface OutputObject {
+    newLimit: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -267,11 +318,9 @@ export interface XAccount extends BaseContract {
 
   activeDevices: TypedContractMethod<[arg0: BytesLike], [boolean], "view">;
 
-  addDevice: TypedContractMethod<
-    [deviceIdHash: BytesLike],
-    [void],
-    "nonpayable"
-  >;
+  dailyLimit: TypedContractMethod<[], [bigint], "view">;
+
+  dailySpent: TypedContractMethod<[arg0: BigNumberish], [bigint], "view">;
 
   entryPoint: TypedContractMethod<[], [string], "view">;
 
@@ -289,14 +338,26 @@ export interface XAccount extends BaseContract {
 
   getNonce: TypedContractMethod<[], [bigint], "view">;
 
-  initialize: TypedContractMethod<[_owner: AddressLike], [void], "nonpayable">;
-
-  owner: TypedContractMethod<[], [string], "view">;
+  initialize: TypedContractMethod<
+    [_publicKeyX: BigNumberish, _publicKeyY: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
 
   proxiableUUID: TypedContractMethod<[], [string], "view">;
 
-  removeDevice: TypedContractMethod<
-    [deviceIdHash: BytesLike],
+  publicKeyX: TypedContractMethod<[], [bigint], "view">;
+
+  publicKeyY: TypedContractMethod<[], [bigint], "view">;
+
+  setDailyLimit: TypedContractMethod<
+    [_newLimit: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  updatePublicKey: TypedContractMethod<
+    [_newX: BigNumberish, _newY: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -328,8 +389,11 @@ export interface XAccount extends BaseContract {
     nameOrSignature: "activeDevices"
   ): TypedContractMethod<[arg0: BytesLike], [boolean], "view">;
   getFunction(
-    nameOrSignature: "addDevice"
-  ): TypedContractMethod<[deviceIdHash: BytesLike], [void], "nonpayable">;
+    nameOrSignature: "dailyLimit"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "dailySpent"
+  ): TypedContractMethod<[arg0: BigNumberish], [bigint], "view">;
   getFunction(
     nameOrSignature: "entryPoint"
   ): TypedContractMethod<[], [string], "view">;
@@ -352,16 +416,30 @@ export interface XAccount extends BaseContract {
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "initialize"
-  ): TypedContractMethod<[_owner: AddressLike], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "owner"
-  ): TypedContractMethod<[], [string], "view">;
+  ): TypedContractMethod<
+    [_publicKeyX: BigNumberish, _publicKeyY: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "proxiableUUID"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
-    nameOrSignature: "removeDevice"
-  ): TypedContractMethod<[deviceIdHash: BytesLike], [void], "nonpayable">;
+    nameOrSignature: "publicKeyX"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "publicKeyY"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "setDailyLimit"
+  ): TypedContractMethod<[_newLimit: BigNumberish], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "updatePublicKey"
+  ): TypedContractMethod<
+    [_newX: BigNumberish, _newY: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "upgradeToAndCall"
   ): TypedContractMethod<
@@ -403,6 +481,20 @@ export interface XAccount extends BaseContract {
     InitializedEvent.OutputObject
   >;
   getEvent(
+    key: "PublicKeyUpdated"
+  ): TypedContractEvent<
+    PublicKeyUpdatedEvent.InputTuple,
+    PublicKeyUpdatedEvent.OutputTuple,
+    PublicKeyUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "SpendingLimitChanged"
+  ): TypedContractEvent<
+    SpendingLimitChangedEvent.InputTuple,
+    SpendingLimitChangedEvent.OutputTuple,
+    SpendingLimitChangedEvent.OutputObject
+  >;
+  getEvent(
     key: "Upgraded"
   ): TypedContractEvent<
     UpgradedEvent.InputTuple,
@@ -442,6 +534,28 @@ export interface XAccount extends BaseContract {
       InitializedEvent.InputTuple,
       InitializedEvent.OutputTuple,
       InitializedEvent.OutputObject
+    >;
+
+    "PublicKeyUpdated(uint256,uint256)": TypedContractEvent<
+      PublicKeyUpdatedEvent.InputTuple,
+      PublicKeyUpdatedEvent.OutputTuple,
+      PublicKeyUpdatedEvent.OutputObject
+    >;
+    PublicKeyUpdated: TypedContractEvent<
+      PublicKeyUpdatedEvent.InputTuple,
+      PublicKeyUpdatedEvent.OutputTuple,
+      PublicKeyUpdatedEvent.OutputObject
+    >;
+
+    "SpendingLimitChanged(uint256)": TypedContractEvent<
+      SpendingLimitChangedEvent.InputTuple,
+      SpendingLimitChangedEvent.OutputTuple,
+      SpendingLimitChangedEvent.OutputObject
+    >;
+    SpendingLimitChanged: TypedContractEvent<
+      SpendingLimitChangedEvent.InputTuple,
+      SpendingLimitChangedEvent.OutputTuple,
+      SpendingLimitChangedEvent.OutputObject
     >;
 
     "Upgraded(address)": TypedContractEvent<

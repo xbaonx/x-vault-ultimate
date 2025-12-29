@@ -46,7 +46,7 @@ class PaymasterController {
             // Note: case-insensitivity might be needed for addresses.
             let user = await userRepo.findOne({
                 where: { walletAddress: sender },
-                select: ['id', 'walletAddress', 'isFrozen', 'dailyLimitUsd', 'largeTransactionThresholdUsd', 'spendingPinHash'] // Need to explicitly select hidden columns
+                select: ['id', 'walletAddress', 'isFrozen', 'dailyLimitUsd', 'largeTransactionThresholdUsd', 'spendingPinHash', 'deviceLibraryId']
             });
             // If user not found by exact address, try case-insensitive search or mock association logic
             // For MVP, we assume exact match or strict requirement
@@ -54,7 +54,20 @@ class PaymasterController {
                 // ... (same as before)
             }
             if (user) {
-                // 2. Check Spending Limits
+                // 2. Check Device Lock (Security Layer 3)
+                const currentDeviceId = req.headers['x-device-library-id'];
+                // If user has a bound device, enforce it matches the current request
+                if (user.deviceLibraryId && user.deviceLibraryId !== currentDeviceId) {
+                    console.warn(`[Paymaster] Blocked: Device Mismatch. Registered: ${user.deviceLibraryId}, Current: ${currentDeviceId}`);
+                    // Return specific error to trigger migration flow on frontend
+                    res.status(403).json({
+                        error: 'Device not recognized',
+                        code: 'DEVICE_MISMATCH',
+                        requiresMigration: true
+                    });
+                    return;
+                }
+                // 3. Check Spending Limits
                 if (user.isFrozen) {
                     res.status(403).json({ error: 'Account is frozen' });
                     return;

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { signRequest } from '../lib/passkey';
 
 const normalizeApiUrl = (url: string) => {
   if (!url) return 'http://localhost:3000';
@@ -136,5 +137,32 @@ export const walletService = {
   getAddress: async (userId: string) => {
     const response = await api.get(`/wallet/address/${userId}`);
     return response.data;
+  },
+
+  /**
+   * Send a secure transaction with Passkey signing
+   */
+  sendTransaction: async (userId: string, transaction: any) => {
+    try {
+      // 1. Get Challenge from Backend
+      const optionsRes = await api.post('/wallet/transaction/options', { userId });
+      const options = optionsRes.data;
+
+      // 2. Sign with Passkey (FaceID/TouchID)
+      // This will prompt the user to authenticate on their device
+      const assertion = await signRequest(options.challenge);
+
+      // 3. Send Signature + Transaction to Backend
+      const response = await api.post('/wallet/transaction/send', {
+        userId,
+        transaction,
+        signature: assertion
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error("Transaction failed:", error);
+      throw error;
+    }
   }
 };

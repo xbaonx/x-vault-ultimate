@@ -36,11 +36,11 @@ export interface XFactoryInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "createAccount",
-    values: [AddressLike, BigNumberish]
+    values: [BigNumberish, BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "getAddress",
-    values: [AddressLike, BigNumberish]
+    values: [BigNumberish, BigNumberish, BigNumberish]
   ): string;
 
   decodeFunctionResult(
@@ -55,11 +55,20 @@ export interface XFactoryInterface extends Interface {
 }
 
 export namespace AccountCreatedEvent {
-  export type InputTuple = [account: AddressLike, owner: AddressLike];
-  export type OutputTuple = [account: string, owner: string];
+  export type InputTuple = [
+    account: AddressLike,
+    publicKeyX: BigNumberish,
+    publicKeyY: BigNumberish
+  ];
+  export type OutputTuple = [
+    account: string,
+    publicKeyX: bigint,
+    publicKeyY: bigint
+  ];
   export interface OutputObject {
     account: string;
-    owner: string;
+    publicKeyX: bigint;
+    publicKeyY: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -113,13 +122,13 @@ export interface XFactory extends BaseContract {
   accountImplementation: TypedContractMethod<[], [string], "view">;
 
   createAccount: TypedContractMethod<
-    [owner: AddressLike, salt: BigNumberish],
+    [publicKeyX: BigNumberish, publicKeyY: BigNumberish, salt: BigNumberish],
     [string],
     "nonpayable"
   >;
 
   getAddress: TypedContractMethod<
-    [owner: AddressLike, salt: BigNumberish],
+    [publicKeyX: BigNumberish, publicKeyY: BigNumberish, salt: BigNumberish],
     [string],
     "view"
   >;
@@ -134,14 +143,14 @@ export interface XFactory extends BaseContract {
   getFunction(
     nameOrSignature: "createAccount"
   ): TypedContractMethod<
-    [owner: AddressLike, salt: BigNumberish],
+    [publicKeyX: BigNumberish, publicKeyY: BigNumberish, salt: BigNumberish],
     [string],
     "nonpayable"
   >;
   getFunction(
     nameOrSignature: "getAddress"
   ): TypedContractMethod<
-    [owner: AddressLike, salt: BigNumberish],
+    [publicKeyX: BigNumberish, publicKeyY: BigNumberish, salt: BigNumberish],
     [string],
     "view"
   >;
@@ -155,7 +164,7 @@ export interface XFactory extends BaseContract {
   >;
 
   filters: {
-    "AccountCreated(address,address)": TypedContractEvent<
+    "AccountCreated(address,uint256,uint256)": TypedContractEvent<
       AccountCreatedEvent.InputTuple,
       AccountCreatedEvent.OutputTuple,
       AccountCreatedEvent.OutputObject

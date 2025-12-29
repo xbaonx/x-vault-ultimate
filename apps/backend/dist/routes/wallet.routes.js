@@ -9,4 +9,7 @@ router.use(gatekeeper_1.gatekeeper);
 router.get('/address/:userId', wallet_controller_1.WalletController.getAddress);
 router.get('/portfolio/:userId', wallet_controller_1.WalletController.getPortfolio);
 router.post('/deploy', wallet_controller_1.WalletController.deployWallet);
+// Transaction Signing Flow
+router.post('/transaction/options', wallet_controller_1.WalletController.getTransactionOptions);
+router.post('/transaction/send', wallet_controller_1.WalletController.sendTransaction);
 exports.default = router;
