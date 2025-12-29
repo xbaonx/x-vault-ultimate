@@ -8,36 +8,7 @@ import * as forge from "node-forge";
 export class AdminController {
   static async getDashboardStats(req: Request, res: Response) {
     if (!AppDataSource.isInitialized) {
-      return res.status(200).json({
-        stats: {
-          totalUsers: 125,
-          totalVolume: 1250,
-          activeSessions: 12,
-          gasSponsored: "0.45 ETH"
-        },
-        recentUsers: [
-          { id: 'mock-1', address: '0x123...mock1', status: 'Active', joined: new Date().toISOString() },
-          { id: 'mock-2', address: '0x456...mock2', status: 'Active', joined: new Date(Date.now() - 86400000).toISOString() },
-        ],
-        userGrowthData: [
-           { name: 'Mon', users: 10 },
-           { name: 'Tue', users: 15 },
-           { name: 'Wed', users: 8 },
-           { name: 'Thu', users: 20 },
-           { name: 'Fri', users: 25 },
-           { name: 'Sat', users: 18 },
-           { name: 'Sun', users: 30 }
-        ],
-        transactionVolumeData: [
-           { name: 'Mon', volume: 100 },
-           { name: 'Tue', volume: 150 },
-           { name: 'Wed', volume: 120 },
-           { name: 'Thu', volume: 200 },
-           { name: 'Fri', volume: 250 },
-           { name: 'Sat', volume: 180 },
-           { name: 'Sun', volume: 300 }
-        ]
-      });
+      return res.status(503).json({ error: "Database not initialized" });
     }
 
     try {
@@ -67,21 +38,12 @@ export class AdminController {
       for (let i = 6; i >= 0; i--) {
         const d = new Date(today);
         d.setDate(d.getDate() - i);
-        const dateStr = d.toISOString().split('T')[0];
+        // const dateStr = d.toISOString().split('T')[0];
         const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
 
-        // This is inefficient for large datasets but fine for MVP
-        // In prod, use: SELECT DATE(createdAt), COUNT(*) FROM ... GROUP BY DATE(createdAt)
-        const startOfDay = new Date(d.setHours(0,0,0,0));
-        const endOfDay = new Date(d.setHours(23,59,59,999));
-
-        // Use count for both for now
-        // const usersCount = await userRepo.count({ where: { createdAt: Between(startOfDay, endOfDay) } }); 
-        // We will just return mock random data for charts to keep it fast/simple for this step
-        // or implement proper SQL if requested. Let's keep existing chart structure but maybe randomized or 0 if empty
-        
-        userGrowthData.push({ name: dayName, users: 0 }); // Placeholder
-        transactionVolumeData.push({ name: dayName, volume: 0 }); // Placeholder
+        // Placeholder for charts until we implement complex aggregation
+        userGrowthData.push({ name: dayName, users: 0 }); 
+        transactionVolumeData.push({ name: dayName, volume: 0 }); 
       }
 
       res.status(200).json({
@@ -97,8 +59,8 @@ export class AdminController {
           status: 'Active',
           joined: u.createdAt
         })),
-        userGrowthData, // Sending empty/placeholder for now
-        transactionVolumeData // Sending empty/placeholder for now
+        userGrowthData, 
+        transactionVolumeData
       });
     } catch (error) {
       console.error("Error in getDashboardStats:", error);
@@ -108,11 +70,7 @@ export class AdminController {
 
   static async getUsers(req: Request, res: Response) {
     if (!AppDataSource.isInitialized) {
-      return res.status(200).json([
-        { id: 'mock-1', address: '0x123...mock1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: 'mock-2', address: '0x456...mock2', createdAt: new Date(Date.now() - 86400000).toISOString(), updatedAt: new Date().toISOString() },
-        { id: 'mock-3', address: '0x789...mock3', createdAt: new Date(Date.now() - 172800000).toISOString(), updatedAt: new Date().toISOString() },
-      ]);
+      return res.status(503).json({ error: "Database not initialized" });
     }
 
     try {
@@ -136,10 +94,7 @@ export class AdminController {
 
   static async getTransactions(req: Request, res: Response) {
     if (!AppDataSource.isInitialized) {
-      return res.status(200).json([
-        { id: 'tx-1', userOpHash: '0xabc...1', network: 'base', status: 'success', userAddress: '0x123...mock1', createdAt: new Date().toISOString() },
-        { id: 'tx-2', userOpHash: '0xdef...2', network: 'polygon', status: 'pending', userAddress: '0x456...mock2', createdAt: new Date(Date.now() - 3600000).toISOString() },
-      ]);
+      return res.status(503).json({ error: "Database not initialized" });
     }
 
     try {

@@ -513,7 +513,7 @@ export default function AdminDashboard() {
                   </div>
                   <div>
                     <div className="text-sm text-secondary mb-2">Pass Type Identifier</div>
-                    <Input value={passTypeIdentifier} onChange={(e) => setPassTypeIdentifier(e.target.value)} placeholder="pass.com.xvault.wallet" />
+                    <Input value={passTypeIdentifier} onChange={(e) => setPassTypeIdentifier(e.target.value)} placeholder="pass.at.zaur.wallet" />
                   </div>
 
                   <div>
