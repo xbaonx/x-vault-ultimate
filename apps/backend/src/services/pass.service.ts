@@ -5,6 +5,35 @@ import { AppDataSource } from '../data-source';
 import { AppleConfig } from '../entities/AppleConfig';
 
 export class PassService {
+  // Helper to ensure PEM has correct newlines (Forge is strict about this)
+  private static formatPem(pem: string): string {
+    if (!pem) return "";
+    let formatted = pem.trim();
+    
+    // Helper to fix specific header/footer
+    const fixHeader = (header: string) => {
+        if (formatted.includes(header) && !formatted.includes(header + "\n")) {
+            formatted = formatted.replace(header, header + "\n");
+        }
+    };
+    const fixFooter = (footer: string) => {
+        if (formatted.includes(footer) && !formatted.includes("\n" + footer)) {
+            formatted = formatted.replace(footer, "\n" + footer);
+        }
+    };
+
+    fixHeader("-----BEGIN CERTIFICATE-----");
+    fixFooter("-----END CERTIFICATE-----");
+    
+    fixHeader("-----BEGIN PRIVATE KEY-----");
+    fixFooter("-----END PRIVATE KEY-----");
+
+    fixHeader("-----BEGIN RSA PRIVATE KEY-----");
+    fixFooter("-----END RSA PRIVATE KEY-----");
+
+    return formatted;
+  }
+
   static async generatePass(userData: { address: string; balance: string }) {
     try {
       const modelPath = path.resolve(__dirname, '../../assets/pass.model');
@@ -61,13 +90,26 @@ export class PassService {
 
       console.log(`[PassService] Generating pass with TeamID: ${teamIdFromDb}, PassType: ${passTypeIdentifierFromDb}`);
       
+      const wwdrPem = PassService.formatPem(wwdrFromDb!);
+      const signerCertPem = PassService.formatPem(signerCertFromDb!);
+      const signerKeyPem = PassService.formatPem(signerKeyFromDb!);
+
+      console.log(`[PassService] WWDR PEM start: ${wwdrPem.substring(0, 50)}...`);
+
+      if (!wwdrPem.includes("BEGIN CERTIFICATE")) {
+          throw new Error("Invalid WWDR Certificate in DB. Please re-upload AppleWWDRCAG4.cer.");
+      }
+      if (!signerCertPem.includes("BEGIN CERTIFICATE")) {
+          throw new Error("Invalid Signer Certificate in DB. Please re-upload your .p12 file.");
+      }
+      
       const pass = new PKPass(
         {
           model: modelPath as any, // Directory containing pass.json, icon.png, etc.
           certificates: {
-            wwdr: Buffer.from(wwdrFromDb!.trim(), 'utf8'),
-            signerCert: Buffer.from(signerCertFromDb!.trim(), 'utf8'),
-            signerKey: Buffer.from(signerKeyFromDb!.trim(), 'utf8'),
+            wwdr: Buffer.from(wwdrPem, 'utf8'),
+            signerCert: Buffer.from(signerCertPem, 'utf8'),
+            signerKey: Buffer.from(signerKeyPem, 'utf8'),
             signerKeyPassphrase: signerKeyPassphraseFromDb || '',
           } as any,
         },
