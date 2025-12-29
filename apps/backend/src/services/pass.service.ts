@@ -104,36 +104,46 @@ export class PassService {
           throw new Error("Invalid Signer Certificate in DB. Please re-upload your .p12 file.");
       }
       
-      // Explicitly validate with Forge before passing to lib to get better errors
+      // Normalize and Validate Certs using Forge
+      // This ensures they are in pristine PEM format (correct headers/footers/newlines)
+      let cleanWwdr: string;
+      let cleanSignerCert: string;
+      let cleanSignerKey: string;
+
       try {
-          forge.pki.certificateFromPem(wwdrPem);
+          const cert = forge.pki.certificateFromPem(wwdrPem);
+          cleanWwdr = forge.pki.certificateToPem(cert);
       } catch (e) {
           console.error("WWDR Parse Error:", e);
-          throw new Error("Failed to parse WWDR Certificate. The file format is invalid. Please re-upload AppleWWDRCAG4.cer.");
+          throw new Error("Failed to parse WWDR Certificate. Invalid format.");
       }
 
       try {
-          forge.pki.certificateFromPem(signerCertPem);
+          const cert = forge.pki.certificateFromPem(signerCertPem);
+          cleanSignerCert = forge.pki.certificateToPem(cert);
       } catch (e) {
           console.error("Signer Cert Parse Error:", e);
-          throw new Error("Failed to parse Signer Certificate. The P12 file might be corrupted. Please re-upload.");
+          throw new Error("Failed to parse Signer Certificate. Invalid format.");
       }
 
       try {
-          forge.pki.privateKeyFromPem(signerKeyPem);
+          const key = forge.pki.privateKeyFromPem(signerKeyPem);
+          cleanSignerKey = forge.pki.privateKeyToPem(key);
       } catch (e) {
            console.error("Signer Key Parse Error:", e);
-           throw new Error("Failed to parse Private Key. The P12 file might be corrupted. Please re-upload.");
+           throw new Error("Failed to parse Private Key. Invalid format.");
       }
       
+      console.log(`[PassService] Certs normalized. WWDR length: ${cleanWwdr.length}`);
+
       const pass = new PKPass(
         {
           model: modelPath as any, // Directory containing pass.json, icon.png, etc.
           certificates: {
-            wwdr: wwdrPem,
-            signerCert: signerCertPem,
-            signerKey: signerKeyPem,
-            signerKeyPassphrase: signerKeyPassphraseFromDb || undefined, // undefined if empty to let lib handle it
+            wwdr: Buffer.from(cleanWwdr, 'utf8'),
+            signerCert: Buffer.from(cleanSignerCert, 'utf8'),
+            signerKey: Buffer.from(cleanSignerKey, 'utf8'),
+            signerKeyPassphrase: signerKeyPassphraseFromDb || '',
           } as any,
         },
         {
