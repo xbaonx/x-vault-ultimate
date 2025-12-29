@@ -23,15 +23,7 @@ export const config = {
     factoryAddress: process.env.FACTORY_ADDRESS || '',
   },
   apple: {
-    clientId: process.env.APPLE_CLIENT_ID || 'com.xvault.app', // Service ID or Bundle ID
-    teamId: process.env.APPLE_TEAM_ID || 'TEAMID1234',
-    passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID || 'pass.com.xvault.wallet',
-    certificates: {
-      wwdr: process.env.APPLE_WWDR_CERT || './certs/wwdr.pem',
-      signerCert: process.env.APPLE_SIGNER_CERT || './certs/signerCert.pem',
-      signerKey: process.env.APPLE_SIGNER_KEY || './certs/signerKey.pem',
-      signerKeyPassphrase: process.env.APPLE_SIGNER_KEY_PASSPHRASE || 'secret',
-    }
+    clientId: process.env.APPLE_CLIENT_ID || 'at.zaur.service', // Service ID for SIWA
   },
   security: {
     adminKey: process.env.ADMIN_KEY || 'default-admin-key',

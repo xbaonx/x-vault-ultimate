@@ -165,19 +165,6 @@ export class AdminController {
   }
 
   static async getAppleConfig(req: Request, res: Response) {
-    if (!AppDataSource.isInitialized) {
-      return res.status(200).json({
-        configured: true,
-        teamId: 'MOCK_TEAM_ID',
-        passTypeIdentifier: 'pass.com.mock.wallet',
-        hasWwdr: true,
-        hasSignerCert: true,
-        hasSignerKey: true,
-        hasSignerKeyPassphrase: true,
-        updatedAt: new Date().toISOString(),
-      });
-    }
-
     try {
       const repo = AppDataSource.getRepository(AppleConfig);
       const row = await repo.findOne({ where: { name: "default" } });
@@ -212,14 +199,6 @@ export class AdminController {
   }
 
   static async upsertAppleConfig(req: Request, res: Response) {
-    if (!AppDataSource.isInitialized) {
-      return res.status(200).json({
-        ok: true,
-        id: 'mock-config-id',
-        updatedAt: new Date().toISOString(),
-      });
-    }
-
     try {
       const {
         teamId,
@@ -256,17 +235,6 @@ export class AdminController {
   }
 
   static async uploadAppleCerts(req: Request, res: Response) {
-    if (!AppDataSource.isInitialized) {
-      return res.status(200).json({
-        ok: true,
-        id: 'mock-config-id',
-        updatedAt: new Date().toISOString(),
-        hasWwdr: true,
-        hasSignerCert: true,
-        hasSignerKey: true,
-      });
-    }
-
     try {
       const repo = AppDataSource.getRepository(AppleConfig);
       const existing = await repo.findOne({ where: { name: "default" } });

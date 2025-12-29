@@ -16,17 +16,7 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false
-      - key: APPLE_TEAM_ID
-        sync: false
-      - key: APPLE_PASS_TYPE_ID
-        sync: false
-      - key: APPLE_WWDR_CERT
-        sync: false
-      - key: APPLE_SIGNER_CERT
-        sync: false
-      - key: APPLE_SIGNER_KEY
-        sync: false
-      - key: APPLE_SIGNER_KEY_PASSPHRASE
+      - key: APPLE_CLIENT_ID
         sync: false
       - key: DB_SSL
         sync: false

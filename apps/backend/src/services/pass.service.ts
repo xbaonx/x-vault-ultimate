@@ -1,7 +1,6 @@
 import { PKPass } from 'passkit-generator';
 import path from 'path';
 import fs from 'fs';
-import { config } from '../config';
 import { AppDataSource } from '../data-source';
 import { AppleConfig } from '../entities/AppleConfig';
 
@@ -26,18 +25,17 @@ export class PassService {
       const signerCertFromDb = dbConfig?.signerCertPem;
       const signerKeyFromDb = dbConfig?.signerKeyPem;
       const signerKeyPassphraseFromDb = dbConfig?.signerKeyPassphrase;
+      const teamIdFromDb = dbConfig?.teamId;
+      const passTypeIdentifierFromDb = dbConfig?.passTypeIdentifier;
 
       // In a real environment, we would load real certificates
       // For this MVP/Demo, we will mock the pass generation if certs are missing
       // or try to generate if they exist.
       
-      // Check if certs exist (mock check)
-      const hasCertsFromDb = !!(wwdrFromDb && signerCertFromDb && signerKeyFromDb);
-      const hasCertsFromFs = fs.existsSync(path.resolve(config.apple.certificates.signerCert));
-      const hasCerts = hasCertsFromDb || hasCertsFromFs;
+      const hasCertsFromDb = !!(wwdrFromDb && signerCertFromDb && signerKeyFromDb && teamIdFromDb && passTypeIdentifierFromDb);
       
-      if (!hasCerts) {
-        console.warn("Apple Certificates not found. Returning mock pass buffer.");
+      if (!hasCertsFromDb) {
+        console.warn("Apple Certificates or Config not found in DB. Returning mock pass buffer.");
         // Return a dummy buffer for demo purposes
         return Buffer.from("Mock PKPass File Content") as any;
       }
@@ -46,15 +44,17 @@ export class PassService {
         {
           model: modelPath as any, // Directory containing pass.json, icon.png, etc.
           certificates: {
-            wwdr: hasCertsFromDb ? Buffer.from(wwdrFromDb!, 'utf8') : fs.readFileSync(path.resolve(config.apple.certificates.wwdr)),
-            signerCert: hasCertsFromDb ? Buffer.from(signerCertFromDb!, 'utf8') : fs.readFileSync(path.resolve(config.apple.certificates.signerCert)),
-            signerKey: hasCertsFromDb ? Buffer.from(signerKeyFromDb!, 'utf8') : fs.readFileSync(path.resolve(config.apple.certificates.signerKey)),
-            signerKeyPassphrase: (hasCertsFromDb ? signerKeyPassphraseFromDb : config.apple.certificates.signerKeyPassphrase) || '',
+            wwdr: Buffer.from(wwdrFromDb!, 'utf8'),
+            signerCert: Buffer.from(signerCertFromDb!, 'utf8'),
+            signerKey: Buffer.from(signerKeyFromDb!, 'utf8'),
+            signerKeyPassphrase: signerKeyPassphraseFromDb || '',
           } as any,
         },
         {
           serialNumber: userData.address,
           description: 'Zaur Web3 Account',
+          teamIdentifier: teamIdFromDb,
+          passTypeIdentifier: passTypeIdentifierFromDb,
         } as any
       );
 
