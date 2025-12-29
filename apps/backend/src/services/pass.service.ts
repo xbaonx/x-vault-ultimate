@@ -135,15 +135,28 @@ export class PassService {
       }
       
       console.log(`[PassService] Certs normalized. WWDR length: ${cleanWwdr.length}`);
-      console.log(`[PassService] Normalized WWDR Start: ${cleanWwdr.substring(0, 40)}...`);
+      
+      // Log Cert Subjects to verify they are correct
+      try {
+          const wwdrCert = forge.pki.certificateFromPem(cleanWwdr);
+          const signerCert = forge.pki.certificateFromPem(cleanSignerCert);
+          
+          const wwdrCN = wwdrCert.subject.getField('CN')?.value;
+          const signerCN = signerCert.subject.getField('CN')?.value;
+          
+          console.log(`[PassService] WWDR CN: ${wwdrCN}`);
+          console.log(`[PassService] Signer CN: ${signerCN}`);
+      } catch (e) {
+          console.warn("[PassService] Failed to extract CN from certs for logging", e);
+      }
 
       const pass = new PKPass(
         {
           model: modelPath as any, // Directory containing pass.json, icon.png, etc.
           certificates: {
-            wwdr: cleanWwdr,
-            signerCert: cleanSignerCert,
-            signerKey: cleanSignerKey,
+            wwdr: Buffer.from(cleanWwdr, 'utf8'),
+            signerCert: Buffer.from(cleanSignerCert, 'utf8'),
+            signerKey: Buffer.from(cleanSignerKey, 'utf8'),
             // We normalized the key to unencrypted PEM using Forge, so we MUST NOT pass a passphrase
             signerKeyPassphrase: undefined, 
           } as any,
