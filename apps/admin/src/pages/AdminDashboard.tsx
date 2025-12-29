@@ -512,7 +512,13 @@ export default function AdminDashboard() {
 
                   <div>
                     <div className="text-sm text-secondary mb-2">P12 Password</div>
-                    <Input type="password" value={signerKeyPassphrase} onChange={(e) => setSignerKeyPassphrase(e.target.value)} placeholder="Password used to export .p12" />
+                    <Input 
+                      type="password" 
+                      autoComplete="new-password"
+                      value={signerKeyPassphrase} 
+                      onChange={(e) => setSignerKeyPassphrase(e.target.value)} 
+                      placeholder="Password used to export .p12" 
+                    />
                   </div>
                   <div className="flex items-end">
                     <div className="flex gap-2 w-full">

@@ -233,9 +233,15 @@ export class AdminController {
                  console.warn("[Admin] No certificate found in P12");
             }
 
-        } catch (e) {
+        } catch (e: any) {
              console.error("[Admin] Failed to process P12 file:", e);
-             throw new Error("Failed to process P12 file. Check passphrase or file format.");
+             const isPasswordError = e.message && (e.message.includes('MAC') || e.message.includes('password') || e.message.includes('PKCS#12'));
+             const msg = isPasswordError 
+                ? "Incorrect P12 password or invalid file format. Even 'no password' files might need an empty password." 
+                : "Failed to process P12 file.";
+             
+             res.status(400).json({ error: msg });
+             return;
         }
       }
 
