@@ -134,12 +134,14 @@ export class DeviceController {
              user.deviceLibraryId = deviceLibraryId;
         }
 
-        if (!user.walletAddress || user.walletAddress.startsWith('pending-')) {
-            // Generate a valid 20-byte address from the deviceID
-            // hash(deviceId) -> 32 bytes -> take last 20 bytes (40 hex chars)
-            const hash = ethers.keccak256(ethers.toUtf8Bytes(deviceLibraryId));
-            const mockWalletAddress = ethers.getAddress(`0x${hash.substring(26)}`); // checksummed
-            user.walletAddress = mockWalletAddress;
+        // Always calculate the expected deterministic address
+        const hash = ethers.keccak256(ethers.toUtf8Bytes(deviceLibraryId));
+        const deterministicAddress = ethers.getAddress(`0x${hash.substring(26)}`);
+
+        // If address is missing, pending, or using the old format (not checksummed or different), update it
+        if (!user.walletAddress || user.walletAddress.startsWith('pending-') || user.walletAddress !== deterministicAddress) {
+            console.log(`[Device] Updating wallet address for User ${user.id} from ${user.walletAddress} to ${deterministicAddress}`);
+            user.walletAddress = deterministicAddress;
         }
         
         await userRepo.save(user);
