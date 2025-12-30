@@ -202,6 +202,7 @@ export class AdminController {
       const signerP12File = files?.signerP12?.[0];
 
       // 1. Handle WWDR (Support PEM or DER)
+      let wwdrCommonName = "";
       if (wwdrFile) {
         let pem = wwdrFile.buffer.toString("utf8");
         // If it doesn't look like a PEM, assume DER
@@ -214,12 +215,28 @@ export class AdminController {
                  console.log("[Admin] Converted WWDR from DER to PEM");
              } catch (e) {
                  console.error("[Admin] Failed to convert WWDR DER to PEM", e);
+                 return res.status(400).json({ error: "Invalid WWDR file. Could not parse as PEM or DER." });
              }
         }
+        
+        // Validate WWDR Content
+        try {
+            const cert = forge.pki.certificateFromPem(pem);
+            wwdrCommonName = cert.subject.getField('CN')?.value || "Unknown";
+            console.log(`[Admin] Validated WWDR: ${wwdrCommonName}`);
+            
+            if (!wwdrCommonName.includes("Worldwide Developer Relations")) {
+                console.warn("[Admin] Warning: Uploaded certificate does not look like Apple WWDR.");
+            }
+        } catch (e) {
+             return res.status(400).json({ error: "Invalid WWDR Certificate content." });
+        }
+
         row.wwdrPem = pem;
       }
 
       // 2. Handle P12 Upload (Auto-extract Key & Cert)
+      let signerCommonName = "";
       if (signerP12File) {
         // Use provided passphrase or empty string if none
         const pass = row.signerKeyPassphrase || "";
@@ -272,7 +289,8 @@ export class AdminController {
             
             if (certBag && certBag.cert) {
                 row.signerCertPem = forge.pki.certificateToPem(certBag.cert);
-                console.log("[Admin] Extracted Certificate from P12");
+                signerCommonName = certBag.cert.subject.getField('CN')?.value || "Unknown";
+                console.log(`[Admin] Extracted Certificate from P12: ${signerCommonName}`);
             } else {
                  console.warn("[Admin] No certificate found in P12");
             }
@@ -284,8 +302,7 @@ export class AdminController {
                 ? "Incorrect P12 password or invalid file format. Even 'no password' files might need an empty password." 
                 : "Failed to process P12 file.";
              
-             res.status(400).json({ error: msg });
-             return;
+             return res.status(400).json({ error: msg });
         }
       }
 
@@ -296,19 +313,16 @@ export class AdminController {
           // For now, let's just warn if we are saving potentially incomplete config,
           // OR if the user specifically uploaded a file that turned out invalid.
           if (wwdrFile) {
-             res.status(400).json({ error: "Invalid WWDR Certificate. Must be a valid PEM or DER file." });
-             return;
+             return res.status(400).json({ error: "Invalid WWDR Certificate. Must be a valid PEM or DER file." });
           }
       }
 
       if (signerP12File) {
           if (!row.signerCertPem || !row.signerCertPem.includes("BEGIN CERTIFICATE")) {
-               res.status(400).json({ error: "Invalid P12. Could not extract Signer Certificate." });
-               return;
+               return res.status(400).json({ error: "Invalid P12. Could not extract Signer Certificate." });
           }
           if (!row.signerKeyPem || (!row.signerKeyPem.includes("PRIVATE KEY") && !row.signerKeyPem.includes("RSA PRIVATE KEY"))) {
-               res.status(400).json({ error: "Invalid P12. Could not extract Private Key." });
-               return;
+               return res.status(400).json({ error: "Invalid P12. Could not extract Private Key." });
           }
       }
 
@@ -321,6 +335,8 @@ export class AdminController {
         hasWwdr: !!saved.wwdrPem,
         hasSignerCert: !!saved.signerCertPem,
         hasSignerKey: !!saved.signerKeyPem,
+        wwdrCN: wwdrCommonName || (saved.wwdrPem ? "Existing" : "Missing"),
+        signerCN: signerCommonName || (saved.signerCertPem ? "Existing" : "Missing")
       });
     } catch (error: any) {
       console.error("Error in uploadAppleCerts:", error);
