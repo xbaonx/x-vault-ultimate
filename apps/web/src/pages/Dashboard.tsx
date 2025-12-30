@@ -11,6 +11,8 @@ import { MigrationModal } from '../components/MigrationModal';
 export default function Dashboard() {
   const [portfolio, setPortfolio] = useState<any>(null);
   const [address, setAddress] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   // Transaction State
   const [showPinModal, setShowPinModal] = useState(false);
@@ -29,14 +31,29 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        setLoading(true);
+        setError(null);
+        
         const [portfolioData, addressData] = await Promise.all([
           walletService.getPortfolio(userId),
           walletService.getAddress(userId)
         ]);
+        
         setPortfolio(portfolioData);
         setAddress(addressData.address);
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error fetching dashboard data:', error);
+        setError(error.response?.data?.error || 'Failed to load dashboard data');
+        
+        // Set mock data as fallback to prevent infinite loading
+        setPortfolio({
+          totalBalanceUsd: 0,
+          assets: [],
+          history: []
+        });
+        setAddress('0x0000000000000000000000000000000000000000');
+      } finally {
+        setLoading(false);
       }
     };
     
@@ -109,7 +126,7 @@ export default function Dashboard() {
       alert("Device successfully linked!");
   };
 
-  if (!portfolio) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -119,6 +136,13 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-black text-white p-4 pb-20">
+      {/* Error Banner */}
+      {error && (
+        <div className="mb-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">
+          {error}
+        </div>
+      )}
+      
       {/* Header */}
       <header className="flex justify-between items-center mb-8 pt-4">
         <div className="flex items-center space-x-2">
