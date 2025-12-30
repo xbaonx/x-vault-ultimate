@@ -188,24 +188,18 @@ export class PassService {
               throw new Error("pass.json missing from model directory");
           }
 
-          // Prepare certificates object
-          const certificates = {
-            wwdr: wwdrPath,
-            signerCert: signerCertPath,
-            signerKey: signerKeyPath,
-          };
-
-          // Prepare props object
-          const props = {
+          // Instantiate PKPass with merged options object containing both props and certificates
+          const pass = new PKPass(modelBuffers as any, {
             serialNumber: userData.address,
             description: 'Zaur Web3 Account',
             teamIdentifier: teamId,
             passTypeIdentifier: passTypeIdentifier,
-          };
-
-          // Instantiate PKPass without certificates to avoid argument-order ambiguity
-          const pass = new PKPass(modelBuffers as any, props as any);
-          pass.certificates = certificates as any;
+            certificates: {
+              wwdr: wwdrPath,
+              signerCert: signerCertPath,
+              signerKey: signerKeyPath,
+            }
+          } as any);
 
           // Add dynamic data
           if (pass.primaryFields) {
