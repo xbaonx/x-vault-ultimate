@@ -168,10 +168,10 @@ export class PassService {
             {
               model: modelPath as any,
               certificates: {
-                wwdr: cleanWwdr,
-                signerCert: cleanSignerCert,
-                signerKey: cleanSignerKey,
-                signerKeyPassphrase: signerKeyPassphrase, 
+                wwdr: Buffer.from(cleanWwdr),
+                signerCert: Buffer.from(cleanSignerCert),
+                signerKey: Buffer.from(cleanSignerKey),
+                signerKeyPassphrase: undefined, 
               } as any,
             },
             {
