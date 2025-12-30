@@ -199,8 +199,10 @@ export class PassService {
       ];
 
       return pass.getAsBuffer();
-    } catch (error) {
-      console.error('Error generating pass:', error);
+    } catch (error: any) {
+      console.error('[PassService] Error generating pass:', error);
+      if (error.message) console.error('[PassService] Error Details:', error.message);
+      if (error.stack) console.error('[PassService] Stack Trace:', error.stack);
       throw error;
     }
   }
