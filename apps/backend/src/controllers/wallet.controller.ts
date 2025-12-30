@@ -8,18 +8,12 @@ import { generateAuthenticationOptions, verifyAuthenticationResponse } from '@si
 export class WalletController {
   static async getAddress(req: Request, res: Response) {
     try {
-      const { userId } = req.params;
+      // Use the user authenticated by Gatekeeper (via x-device-library-id)
+      // This ensures consistency between the device, the pass, and the dashboard.
+      const user = (req as any).user as User;
       
-      if (!userId) {
-        res.status(400).json({ error: 'User ID required' });
-        return;
-      }
-
-      const userRepo = AppDataSource.getRepository(User);
-      const user = await userRepo.findOneBy({ id: userId });
-
       if (!user) {
-        res.status(404).json({ error: 'User not found' });
+        res.status(401).json({ error: 'Unauthorized: Device not recognized' });
         return;
       }
       
@@ -29,13 +23,19 @@ export class WalletController {
           const deterministicAddress = ethers.getAddress(`0x${hash.substring(26)}`);
           
           if (!user.walletAddress || user.walletAddress !== deterministicAddress) {
-              console.log(`[Wallet] Auto-healing address for User ${user.id} from ${user.walletAddress} to ${deterministicAddress}`);
+              console.log(`[Wallet] Auto-healing address for User ${user.id} (Device: ${user.deviceLibraryId}) from ${user.walletAddress} to ${deterministicAddress}`);
               user.walletAddress = deterministicAddress;
+              const userRepo = AppDataSource.getRepository(User);
               await userRepo.save(user);
+          } else {
+              console.log(`[Wallet] Address verified deterministic for User ${user.id}: ${user.walletAddress}`);
           }
+      } else {
+          console.warn(`[Wallet] User ${user.id} has no deviceLibraryId! Cannot generate deterministic address.`);
       }
 
       // Return the persistent address assigned during registration
+      console.log(`[Wallet] Returning address for User ${user.id}: ${user.walletAddress}`);
       res.status(200).json({ address: user.walletAddress });
     } catch (error) {
       console.error('Error in getAddress:', error);
@@ -45,13 +45,11 @@ export class WalletController {
 
   static async getPortfolio(req: Request, res: Response) {
     try {
-      const { userId } = req.params;
-      
-      const userRepo = AppDataSource.getRepository(User);
-      const user = await userRepo.findOneBy({ id: userId });
+      // Use the user authenticated by Gatekeeper
+      const user = (req as any).user as User;
 
       if (!user) {
-        res.status(404).json({ error: 'User not found' });
+        res.status(401).json({ error: 'Unauthorized: Device not recognized' });
         return;
       }
 
@@ -63,6 +61,7 @@ export class WalletController {
           if (!user.walletAddress || user.walletAddress !== deterministicAddress) {
               console.log(`[Wallet] Auto-healing address in Portfolio for User ${user.id} from ${user.walletAddress} to ${deterministicAddress}`);
               user.walletAddress = deterministicAddress;
+              const userRepo = AppDataSource.getRepository(User);
               await userRepo.save(user);
           }
       }
