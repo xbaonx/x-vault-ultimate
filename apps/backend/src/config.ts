@@ -23,7 +23,7 @@ export const config = {
     factoryAddress: process.env.FACTORY_ADDRESS || '',
   },
   apple: {
-    clientId: process.env.APPLE_CLIENT_ID || 'at.zaur.service', // Service ID for SIWA
+    clientId: process.env.APPLE_CLIENT_ID || 'com.bnx.zaur', // Service ID for SIWA
   },
   security: {
     adminKey: process.env.ADMIN_KEY || 'default-admin-key',

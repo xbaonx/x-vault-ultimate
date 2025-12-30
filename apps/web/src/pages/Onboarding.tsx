@@ -203,7 +203,7 @@ export default function Onboarding() {
                   <div className="flex justify-center w-full">
                     <AppleSignin
                         authOptions={{
-                            clientId: import.meta.env.VITE_APPLE_CLIENT_ID || 'at.zaur.service',
+                            clientId: import.meta.env.VITE_APPLE_CLIENT_ID || 'com.bnx.zaur',
                             scope: 'email name',
                             redirectURI: import.meta.env.VITE_APPLE_REDIRECT_URI || window.location.origin,
                             usePopup: true,
