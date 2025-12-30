@@ -166,23 +166,18 @@ export class PassService {
           fs.writeFileSync(signerCertPath, cleanSignerCert);
           fs.writeFileSync(signerKeyPath, cleanSignerKey);
 
-          const pass = new PKPass(
-            {
+          const pass = new PKPass({
               model: modelPath as any,
               certificates: {
                 wwdr: wwdrPath,
                 signerCert: signerCertPath,
                 signerKey: signerKeyPath,
-                signerKeyPassphrase: undefined, 
-              } as any,
-            },
-            {
+              },
               serialNumber: userData.address,
               description: 'Zaur Web3 Account',
               teamIdentifier: teamId,
               passTypeIdentifier: passTypeIdentifier,
-            } as any
-          );
+          } as any);
 
           // Add dynamic data
           pass.primaryFields.push({
