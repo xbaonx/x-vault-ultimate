@@ -15,14 +15,16 @@ export class WalletController {
         return;
       }
 
-      // Calculate deterministic address using CREATE2
-      // We need the Factory address and the initCode hash logic
-      // For MVP, we will simulate this or use a simple calculation if we had the factory artifacts.
+      const userRepo = AppDataSource.getRepository(User);
+      const user = await userRepo.findOneBy({ id: userId });
+
+      if (!user) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
       
-      // Mock address for now
-      const mockAddress = ethers.Wallet.createRandom().address;
-      
-      res.status(200).json({ address: mockAddress });
+      // Return the persistent address assigned during registration
+      res.status(200).json({ address: user.walletAddress });
     } catch (error) {
       console.error('Error in getAddress:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -33,18 +35,55 @@ export class WalletController {
     try {
       const { userId } = req.params;
       
-      // Mock portfolio data
+      const userRepo = AppDataSource.getRepository(User);
+      const user = await userRepo.findOneBy({ id: userId });
+
+      if (!user) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      const address = user.walletAddress;
+      
+      // If address is pending or invalid, return empty portfolio
+      if (!address || !address.startsWith('0x')) {
+         res.status(200).json({
+            totalBalanceUsd: 0.00,
+            assets: [],
+            history: []
+         });
+         return;
+      }
+
+      // Fetch Real Balance from RPC
+      let nativeBalance = "0.0";
+      try {
+          const provider = new ethers.JsonRpcProvider(config.blockchain.rpcUrl);
+          const balanceWei = await provider.getBalance(address);
+          nativeBalance = ethers.formatEther(balanceWei);
+      } catch (err) {
+          console.error("Failed to fetch balance from RPC:", err);
+          // Fallback to 0 if RPC fails
+      }
+
+      // Estimate USD value (Mock Price for ETH/BaseETH ~ $3000 for display purposes)
+      // In a real app, we would fetch this from an Oracle or CoinGecko
+      const mockEthPrice = 3000.0;
+      const valueUsd = parseFloat(nativeBalance) * mockEthPrice;
+
+      // Construct Portfolio
       const portfolio = {
-        totalBalanceUsd: 1250.50,
+        totalBalanceUsd: valueUsd,
         assets: [
-          { symbol: 'USDT', balance: 500, network: 'base', valueUsd: 500 },
-          { symbol: 'USDC', balance: 200, network: 'polygon', valueUsd: 200 },
-          { symbol: 'ETH', balance: 0.25, network: 'arbitrum', valueUsd: 550.50 }
+          { 
+            symbol: 'ETH', // Assuming Base/Ethereum
+            balance: parseFloat(nativeBalance), 
+            network: 'base', // or config.blockchain.chainId
+            valueUsd: valueUsd 
+          }
         ],
-        history: [
-          { type: 'receive', amount: 500, token: 'USDT', status: 'success', date: new Date().toISOString() },
-          { type: 'send', amount: 50, token: 'USDC', status: 'pending', date: new Date().toISOString() }
-        ]
+        // Keep history mocked or empty for now as it requires an Indexer
+        history: []
       };
 
       res.status(200).json(portfolio);
