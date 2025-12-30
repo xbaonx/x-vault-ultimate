@@ -43,6 +43,15 @@ export default function Dashboard() {
         setAddress(addressData.address);
       } catch (error: any) {
         console.error('Error fetching dashboard data:', error);
+        
+        // If Unauthorized (401) or Not Found (404), redirect to Onboarding
+        if (error.response?.status === 401 || error.response?.status === 404) {
+            localStorage.removeItem('x_user_id');
+            localStorage.removeItem('x_device_id');
+            window.location.href = '/onboarding';
+            return;
+        }
+
         setError(error.response?.data?.error || 'Failed to load dashboard data');
         
         // Set mock data as fallback to prevent infinite loading
