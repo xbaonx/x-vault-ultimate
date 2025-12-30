@@ -260,30 +260,61 @@ export class DeviceController {
          return;
       }
 
-      // Fetch Real Balance for Pass
-      let balance = "0.00";
+      // Fetch Real Balance for Pass (Aggregated across chains)
+      let totalBalanceUsd = 0;
       if (user.walletAddress && user.walletAddress.startsWith('0x')) {
+          // 1. Fetch Prices
+          let ethPrice = 0;
+          let maticPrice = 0;
           try {
-              const provider = new ethers.JsonRpcProvider(config.blockchain.rpcUrl);
-              const balanceWei = await provider.getBalance(user.walletAddress);
-              const balanceEth = ethers.formatEther(balanceWei);
-              
-              // Fetch ETH Price
-              let ethPrice = 3000.0;
-              try {
-                  const response = await fetch('https://api.coinbase.com/v2/prices/ETH-USD/spot');
-                  const data = await response.json();
-                  ethPrice = parseFloat(data.data.amount);
-              } catch (err) {
-                  console.warn("Failed to fetch ETH price for pass, using fallback");
-              }
-
-              const valueUsd = parseFloat(balanceEth) * ethPrice;
-              balance = valueUsd.toFixed(2);
+              const [ethRes, maticRes] = await Promise.all([
+                  fetch('https://api.coinbase.com/v2/prices/ETH-USD/spot'),
+                  fetch('https://api.coinbase.com/v2/prices/MATIC-USD/spot')
+              ]);
+              const ethData = await ethRes.json();
+              const maticData = await maticRes.json();
+              ethPrice = parseFloat(ethData.data.amount) || 3000;
+              maticPrice = parseFloat(maticData.data.amount) || 1.0;
           } catch (e) {
-              console.warn("[Device] Failed to fetch balance for pass generation:", e);
+              console.warn("Failed to fetch prices for pass, using fallbacks");
+              ethPrice = 3000;
+              maticPrice = 1.0;
           }
+
+          // 2. Scan all chains
+          const chains = Object.values(config.blockchain.chains || {});
+          
+          // If no specific chains configured (fallback), use default single RPC
+          if (chains.length === 0) {
+             chains.push({ 
+                 rpcUrl: config.blockchain.rpcUrl, 
+                 symbol: 'ETH', 
+                 name: 'Default', 
+                 chainId: config.blockchain.chainId 
+             });
+          }
+
+          await Promise.all(chains.map(async (chain) => {
+              try {
+                  const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
+                  // Short timeout
+                  const balanceWei = await Promise.race([
+                      provider.getBalance(user.walletAddress),
+                      new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
+                  ]);
+                  
+                  const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
+                  if (nativeBalance > 0) {
+                      const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? maticPrice : ethPrice;
+                      totalBalanceUsd += nativeBalance * price;
+                  }
+              } catch (e) {
+                  // Ignore errors for individual chains
+              }
+          }));
       }
+
+      const balance = totalBalanceUsd.toFixed(2);
 
       const userData = {
         address: user.walletAddress || '0x0000000000000000000000000000000000000000',

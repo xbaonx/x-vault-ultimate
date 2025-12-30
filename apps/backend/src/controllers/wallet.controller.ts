@@ -55,42 +55,68 @@ export class WalletController {
          return;
       }
 
-      // Fetch Real Balance from RPC
-      let nativeBalance = "0.0";
-      try {
-          const provider = new ethers.JsonRpcProvider(config.blockchain.rpcUrl);
-          const balanceWei = await provider.getBalance(address);
-          nativeBalance = ethers.formatEther(balanceWei);
-      } catch (err) {
-          console.error("Failed to fetch balance from RPC:", err);
-          // Fallback to 0 if RPC fails
-      }
-
-      // Fetch Real ETH Price
+      // Fetch Real Prices
       let ethPrice = 0;
+      let maticPrice = 0;
+      
       try {
-          // Coinbase Public API for ETH-USD
-          const response = await fetch('https://api.coinbase.com/v2/prices/ETH-USD/spot');
-          const data = await response.json();
-          ethPrice = parseFloat(data.data.amount);
-      } catch (err) {
-          console.warn("Failed to fetch ETH price, using fallback:", err);
-          ethPrice = 3000.0; // Fallback
+          const [ethRes, maticRes] = await Promise.all([
+              fetch('https://api.coinbase.com/v2/prices/ETH-USD/spot'),
+              fetch('https://api.coinbase.com/v2/prices/MATIC-USD/spot')
+          ]);
+          
+          const ethData = await ethRes.json();
+          const maticData = await maticRes.json();
+          
+          ethPrice = parseFloat(ethData.data.amount) || 3000;
+          maticPrice = parseFloat(maticData.data.amount) || 1.0;
+      } catch (e) {
+          console.warn("Failed to fetch prices, using fallbacks");
+          ethPrice = 3000;
+          maticPrice = 1.0;
       }
 
-      const valueUsd = parseFloat(nativeBalance) * ethPrice;
+      // Define chains to scan
+      const chains = Object.values(config.blockchain.chains);
+      const assets: any[] = [];
+      let totalBalanceUsd = 0;
+
+      // Scan all chains in parallel
+      await Promise.all(chains.map(async (chain) => {
+          try {
+              const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
+              // Set a short timeout for RPC calls to avoid hanging
+              const balanceWei = await Promise.race([
+                  provider.getBalance(address),
+                  new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
+              ]);
+              
+              const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
+              
+              if (nativeBalance > 0) {
+                  const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? maticPrice : ethPrice;
+                  const valueUsd = nativeBalance * price;
+                  
+                  totalBalanceUsd += valueUsd;
+                  assets.push({
+                      symbol: chain.symbol,
+                      balance: nativeBalance,
+                      network: chain.name.toLowerCase(),
+                      valueUsd: valueUsd
+                  });
+              }
+          } catch (err) {
+              console.warn(`Failed to fetch balance for ${chain.name}:`, err);
+          }
+      }));
+
+      // Sort assets by value (descending)
+      assets.sort((a, b) => b.valueUsd - a.valueUsd);
 
       // Construct Portfolio
       const portfolio = {
-        totalBalanceUsd: valueUsd,
-        assets: [
-          { 
-            symbol: 'ETH', // Assuming Base/Ethereum
-            balance: parseFloat(nativeBalance), 
-            network: 'base', // or config.blockchain.chainId
-            valueUsd: valueUsd 
-          }
-        ],
+        totalBalanceUsd,
+        assets,
         // Keep history empty for now as it requires an Indexer
         history: []
       };

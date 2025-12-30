@@ -21,6 +21,39 @@ export const config = {
       signingKey: process.env.PAYMASTER_SIGNING_KEY || '', // Private key for signing gas sponsorship
     },
     factoryAddress: process.env.FACTORY_ADDRESS || '',
+    // Multi-chain Configuration
+    chains: {
+        base: {
+            rpcUrl: process.env.BASE_RPC_URL || 'https://mainnet.base.org',
+            chainId: 8453,
+            symbol: 'ETH',
+            name: 'Base'
+        },
+        polygon: {
+            rpcUrl: process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com',
+            chainId: 137,
+            symbol: 'MATIC', // Now POL, but let's keep MATIC/POL symbol flexible
+            name: 'Polygon'
+        },
+        arbitrum: {
+            rpcUrl: process.env.ARBITRUM_RPC_URL || 'https://arb1.arbitrum.io/rpc',
+            chainId: 42161,
+            symbol: 'ETH',
+            name: 'Arbitrum'
+        },
+        optimism: {
+            rpcUrl: process.env.OPTIMISM_RPC_URL || 'https://mainnet.optimism.io',
+            chainId: 10,
+            symbol: 'ETH',
+            name: 'Optimism'
+        },
+        ethereum: {
+            rpcUrl: process.env.ETH_RPC_URL || 'https://eth.llamarpc.com',
+            chainId: 1,
+            symbol: 'ETH',
+            name: 'Ethereum'
+        }
+    }
   },
   apple: {
     clientId: process.env.APPLE_CLIENT_ID || 'com.bnx.zaur.service', // Service ID for SIWA
