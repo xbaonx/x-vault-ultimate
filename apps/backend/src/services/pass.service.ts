@@ -155,49 +155,39 @@ export class PassService {
       
       console.log(`[PassService] Certs normalized. WWDR length: ${cleanWwdr.length}, SignerCert length: ${cleanSignerCert.length}, SignerKey length: ${cleanSignerKey.length}`);
       
-      // Strategy: Write certs to temp files to satisfy passkit-generator's file path requirement
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pass-certs-'));
-      const wwdrPath = path.join(tmpDir, 'wwdr.pem');
-      const signerCertPath = path.join(tmpDir, 'signerCert.pem');
-      const signerKeyPath = path.join(tmpDir, 'signerKey.pem');
+      // Load model files manually since PKPass constructor expects buffers object or template structure
+      const modelBuffers: { [key: string]: Buffer } = {};
+      try {
+        if (fs.statSync(modelPath).isDirectory()) {
+          const files = fs.readdirSync(modelPath);
+          for (const file of files) {
+            const filePath = path.join(modelPath, file);
+            if (fs.statSync(filePath).isFile()) {
+              modelBuffers[file] = fs.readFileSync(filePath);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[PassService] Failed to read model directory:", e);
+      }
+
+      // Validate pass.json presence in buffers
+      if (!modelBuffers['pass.json']) {
+          console.error("[PassService] pass.json missing from model buffers!");
+          throw new Error("pass.json missing from model directory");
+      }
 
       try {
-          fs.writeFileSync(wwdrPath, cleanWwdr);
-          fs.writeFileSync(signerCertPath, cleanSignerCert);
-          fs.writeFileSync(signerKeyPath, cleanSignerKey);
-
-          // Load model files manually since PKPass constructor expects buffers object or template structure
-          const modelBuffers: { [key: string]: Buffer } = {};
-          try {
-            if (fs.statSync(modelPath).isDirectory()) {
-              const files = fs.readdirSync(modelPath);
-              for (const file of files) {
-                const filePath = path.join(modelPath, file);
-                if (fs.statSync(filePath).isFile()) {
-                  modelBuffers[file] = fs.readFileSync(filePath);
-                }
-              }
-            }
-          } catch (e) {
-            console.warn("[PassService] Failed to read model directory:", e);
-          }
-
-          // Validate pass.json presence in buffers
-          if (!modelBuffers['pass.json']) {
-              console.error("[PassService] pass.json missing from model buffers!");
-              throw new Error("pass.json missing from model directory");
-          }
-
-          // Instantiate PKPass with merged options object containing both props and certificates
+          // Instantiate PKPass with Buffer content for certificates (not file paths)
           const pass = new PKPass(modelBuffers as any, {
             serialNumber: userData.address,
             description: 'Zaur Web3 Account',
             teamIdentifier: teamId,
             passTypeIdentifier: passTypeIdentifier,
             certificates: {
-              wwdr: wwdrPath,
-              signerCert: signerCertPath,
-              signerKey: signerKeyPath,
+              wwdr: Buffer.from(cleanWwdr, 'utf8'),
+              signerCert: Buffer.from(cleanSignerCert, 'utf8'),
+              signerKey: Buffer.from(cleanSignerKey, 'utf8'),
             }
           } as any);
 
@@ -245,16 +235,6 @@ export class PassService {
           console.error("[PassService] PKPass instantiation failed:", pkError);
           console.warn("[PassService] Falling back to MOCK pass due to certificate error.");
           return Buffer.from("Mock PKPass File Content: Certificate validation failed.") as any;
-      } finally {
-          // Cleanup temp files
-          try {
-             if (fs.existsSync(wwdrPath)) fs.unlinkSync(wwdrPath);
-             if (fs.existsSync(signerCertPath)) fs.unlinkSync(signerCertPath);
-             if (fs.existsSync(signerKeyPath)) fs.unlinkSync(signerKeyPath);
-             if (fs.existsSync(tmpDir)) fs.rmdirSync(tmpDir);
-          } catch(cleanupErr) {
-             console.warn("[PassService] Failed to clean up temp cert files:", cleanupErr);
-          }
       }
     } catch (error: any) {
       console.error('[PassService] Error generating pass:', error);
