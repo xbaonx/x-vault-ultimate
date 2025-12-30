@@ -193,8 +193,8 @@ export class PassService {
             passTypeIdentifier: passTypeIdentifier,
           };
 
-          // Instantiate PKPass with 3-arg signature: (buffers, props, certificates)
-          const pass = new PKPass(modelBuffers as any, props as any, certificates as any);
+          // Instantiate PKPass with CORRECT 3-arg signature: (buffers, certificates, props)
+          const pass = new PKPass(modelBuffers as any, certificates as any, props as any);
 
           // Add dynamic data
           if (pass.primaryFields) {
