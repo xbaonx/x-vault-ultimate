@@ -178,18 +178,23 @@ export class PassService {
       }
 
       try {
-          // Instantiate PKPass with Buffer content for certificates (not file paths)
-          const pass = new PKPass(modelBuffers as any, {
+          // Prepare certificates as separate argument (using strings, not Buffers)
+          const certificates = {
+            wwdr: cleanWwdr,
+            signerCert: cleanSignerCert,
+            signerKey: cleanSignerKey,
+          };
+
+          // Prepare props
+          const props = {
             serialNumber: userData.address,
             description: 'Zaur Web3 Account',
             teamIdentifier: teamId,
             passTypeIdentifier: passTypeIdentifier,
-            certificates: {
-              wwdr: Buffer.from(cleanWwdr, 'utf8'),
-              signerCert: Buffer.from(cleanSignerCert, 'utf8'),
-              signerKey: Buffer.from(cleanSignerKey, 'utf8'),
-            }
-          } as any);
+          };
+
+          // Instantiate PKPass with 3-arg signature: (buffers, props, certificates)
+          const pass = new PKPass(modelBuffers as any, props as any, certificates as any);
 
           // Add dynamic data
           if (pass.primaryFields) {
