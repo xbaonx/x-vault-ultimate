@@ -166,38 +166,73 @@ export class PassService {
           fs.writeFileSync(signerCertPath, cleanSignerCert);
           fs.writeFileSync(signerKeyPath, cleanSignerKey);
 
-          const pass = new PKPass({
-              model: modelPath as any,
-              certificates: {
-                wwdr: wwdrPath,
-                signerCert: signerCertPath,
-                signerKey: signerKeyPath,
-              },
-              serialNumber: userData.address,
-              description: 'Zaur Web3 Account',
-              teamIdentifier: teamId,
-              passTypeIdentifier: passTypeIdentifier,
-          } as any);
+          // Load model files manually since PKPass constructor expects buffers object or template structure
+          const modelBuffers: { [key: string]: Buffer } = {};
+          try {
+            if (fs.statSync(modelPath).isDirectory()) {
+              const files = fs.readdirSync(modelPath);
+              for (const file of files) {
+                const filePath = path.join(modelPath, file);
+                if (fs.statSync(filePath).isFile()) {
+                  modelBuffers[file] = fs.readFileSync(filePath);
+                }
+              }
+            }
+          } catch (e) {
+            console.warn("[PassService] Failed to read model directory:", e);
+          }
+
+          // Validate pass.json presence in buffers
+          if (!modelBuffers['pass.json']) {
+              console.error("[PassService] pass.json missing from model buffers!");
+              throw new Error("pass.json missing from model directory");
+          }
+
+          // Prepare certificates object
+          const certificates = {
+            wwdr: wwdrPath,
+            signerCert: signerCertPath,
+            signerKey: signerKeyPath,
+          };
+
+          // Prepare props object
+          const props = {
+            serialNumber: userData.address,
+            description: 'Zaur Web3 Account',
+            teamIdentifier: teamId,
+            passTypeIdentifier: passTypeIdentifier,
+          };
+
+          // Instantiate PKPass with (buffers, props, certificates) signature
+          const pass = new PKPass(modelBuffers as any, props as any, certificates as any);
 
           // Add dynamic data
-          pass.primaryFields.push({
-            key: 'balance',
-            label: 'TOTAL BALANCE',
-            value: userData.balance,
-            currencyCode: 'USD',
-          });
+          if (pass.primaryFields) {
+             pass.primaryFields.push({
+                key: 'balance',
+                label: 'TOTAL BALANCE',
+                value: userData.balance,
+                currencyCode: 'USD',
+             });
+          } else {
+             console.warn("[PassService] pass.primaryFields is undefined. pass.json might be invalid.");
+          }
 
-          pass.secondaryFields.push({
-            key: 'address',
-            label: 'WALLET ADDRESS',
-            value: `${userData.address.slice(0, 6)}...${userData.address.slice(-4)}`,
-          });
+          if (pass.secondaryFields) {
+             pass.secondaryFields.push({
+                key: 'address',
+                label: 'WALLET ADDRESS',
+                value: `${userData.address.slice(0, 6)}...${userData.address.slice(-4)}`,
+             });
+          }
 
-          pass.auxiliaryFields.push({
-            key: 'status',
-            label: 'STATUS',
-            value: 'Active',
-          });
+          if (pass.auxiliaryFields) {
+             pass.auxiliaryFields.push({
+                key: 'status',
+                label: 'STATUS',
+                value: 'Active',
+             });
+          }
           
           // QR Code for receiving address
           (pass as any).barcodes = [
