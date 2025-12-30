@@ -1,6 +1,7 @@
 import { PKPass } from 'passkit-generator';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import * as forge from 'node-forge';
 import { config } from '../config';
 import { AppDataSource } from '../data-source';
@@ -71,7 +72,6 @@ export class PassService {
 
       if (!hasModel) {
         console.error(`[PassService] Apple pass model not found at: ${modelPath}`);
-        // List contents of parent dir to help debug
         try {
             const parentDir = path.resolve(__dirname, '../../');
             console.log(`[PassService] Contents of ${parentDir}:`, fs.readdirSync(parentDir));
@@ -96,7 +96,6 @@ export class PassService {
       const wwdrRaw = dbConfig?.wwdrPem || PassService.resolveCert(config.apple.certificates.wwdr);
       const signerCertRaw = dbConfig?.signerCertPem || PassService.resolveCert(config.apple.certificates.signerCert);
       const signerKeyRaw = dbConfig?.signerKeyPem || PassService.resolveCert(config.apple.certificates.signerKey);
-      const signerKeyPassphrase = dbConfig?.signerKeyPassphrase || config.apple.certificates.signerKeyPassphrase;
       
       const teamId = dbConfig?.teamId || config.apple.teamId;
       const passTypeIdentifier = dbConfig?.passTypeIdentifier || config.apple.passTypeIdentifier;
@@ -112,7 +111,6 @@ export class PassService {
       
       if (!hasCerts) {
         console.warn("Apple Certificates or Config incomplete. Returning mock pass buffer.");
-        // Return a dummy buffer for demo purposes
         return Buffer.from("Mock PKPass File Content") as any;
       }
 
@@ -122,17 +120,11 @@ export class PassService {
       const signerCertPem = PassService.formatPem(signerCertRaw!);
       const signerKeyPem = PassService.formatPem(signerKeyRaw!);
 
-      console.log(`[PassService] WWDR PEM start: ${wwdrPem.substring(0, 50)}...`);
-
-      if (!wwdrPem.includes("BEGIN CERTIFICATE")) {
-          throw new Error("Invalid WWDR Certificate content.");
-      }
-      if (!signerCertPem.includes("BEGIN CERTIFICATE")) {
-          throw new Error("Invalid Signer Certificate content.");
-      }
+      // Validate PEM headers
+      if (!wwdrPem.includes("BEGIN CERTIFICATE")) throw new Error("Invalid WWDR Certificate content.");
+      if (!signerCertPem.includes("BEGIN CERTIFICATE")) throw new Error("Invalid Signer Certificate content.");
       
-      // Normalize and Validate Certs using Forge
-      // This ensures they are in pristine PEM format (correct headers/footers/newlines)
+      // Normalize Certs using Forge
       let cleanWwdr: string;
       let cleanSignerCert: string;
       let cleanSignerKey: string;
@@ -163,14 +155,24 @@ export class PassService {
       
       console.log(`[PassService] Certs normalized. WWDR length: ${cleanWwdr.length}, SignerCert length: ${cleanSignerCert.length}, SignerKey length: ${cleanSignerKey.length}`);
       
+      // Strategy: Write certs to temp files to satisfy passkit-generator's file path requirement
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pass-certs-'));
+      const wwdrPath = path.join(tmpDir, 'wwdr.pem');
+      const signerCertPath = path.join(tmpDir, 'signerCert.pem');
+      const signerKeyPath = path.join(tmpDir, 'signerKey.pem');
+
       try {
+          fs.writeFileSync(wwdrPath, cleanWwdr);
+          fs.writeFileSync(signerCertPath, cleanSignerCert);
+          fs.writeFileSync(signerKeyPath, cleanSignerKey);
+
           const pass = new PKPass(
             {
               model: modelPath as any,
               certificates: {
-                wwdr: Buffer.from(cleanWwdr),
-                signerCert: Buffer.from(cleanSignerCert),
-                signerKey: Buffer.from(cleanSignerKey),
+                wwdr: wwdrPath,
+                signerCert: signerCertPath,
+                signerKey: signerKeyPath,
                 signerKeyPassphrase: undefined, 
               } as any,
             },
@@ -211,11 +213,23 @@ export class PassService {
             },
           ];
 
-          return pass.getAsBuffer();
+          const buffer = await pass.getAsBuffer();
+          return buffer;
+
       } catch (pkError: any) {
           console.error("[PassService] PKPass instantiation failed:", pkError);
           console.warn("[PassService] Falling back to MOCK pass due to certificate error.");
           return Buffer.from("Mock PKPass File Content: Certificate validation failed.") as any;
+      } finally {
+          // Cleanup temp files
+          try {
+             if (fs.existsSync(wwdrPath)) fs.unlinkSync(wwdrPath);
+             if (fs.existsSync(signerCertPath)) fs.unlinkSync(signerCertPath);
+             if (fs.existsSync(signerKeyPath)) fs.unlinkSync(signerKeyPath);
+             if (fs.existsSync(tmpDir)) fs.rmdirSync(tmpDir);
+          } catch(cleanupErr) {
+             console.warn("[PassService] Failed to clean up temp cert files:", cleanupErr);
+          }
       }
     } catch (error: any) {
       console.error('[PassService] Error generating pass:', error);
