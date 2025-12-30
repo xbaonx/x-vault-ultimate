@@ -26,6 +26,12 @@ export const config = {
     clientId: process.env.APPLE_CLIENT_ID || 'com.bnx.zaur.service', // Service ID for SIWA
     teamId: process.env.APPLE_TEAM_ID || '93MNWVKKU9',
     passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID || 'pass.com.bnx.zaur',
+    certificates: {
+      wwdr: process.env.APPLE_WWDR_CERT || './certs/wwdr.pem',
+      signerCert: process.env.APPLE_SIGNER_CERT || './certs/signerCert.pem',
+      signerKey: process.env.APPLE_SIGNER_KEY || './certs/signerKey.pem',
+      signerKeyPassphrase: process.env.APPLE_SIGNER_KEY_PASSPHRASE || 'secret',
+    }
   },
   security: {
     adminKey: process.env.ADMIN_KEY || 'default-admin-key',

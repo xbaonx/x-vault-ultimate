@@ -11,7 +11,7 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key', 'x-device-library-id'],
   origin: '*' // In production, you might want to restrict this to your frontend domains
 }));
 app.use(helmet());
