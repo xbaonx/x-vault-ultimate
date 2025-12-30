@@ -129,23 +129,29 @@ export const migrationService = {
 };
 
 export const walletService = {
-  getPortfolio: async (userId: string) => {
-    const response = await api.get(`/wallet/portfolio/${userId}`);
+  getPortfolio: async (userId: string, deviceId: string) => {
+    const response = await api.get(`/wallet/portfolio/${userId}`, {
+      headers: { 'x-device-library-id': deviceId }
+    });
     return response.data;
   },
   
-  getAddress: async (userId: string) => {
-    const response = await api.get(`/wallet/address/${userId}`);
+  getAddress: async (userId: string, deviceId: string) => {
+    const response = await api.get(`/wallet/address/${userId}`, {
+      headers: { 'x-device-library-id': deviceId }
+    });
     return response.data;
   },
 
   /**
    * Send a secure transaction with Passkey signing
    */
-  sendTransaction: async (userId: string, transaction: any) => {
+  sendTransaction: async (userId: string, transaction: any, deviceId: string) => {
     try {
       // 1. Get Challenge from Backend
-      const optionsRes = await api.post('/wallet/transaction/options', { userId });
+      const optionsRes = await api.post('/wallet/transaction/options', { userId }, {
+        headers: { 'x-device-library-id': deviceId }
+      });
       const options = optionsRes.data;
 
       // 2. Sign with Passkey (FaceID/TouchID)
@@ -157,6 +163,8 @@ export const walletService = {
         userId,
         transaction,
         signature: assertion
+      }, {
+        headers: { 'x-device-library-id': deviceId }
       });
       
       return response.data;

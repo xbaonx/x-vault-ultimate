@@ -35,8 +35,8 @@ export default function Dashboard() {
         setError(null);
         
         const [portfolioData, addressData] = await Promise.all([
-          walletService.getPortfolio(userId),
-          walletService.getAddress(userId)
+          walletService.getPortfolio(userId, deviceId),
+          walletService.getAddress(userId, deviceId)
         ]);
         
         setPortfolio(portfolioData);
