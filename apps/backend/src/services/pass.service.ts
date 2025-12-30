@@ -63,45 +63,43 @@ export class PassService {
         dbConfig = await repo.findOne({ where: { name: 'default' } });
       }
 
-      const wwdrFromDb = dbConfig?.wwdrPem;
-      const signerCertFromDb = dbConfig?.signerCertPem;
-      const signerKeyFromDb = dbConfig?.signerKeyPem;
-      const signerKeyPassphraseFromDb = dbConfig?.signerKeyPassphrase;
-      const teamIdFromDb = dbConfig?.teamId;
-      const passTypeIdentifierFromDb = dbConfig?.passTypeIdentifier;
+      // Load from DB or Fallback to Config/Env
+      const wwdrRaw = dbConfig?.wwdrPem || PassService.resolveCert(config.apple.certificates.wwdr);
+      const signerCertRaw = dbConfig?.signerCertPem || PassService.resolveCert(config.apple.certificates.signerCert);
+      const signerKeyRaw = dbConfig?.signerKeyPem || PassService.resolveCert(config.apple.certificates.signerKey);
+      const signerKeyPassphrase = dbConfig?.signerKeyPassphrase || config.apple.certificates.signerKeyPassphrase;
+      
+      const teamId = dbConfig?.teamId || config.apple.teamId;
+      const passTypeIdentifier = dbConfig?.passTypeIdentifier || config.apple.passTypeIdentifier;
 
       // Debug log for missing items
-      if (!wwdrFromDb) console.warn("[PassService] Missing WWDR Certificate");
-      if (!signerCertFromDb) console.warn("[PassService] Missing Signer Certificate");
-      if (!signerKeyFromDb) console.warn("[PassService] Missing Signer Private Key");
-      if (!teamIdFromDb) console.warn("[PassService] Missing Team ID");
-      if (!passTypeIdentifierFromDb) console.warn("[PassService] Missing Pass Type ID");
+      if (!wwdrRaw) console.warn("[PassService] Missing WWDR Certificate (DB & Config)");
+      if (!signerCertRaw) console.warn("[PassService] Missing Signer Certificate (DB & Config)");
+      if (!signerKeyRaw) console.warn("[PassService] Missing Signer Private Key (DB & Config)");
+      if (!teamId) console.warn("[PassService] Missing Team ID (DB & Config)");
+      if (!passTypeIdentifier) console.warn("[PassService] Missing Pass Type ID (DB & Config)");
 
-      // In a real environment, we would load real certificates
-      // For this MVP/Demo, we will mock the pass generation if certs are missing
-      // or try to generate if they exist.
+      const hasCerts = !!(wwdrRaw && signerCertRaw && signerKeyRaw && teamId && passTypeIdentifier);
       
-      const hasCertsFromDb = !!(wwdrFromDb && signerCertFromDb && signerKeyFromDb && teamIdFromDb && passTypeIdentifierFromDb);
-      
-      if (!hasCertsFromDb) {
-        console.warn("Apple Certificates or Config not found in DB. Returning mock pass buffer.");
+      if (!hasCerts) {
+        console.warn("Apple Certificates or Config incomplete. Returning mock pass buffer.");
         // Return a dummy buffer for demo purposes
         return Buffer.from("Mock PKPass File Content") as any;
       }
 
-      console.log(`[PassService] Generating pass with TeamID: ${teamIdFromDb}, PassType: ${passTypeIdentifierFromDb}`);
+      console.log(`[PassService] Generating pass with TeamID: ${teamId}, PassType: ${passTypeIdentifier}`);
       
-      const wwdrPem = PassService.formatPem(wwdrFromDb!);
-      const signerCertPem = PassService.formatPem(signerCertFromDb!);
-      const signerKeyPem = PassService.formatPem(signerKeyFromDb!);
+      const wwdrPem = PassService.formatPem(wwdrRaw!);
+      const signerCertPem = PassService.formatPem(signerCertRaw!);
+      const signerKeyPem = PassService.formatPem(signerKeyRaw!);
 
       console.log(`[PassService] WWDR PEM start: ${wwdrPem.substring(0, 50)}...`);
 
       if (!wwdrPem.includes("BEGIN CERTIFICATE")) {
-          throw new Error("Invalid WWDR Certificate in DB. Please re-upload AppleWWDRCAG4.cer.");
+          throw new Error("Invalid WWDR Certificate content.");
       }
       if (!signerCertPem.includes("BEGIN CERTIFICATE")) {
-          throw new Error("Invalid Signer Certificate in DB. Please re-upload your .p12 file.");
+          throw new Error("Invalid Signer Certificate content.");
       }
       
       // Normalize and Validate Certs using Forge
@@ -164,8 +162,8 @@ export class PassService {
         {
           serialNumber: userData.address,
           description: 'Zaur Web3 Account',
-          teamIdentifier: teamIdFromDb,
-          passTypeIdentifier: passTypeIdentifierFromDb,
+          teamIdentifier: teamId,
+          passTypeIdentifier: passTypeIdentifier,
         } as any
       );
 
