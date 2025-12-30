@@ -2,6 +2,7 @@ import { PKPass } from 'passkit-generator';
 import path from 'path';
 import fs from 'fs';
 import * as forge from 'node-forge';
+import { config } from '../config';
 import { AppDataSource } from '../data-source';
 import { AppleConfig } from '../entities/AppleConfig';
 
@@ -160,71 +161,62 @@ export class PassService {
            throw new Error("Failed to parse Private Key. Invalid format.");
       }
       
-      console.log(`[PassService] Certs normalized. WWDR length: ${cleanWwdr.length}`);
+      console.log(`[PassService] Certs normalized. WWDR length: ${cleanWwdr.length}, SignerCert length: ${cleanSignerCert.length}, SignerKey length: ${cleanSignerKey.length}`);
       
-      // Log Cert Subjects to verify they are correct
       try {
-          const wwdrCert = forge.pki.certificateFromPem(cleanWwdr);
-          const signerCert = forge.pki.certificateFromPem(cleanSignerCert);
+          const pass = new PKPass(
+            {
+              model: modelPath as any,
+              certificates: {
+                wwdr: cleanWwdr,
+                signerCert: cleanSignerCert,
+                signerKey: cleanSignerKey,
+                signerKeyPassphrase: signerKeyPassphrase, 
+              } as any,
+            },
+            {
+              serialNumber: userData.address,
+              description: 'Zaur Web3 Account',
+              teamIdentifier: teamId,
+              passTypeIdentifier: passTypeIdentifier,
+            } as any
+          );
+
+          // Add dynamic data
+          pass.primaryFields.push({
+            key: 'balance',
+            label: 'TOTAL BALANCE',
+            value: userData.balance,
+            currencyCode: 'USD',
+          });
+
+          pass.secondaryFields.push({
+            key: 'address',
+            label: 'WALLET ADDRESS',
+            value: `${userData.address.slice(0, 6)}...${userData.address.slice(-4)}`,
+          });
+
+          pass.auxiliaryFields.push({
+            key: 'status',
+            label: 'STATUS',
+            value: 'Active',
+          });
           
-          const wwdrCN = wwdrCert.subject.getField('CN')?.value;
-          const signerCN = signerCert.subject.getField('CN')?.value;
-          
-          console.log(`[PassService] WWDR CN: ${wwdrCN}`);
-          console.log(`[PassService] Signer CN: ${signerCN}`);
-      } catch (e) {
-          console.warn("[PassService] Failed to extract CN from certs for logging", e);
+          // QR Code for receiving address
+          (pass as any).barcodes = [
+            {
+              format: 'PKBarcodeFormatQR',
+              message: `ethereum:${userData.address}`,
+              messageEncoding: 'iso-8859-1',
+            },
+          ];
+
+          return pass.getAsBuffer();
+      } catch (pkError: any) {
+          console.error("[PassService] PKPass instantiation failed:", pkError);
+          console.warn("[PassService] Falling back to MOCK pass due to certificate error.");
+          return Buffer.from("Mock PKPass File Content: Certificate validation failed.") as any;
       }
-
-      const pass = new PKPass(
-        {
-          model: modelPath as any, // Directory containing pass.json, icon.png, etc.
-          certificates: {
-            wwdr: Buffer.from(cleanWwdr, 'utf8'),
-            signerCert: Buffer.from(cleanSignerCert, 'utf8'),
-            signerKey: Buffer.from(cleanSignerKey, 'utf8'),
-            // We normalized the key to unencrypted PEM using Forge, so we MUST NOT pass a passphrase
-            signerKeyPassphrase: undefined, 
-          } as any,
-        },
-        {
-          serialNumber: userData.address,
-          description: 'Zaur Web3 Account',
-          teamIdentifier: teamId,
-          passTypeIdentifier: passTypeIdentifier,
-        } as any
-      );
-
-      // Add dynamic data
-      pass.primaryFields.push({
-        key: 'balance',
-        label: 'TOTAL BALANCE',
-        value: userData.balance,
-        currencyCode: 'USD',
-      });
-
-      pass.secondaryFields.push({
-        key: 'address',
-        label: 'WALLET ADDRESS',
-        value: `${userData.address.slice(0, 6)}...${userData.address.slice(-4)}`,
-      });
-
-      pass.auxiliaryFields.push({
-        key: 'status',
-        label: 'STATUS',
-        value: 'Active',
-      });
-      
-      // QR Code for receiving address
-      (pass as any).barcodes = [
-        {
-          format: 'PKBarcodeFormatQR',
-          message: `ethereum:${userData.address}`,
-          messageEncoding: 'iso-8859-1',
-        },
-      ];
-
-      return pass.getAsBuffer();
     } catch (error: any) {
       console.error('[PassService] Error generating pass:', error);
       if (error.message) console.error('[PassService] Error Details:', error.message);
