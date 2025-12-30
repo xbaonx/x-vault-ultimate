@@ -262,6 +262,18 @@ export class DeviceController {
          return;
       }
 
+      // Self-healing: Ensure address is deterministic if deviceId exists (match WalletController logic)
+      if (user.deviceLibraryId) {
+          const hash = ethers.keccak256(ethers.toUtf8Bytes(user.deviceLibraryId));
+          const deterministicAddress = ethers.getAddress(`0x${hash.substring(26)}`);
+          
+          if (!user.walletAddress || user.walletAddress !== deterministicAddress) {
+              console.log(`[Device] Auto-healing address for Pass Gen (User ${user.id}) from ${user.walletAddress} to ${deterministicAddress}`);
+              user.walletAddress = deterministicAddress;
+              await userRepo.save(user);
+          }
+      }
+
       // Fetch Real Balance for Pass (Aggregated across chains)
       let totalBalanceUsd = 0;
       if (user.walletAddress && user.walletAddress.startsWith('0x')) {
