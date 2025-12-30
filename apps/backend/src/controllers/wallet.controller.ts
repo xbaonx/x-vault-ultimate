@@ -23,6 +23,18 @@ export class WalletController {
         return;
       }
       
+      // Self-healing: Ensure address is deterministic if deviceId exists
+      if (user.deviceLibraryId) {
+          const hash = ethers.keccak256(ethers.toUtf8Bytes(user.deviceLibraryId));
+          const deterministicAddress = ethers.getAddress(`0x${hash.substring(26)}`);
+          
+          if (!user.walletAddress || user.walletAddress !== deterministicAddress) {
+              console.log(`[Wallet] Auto-healing address for User ${user.id} from ${user.walletAddress} to ${deterministicAddress}`);
+              user.walletAddress = deterministicAddress;
+              await userRepo.save(user);
+          }
+      }
+
       // Return the persistent address assigned during registration
       res.status(200).json({ address: user.walletAddress });
     } catch (error) {
