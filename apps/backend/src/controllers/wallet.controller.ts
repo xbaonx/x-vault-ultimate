@@ -66,10 +66,19 @@ export class WalletController {
           // Fallback to 0 if RPC fails
       }
 
-      // Estimate USD value (Mock Price for ETH/BaseETH ~ $3000 for display purposes)
-      // In a real app, we would fetch this from an Oracle or CoinGecko
-      const mockEthPrice = 3000.0;
-      const valueUsd = parseFloat(nativeBalance) * mockEthPrice;
+      // Fetch Real ETH Price
+      let ethPrice = 0;
+      try {
+          // Coinbase Public API for ETH-USD
+          const response = await fetch('https://api.coinbase.com/v2/prices/ETH-USD/spot');
+          const data = await response.json();
+          ethPrice = parseFloat(data.data.amount);
+      } catch (err) {
+          console.warn("Failed to fetch ETH price, using fallback:", err);
+          ethPrice = 3000.0; // Fallback
+      }
+
+      const valueUsd = parseFloat(nativeBalance) * ethPrice;
 
       // Construct Portfolio
       const portfolio = {
@@ -82,7 +91,7 @@ export class WalletController {
             valueUsd: valueUsd 
           }
         ],
-        // Keep history mocked or empty for now as it requires an Indexer
+        // Keep history empty for now as it requires an Indexer
         history: []
       };
 

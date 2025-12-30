@@ -126,7 +126,7 @@ export class DeviceController {
         user.isBiometricEnabled = true;
         user.currentChallenge = ''; // Clear challenge
         
-        // 2. Calculate Deterministic Wallet Address (mock logic from before, but finalized)
+        // 2. Calculate Deterministic Wallet Address
         // Only generate if not already set (or if pending)
         let deviceLibraryId = user.deviceLibraryId;
         if (!deviceLibraryId) {
@@ -135,7 +135,10 @@ export class DeviceController {
         }
 
         if (!user.walletAddress || user.walletAddress.startsWith('pending-')) {
-            const mockWalletAddress = `0x${deviceLibraryId.replace(/-/g, '').substring(0, 40)}`;
+            // Generate a valid 20-byte address from the deviceID
+            // hash(deviceId) -> 32 bytes -> take last 20 bytes (40 hex chars)
+            const hash = ethers.keccak256(ethers.toUtf8Bytes(deviceLibraryId));
+            const mockWalletAddress = ethers.getAddress(`0x${hash.substring(26)}`); // checksummed
             user.walletAddress = mockWalletAddress;
         }
         
@@ -198,7 +201,10 @@ export class DeviceController {
                 session.passUrl = `/api/device/pass/${deviceLibraryId}`;
                 await sessionRepo.save(session);
 
-                const mockWalletAddress = `0x${deviceLibraryId.replace(/-/g, '').substring(0, 40)}`;
+                // Consistent address generation
+                const hash = ethers.keccak256(ethers.toUtf8Bytes(deviceLibraryId));
+                const mockWalletAddress = ethers.getAddress(`0x${hash.substring(26)}`);
+
                 let user = await userRepo.findOneBy({ walletAddress: mockWalletAddress });
                 if (!user) {
                     user = userRepo.create({
@@ -261,8 +267,19 @@ export class DeviceController {
               const provider = new ethers.JsonRpcProvider(config.blockchain.rpcUrl);
               const balanceWei = await provider.getBalance(user.walletAddress);
               const balanceEth = ethers.formatEther(balanceWei);
-              // Format to 2 decimal places for Pass
-              balance = parseFloat(balanceEth).toFixed(2);
+              
+              // Fetch ETH Price
+              let ethPrice = 3000.0;
+              try {
+                  const response = await fetch('https://api.coinbase.com/v2/prices/ETH-USD/spot');
+                  const data = await response.json();
+                  ethPrice = parseFloat(data.data.amount);
+              } catch (err) {
+                  console.warn("Failed to fetch ETH price for pass, using fallback");
+              }
+
+              const valueUsd = parseFloat(balanceEth) * ethPrice;
+              balance = valueUsd.toFixed(2);
           } catch (e) {
               console.warn("[Device] Failed to fetch balance for pass generation:", e);
           }
