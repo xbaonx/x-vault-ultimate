@@ -6,6 +6,34 @@ import { AppDataSource } from '../data-source';
 import { AppleConfig } from '../entities/AppleConfig';
 
 export class PassService {
+  // Helper to resolve cert from string content or file path
+  private static resolveCert(value?: string): string | undefined {
+    if (!value) return undefined;
+    
+    // 1. If it looks like PEM content already, return it
+    if (value.includes('-----BEGIN')) {
+        return value;
+    }
+
+    // 2. If it looks like a file path, try to read it
+    if (value.length < 256 && !value.includes('\n')) {
+        const absolutePath = path.resolve(value);
+        if (fs.existsSync(absolutePath)) {
+            try {
+                return fs.readFileSync(absolutePath, 'utf8');
+            } catch (e) {
+                console.warn(`[PassService] Failed to read cert file at ${absolutePath}`, e);
+            }
+        } else {
+             // File doesn't exist - treat as undefined so we know it's missing
+             return undefined;
+        }
+    }
+    
+    // 3. Fallback: return value (might be garbage, but let caller decide)
+    return value;
+  }
+
   // Helper to ensure PEM has correct newlines (Forge is strict about this)
   private static formatPem(pem: string): string {
     if (!pem) return "";
