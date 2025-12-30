@@ -245,13 +245,35 @@ export class DeviceController {
     try {
       const { deviceId } = req.params;
       
-      // In real app, look up user by deviceId
-      const mockUser = {
-        address: '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
-        balance: '1,250.50'
+      // Look up user by deviceId
+      const userRepo = AppDataSource.getRepository(User);
+      const user = await userRepo.findOneBy({ deviceLibraryId: deviceId });
+
+      if (!user) {
+         res.status(404).json({ error: 'User not found for this device' });
+         return;
+      }
+
+      // Fetch Real Balance for Pass
+      let balance = "0.00";
+      if (user.walletAddress && user.walletAddress.startsWith('0x')) {
+          try {
+              const provider = new ethers.JsonRpcProvider(config.blockchain.rpcUrl);
+              const balanceWei = await provider.getBalance(user.walletAddress);
+              const balanceEth = ethers.formatEther(balanceWei);
+              // Format to 2 decimal places for Pass
+              balance = parseFloat(balanceEth).toFixed(2);
+          } catch (e) {
+              console.warn("[Device] Failed to fetch balance for pass generation:", e);
+          }
+      }
+
+      const userData = {
+        address: user.walletAddress || '0x0000000000000000000000000000000000000000',
+        balance: balance
       };
 
-      const passBuffer = await PassService.generatePass(mockUser);
+      const passBuffer = await PassService.generatePass(userData);
 
       res.set('Content-Type', 'application/vnd.apple.pkpass');
       res.set('Content-Disposition', `attachment; filename=xvault-${deviceId}.pkpass`);
