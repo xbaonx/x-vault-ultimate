@@ -223,10 +223,30 @@ export class AdminController {
         try {
             const cert = forge.pki.certificateFromPem(pem);
             wwdrCommonName = cert.subject.getField('CN')?.value || "Unknown";
+            const notAfter = cert.validity.notAfter;
+            const serialNumber = cert.serialNumber;
+            
             console.log(`[Admin] Validated WWDR: ${wwdrCommonName}`);
+            console.log(`[Admin] WWDR Serial: ${serialNumber}`);
+            console.log(`[Admin] WWDR Expiry: ${notAfter.toISOString()}`);
             
             if (!wwdrCommonName.includes("Worldwide Developer Relations")) {
                 console.warn("[Admin] Warning: Uploaded certificate does not look like Apple WWDR.");
+            }
+            
+            // Check if certificate is expired
+            const now = new Date();
+            if (notAfter < now) {
+                return res.status(400).json({ 
+                    error: `WWDR Certificate has expired on ${notAfter.toISOString()}. Please download WWDR G4 from https://www.apple.com/certificateauthority/` 
+                });
+            }
+            
+            // Warn if using G1 (serial starts with 0x0C or 12 in decimal)
+            if (serialNumber.toLowerCase().startsWith('0c') || serialNumber === '12') {
+                return res.status(400).json({ 
+                    error: "WWDR G1 certificate detected (expired Feb 2023). Please download WWDR G4 from https://www.apple.com/certificateauthority/" 
+                });
             }
         } catch (e) {
              return res.status(400).json({ error: "Invalid WWDR Certificate content." });
