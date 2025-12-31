@@ -312,16 +312,15 @@ export class PassService {
           // PREFER dynamic apiUrl (from request Host) over static config to ensure it hits the BACKEND, not Frontend.
           const origin = userData.apiUrl || config.security.origin || '';
           
-          // DEBUG: Temporarily disable webServiceURL to isolate download failure
-          // If pass downloads without this, the issue is the URL reachability or SSL.
-          // if (origin.startsWith('https')) {
-          //     passJson.webServiceURL = `${origin}/api/apple`;
-          //     passJson.authenticationToken = userData.authToken || '3325692850392023594';
-          //     console.log(`[PassService] Set webServiceURL to: ${passJson.webServiceURL}`);
-          // } else {
-          //     console.warn(`[PassService] Origin (${origin}) is not HTTPS. Skipping webServiceURL for pass.`);
-          // }
-          console.warn("[PassService] DEBUG: webServiceURL DISABLED for download testing.");
+          // Re-enabled webServiceURL for updates
+          if (origin.startsWith('https')) {
+              passJson.webServiceURL = `${origin}/api/apple`;
+              passJson.authenticationToken = userData.authToken || '3325692850392023594';
+              console.log(`[PassService] Set webServiceURL to: ${passJson.webServiceURL}`);
+          } else {
+              console.warn(`[PassService] Origin (${origin}) is not HTTPS. Skipping webServiceURL for pass.`);
+          }
+          // console.warn("[PassService] DEBUG: webServiceURL DISABLED for download testing.");
           
           // DEBUG: Log final pass structure
           console.log("[PassService] --- Final Pass Structure ---");
