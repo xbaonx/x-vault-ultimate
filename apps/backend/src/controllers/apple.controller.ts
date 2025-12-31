@@ -206,6 +206,13 @@ export class ApplePassController {
           // Use the first active device of the user or a placeholder.
           const deviceId = user.devices?.find(d => d.isActive)?.deviceLibraryId || "Unknown";
 
+          // Extract Owner Name (e.g. "Bao" from "bao@gmail.com")
+          let ownerName = "Vault Owner";
+          if (user.email) {
+              const namePart = user.email.split('@')[0];
+              ownerName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+          }
+
           const userData = {
             address: walletAddress,
             balance: totalBalanceUsd.toFixed(2),
@@ -213,7 +220,8 @@ export class ApplePassController {
             assets: assets,
             smartContract: "0x4337...Vault",
             securityDelay: "Active: 48h Window",
-            authToken: req.headers.authorization?.replace("ApplePass ", "") // Keep existing token
+            authToken: req.headers.authorization?.replace("ApplePass ", ""), // Keep existing token
+            ownerName: ownerName
           };
 
           const passBuffer = await PassService.generatePass(userData);
