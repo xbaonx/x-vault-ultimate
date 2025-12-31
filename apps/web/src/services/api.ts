@@ -40,6 +40,12 @@ export const deviceService = {
     return response.data;
   },
 
+  // WebAuthn Login Step 1: Get Login Options
+  getLoginOptions: async (userId: string): Promise<{ canLogin: boolean; options?: any; message?: string }> => {
+      const response = await api.post('/device/login/options', { userId });
+      return response.data;
+  },
+
   // WebAuthn Step 2: Verify Response
   verifyRegistration: async (tempUserId: string, attResp: any): Promise<{ verified: boolean; sessionId: string; deviceLibraryId: string; walletAddress: string }> => {
     const response = await api.post('/device/register/verify', {
@@ -47,6 +53,15 @@ export const deviceService = {
       response: attResp,
     });
     return response.data;
+  },
+
+  // WebAuthn Login Step 2: Verify Login
+  verifyLogin: async (userId: string, response: any): Promise<{ verified: boolean; deviceLibraryId: string; walletAddress: string }> => {
+      const res = await api.post('/device/login/verify', {
+          userId,
+          response
+      });
+      return res.data;
   },
 
   pollStatus: async (sessionId: string): Promise<DeviceSession> => {

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Check, Loader2, Wallet, AlertTriangle, ShieldCheck, Lock } from 'lucide-react';
-import { startRegistration } from '@simplewebauthn/browser';
+import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
 import AppleSignin from 'react-apple-signin-auth';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/card';
@@ -24,6 +24,7 @@ export default function Onboarding() {
   const [passUrl, setPassUrl] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [hasPin, setHasPin] = useState<boolean>(false);
+  const [loginOptions, setLoginOptions] = useState<any>(null);
 
   // --- Step 1: Sign in with Apple ---
   const handleAppleResponse = async (response: any) => {
@@ -42,6 +43,19 @@ export default function Onboarding() {
         setUserId(data.userId);
         setEmail(data.email);
         setHasPin(!!data.hasPin);
+
+        // Check for existing passkey login options if user has account
+        if (data.hasPin) {
+            try {
+                const loginOpts = await deviceService.getLoginOptions(data.userId);
+                if (loginOpts.canLogin) {
+                    setLoginOptions(loginOpts.options);
+                    console.log("Found existing passkey credentials, enabling login flow.");
+                }
+            } catch (e) {
+                console.warn("Failed to check login options, falling back to register", e);
+            }
+        }
 
         // Determine next step based on user status
         setStep('biometric');
@@ -63,10 +77,40 @@ export default function Onboarding() {
       });
   }
 
-  // --- Step 2: Biometric (Passkey) Registration ---
+  // --- Step 2: Biometric (Passkey) Registration OR Login ---
   const startBiometricSetup = async () => {
     setLoading(true);
     setError(null);
+    
+    // Path A: Try Login first if options available (Existing User with Synced Key)
+    if (loginOptions) {
+        try {
+            console.log("Attempting Passkey Login...");
+            const assertion = await startAuthentication(loginOptions);
+            const verification = await deviceService.verifyLogin(userId!, assertion);
+            
+            if (verification.verified) {
+                // Success! Logged in.
+                localStorage.setItem('x_device_id', verification.deviceLibraryId);
+                localStorage.setItem('x_user_id', userId!);
+                
+                // Skip PIN setup since they authenticated with biometrics + account exists
+                navigate('/dashboard');
+                return;
+            }
+        } catch (e: any) {
+            console.warn("Passkey Login failed (possibly new device), falling back to Registration:", e);
+            // If error is "NotAllowedError" (User cancelled), stop.
+            // Otherwise, assume it's "No credential found" -> Fallthrough to Register
+            if (e.name === 'NotAllowedError') {
+                 setError("Authentication cancelled.");
+                 setLoading(false);
+                 return;
+            }
+        }
+    }
+
+    // Path B: Registration (New Device / New User)
     try {
       // 1. Get Registration Options (linked to userId from SIWA)
       const { options, tempUserId } = await deviceService.getRegistrationOptions(userId || undefined);

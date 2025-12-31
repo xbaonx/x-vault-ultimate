@@ -9,6 +9,8 @@ import { Wallet } from '../entities/Wallet';
 import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
+  generateAuthenticationOptions,
+  verifyAuthenticationResponse,
 } from '@simplewebauthn/server';
 import { config } from '../config';
 import { ethers } from 'ethers';
@@ -34,6 +36,149 @@ export class DeviceController {
     }
 
     return { rpId, origin };
+  }
+
+  /**
+   * Login Flow Step 1: Generate Authentication Options (Assertion)
+   * This allows existing users to sign in with a synced Passkey
+   */
+  static async generateLoginOptions(req: Request, res: Response) {
+    try {
+        const { userId } = req.body;
+        const { rpId } = DeviceController.getSecurityConfig(req);
+
+        if (!userId) {
+            return res.status(400).json({ error: "User ID required" });
+        }
+
+        const userRepo = AppDataSource.getRepository(User);
+        const user = await userRepo.findOne({ 
+            where: { id: userId },
+            relations: ['devices']
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        // Filter active devices with credentials
+        const devices = user.devices.filter(d => d.isActive && d.credentialID);
+
+        if (devices.length === 0) {
+            // No credentials found -> Must register
+            return res.status(200).json({ canLogin: false, message: "No credentials found" });
+        }
+
+        const options = await generateAuthenticationOptions({
+            rpID: rpId,
+            allowCredentials: devices.map(d => ({
+                id: d.credentialID,
+                transports: d.transports ? (d.transports as any) : ['internal', 'hybrid'],
+            })),
+            userVerification: 'required',
+        });
+
+        // Save challenge to ALL candidate devices (since we don't know which one will sign yet)
+        // In a stricter model, we might use a temporary auth session, but updating devices is OK for MVP.
+        const deviceRepo = AppDataSource.getRepository(Device);
+        for (const device of devices) {
+            device.currentChallenge = options.challenge;
+            await deviceRepo.save(device);
+        }
+
+        res.status(200).json({ canLogin: true, options });
+
+    } catch (error) {
+        console.error('Error generating login options:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
+   * Login Flow Step 2: Verify Authentication Response
+   */
+  static async verifyLogin(req: Request, res: Response) {
+      try {
+          const { userId, response } = req.body;
+          const { rpId, origin } = DeviceController.getSecurityConfig(req);
+
+          // Find the device that matches the credential ID used
+          const credentialID = response.id;
+          const deviceRepo = AppDataSource.getRepository(Device);
+          
+          // We search for the device by credentialID AND userId to ensure ownership
+          const device = await deviceRepo.findOne({
+              where: { 
+                  // credentialID is stored as base64url string usually, or just string.
+                  // SimpleWebAuthn uses base64url. Check how we stored it.
+                  // In verifyRegistration: Buffer.from(credential.id).toString('base64') -> This is base64, not base64url.
+                  // But response.id from client is base64url. 
+                  // We might need to handle loose matching or re-encoding.
+                  // For now, let's try finding the user's device that matches.
+                  user: { id: userId }
+              },
+              relations: ['user']
+          });
+          
+          // Actually, we should iterate user's devices to find the matching credentialID
+          // because SQL matching on encoded strings can be tricky if formats differ.
+          const userRepo = AppDataSource.getRepository(User);
+          const user = await userRepo.findOne({ where: { id: userId }, relations: ['devices'] });
+          
+          if (!user) return res.status(404).json({ error: "User not found" });
+
+          const targetDevice = user.devices.find(d => {
+              // Compare as Buffers to be safe
+              // stored: base64
+              // received: base64url
+              // Simple way: convert received base64url to base64
+              const receivedBase64 = Buffer.from(response.id, 'base64url').toString('base64');
+              return d.credentialID === receivedBase64;
+          });
+
+          if (!targetDevice || !targetDevice.currentChallenge) {
+              return res.status(400).json({ error: "Matching device credential not found or no challenge active" });
+          }
+
+          const verification = await verifyAuthenticationResponse({
+              response,
+              expectedChallenge: targetDevice.currentChallenge,
+              expectedOrigin: origin,
+              expectedRPID: rpId,
+              credentialID: targetDevice.credentialID,
+              credentialPublicKey: targetDevice.credentialPublicKey,
+              counter: targetDevice.counter,
+          } as any);
+
+          if (verification.verified) {
+              // Update Counter
+              targetDevice.counter = verification.authenticationInfo.newCounter;
+              targetDevice.currentChallenge = '';
+              targetDevice.lastActiveAt = new Date();
+              await deviceRepo.save(targetDevice);
+
+              // Success! Return needed info.
+              
+              // Get Wallet Address
+               const walletRepo = AppDataSource.getRepository(Wallet);
+               const mainWallet = await walletRepo.findOne({ 
+                   where: { user: { id: userId }, isActive: true } 
+               });
+
+              res.status(200).json({
+                  verified: true,
+                  deviceLibraryId: targetDevice.deviceLibraryId,
+                  walletAddress: mainWallet?.address,
+                  // We might want to generate a session token here if using JWT
+              });
+          } else {
+              res.status(400).json({ verified: false, error: "Signature invalid" });
+          }
+
+      } catch (error) {
+          console.error('Error verifying login:', error);
+          res.status(500).json({ error: 'Internal server error' });
+      }
   }
 
   /**
