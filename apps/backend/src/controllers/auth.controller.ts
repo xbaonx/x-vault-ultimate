@@ -52,8 +52,10 @@ export class AuthController {
         user = userRepo.create({
             appleUserId,
             email,
+            usdzBalance: 25.0 // Welcome Bonus: 25 USDZ for commission-free trading
         });
         await userRepo.save(user);
+        console.log(`[Auth] New user created: ${user.id}. Welcome Bonus: 25 USDZ credited.`);
       } else {
           // Update missing fields
           if (!user.email && email) user.email = email;
