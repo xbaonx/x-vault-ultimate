@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { AppDataSource } from "../data-source";
 import { AppleConfig } from "../entities/AppleConfig";
 import { User } from "../entities/User";
+import { Device } from "../entities/Device";
 import { Transaction } from "../entities/Transaction";
 import * as forge from "node-forge";
 
@@ -46,19 +47,16 @@ export class AdminController {
       const totalUsers = await userRepo.count();
       const totalTransactions = await txRepo.count();
       
-      // Mocking 'Active Sessions' and 'Gas Sponsored' for now as they aren't directly tracked
-      // or require more complex queries/schema changes
       const activeSessions = Math.floor(totalUsers * 0.1); 
-      const gasSponsored = "0.0 ETH"; // placeholder until we track gas values
+      const gasSponsored = "0.0 ETH"; 
 
       // Recent registrations (limit 5)
       const recentUsers = await userRepo.find({
         order: { createdAt: "DESC" },
         take: 5,
+        relations: ['wallets'] // Fetch wallets to get address
       });
 
-      // Simple chart data (last 7 days)
-      // Note: This is a simplified implementation. Real-world would use proper date grouping in SQL.
       const today = new Date();
       const userGrowthData = [];
       const transactionVolumeData = [];
@@ -66,10 +64,8 @@ export class AdminController {
       for (let i = 6; i >= 0; i--) {
         const d = new Date(today);
         d.setDate(d.getDate() - i);
-        // const dateStr = d.toISOString().split('T')[0];
         const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
 
-        // Placeholder for charts until we implement complex aggregation
         userGrowthData.push({ name: dayName, users: 0 }); 
         transactionVolumeData.push({ name: dayName, volume: 0 }); 
       }
@@ -77,16 +73,19 @@ export class AdminController {
       res.status(200).json({
         stats: {
           totalUsers,
-          totalVolume: totalTransactions, // Using tx count as volume for now
+          totalVolume: totalTransactions,
           activeSessions,
           gasSponsored
         },
-        recentUsers: recentUsers.map(u => ({
-          id: u.id,
-          address: u.walletAddress,
-          status: 'Active',
-          joined: u.createdAt
-        })),
+        recentUsers: recentUsers.map(u => {
+            const mainWallet = u.wallets?.find(w => w.isActive) || u.wallets?.[0];
+            return {
+              id: u.id,
+              address: mainWallet?.address || 'No Wallet',
+              status: 'Active',
+              joined: u.createdAt
+            };
+        }),
         userGrowthData, 
         transactionVolumeData
       });
@@ -105,15 +104,19 @@ export class AdminController {
       const userRepo = AppDataSource.getRepository(User);
       const users = await userRepo.find({
         order: { createdAt: "DESC" },
-        take: 50 // limit 50 for now
+        take: 50, // limit 50 for now
+        relations: ['wallets']
       });
 
-      res.status(200).json(users.map(u => ({
-        id: u.id,
-        address: u.walletAddress,
-        createdAt: u.createdAt,
-        updatedAt: u.updatedAt
-      })));
+      res.status(200).json(users.map(u => {
+        const mainWallet = u.wallets?.find(w => w.isActive) || u.wallets?.[0];
+        return {
+            id: u.id,
+            address: mainWallet?.address || 'No Wallet',
+            createdAt: u.createdAt,
+            updatedAt: u.updatedAt
+        };
+      }));
     } catch (error) {
       console.error("Error in getUsers:", error);
       res.status(500).json({ error: "Internal server error" });
@@ -129,18 +132,21 @@ export class AdminController {
       const txRepo = AppDataSource.getRepository(Transaction);
       const transactions = await txRepo.find({
         order: { createdAt: "DESC" },
-        relations: ["user"],
+        relations: ["user", "user.wallets"],
         take: 50
       });
 
-      res.status(200).json(transactions.map(t => ({
-        id: t.id,
-        userOpHash: t.userOpHash,
-        network: t.network,
-        status: t.status,
-        userAddress: t.user?.walletAddress,
-        createdAt: t.createdAt
-      })));
+      res.status(200).json(transactions.map(t => {
+        const mainWallet = t.user?.wallets?.find(w => w.isActive) || t.user?.wallets?.[0];
+        return {
+            id: t.id,
+            userOpHash: t.userOpHash,
+            network: t.network,
+            status: t.status,
+            userAddress: mainWallet?.address || 'Unknown',
+            createdAt: t.createdAt
+        };
+      }));
     } catch (error) {
       console.error("Error in getTransactions:", error);
       res.status(500).json({ error: "Internal server error" });
@@ -445,22 +451,36 @@ export class AdminController {
         const { userId } = req.params;
         
         const userRepo = AppDataSource.getRepository(User);
-        const user = await userRepo.findOneBy({ id: userId });
+        // Load user with devices to deactivate them
+        const user = await userRepo.findOne({ 
+            where: { id: userId },
+            relations: ['devices']
+        });
 
         if (!user) {
             res.status(404).json({ error: "User not found" });
             return;
         }
 
-        // Force clear device lock
-        user.deviceLibraryId = "";
-        user.pendingDeviceLibraryId = "";
-        // user.migrationExpiry = null; // Ideally clear this too
+        // Deactivate all devices for this user
+        // This forces them to re-register/re-login which effectively resets access
+        if (user.devices && user.devices.length > 0) {
+            const deviceRepo = AppDataSource.getRepository(Device);
+            for (const device of user.devices) {
+                device.isActive = false;
+                device.currentChallenge = ""; 
+                // We keep the device record for audit but disable it
+                await deviceRepo.save(device);
+            }
+        }
+
+        // Also clear any migration flags if we moved them to User? 
+        // Migration fields were removed from User, so nothing else to clear there.
 
         await userRepo.save(user);
 
-        console.log(`[Admin] FORCE RESET Device Lock for user ${userId}.`);
-        res.status(200).json({ success: true, message: "Device lock reset. User can now link new device." });
+        console.log(`[Admin] FORCE RESET: Deactivated all devices for user ${userId}.`);
+        res.status(200).json({ success: true, message: "All devices deactivated. User can link new devices." });
     } catch (error) {
         console.error("Error in forceResetDeviceLock:", error);
         res.status(500).json({ error: "Internal server error" });

@@ -2,6 +2,7 @@ import { DataSource } from "typeorm";
 import { config } from "./config";
 import { User } from "./entities/User";
 import { Device } from "./entities/Device";
+import { Wallet } from "./entities/Wallet";
 import { Transaction } from "./entities/Transaction";
 import { AppleConfig } from "./entities/AppleConfig";
 import { PollingSession } from "./entities/PollingSession";
@@ -24,5 +25,5 @@ export const AppDataSource = new DataSource({
         rejectUnauthorized: dbSslRejectUnauthorized,
       }
     : undefined,
-  entities: [User, Device, Transaction, AppleConfig, PollingSession],
+  entities: [User, Device, Wallet, Transaction, AppleConfig, PollingSession],
 });

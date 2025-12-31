@@ -7,8 +7,13 @@ const router = Router();
 // Protected Routes
 router.use(gatekeeper);
 
-router.get('/address/:userId', WalletController.getAddress);
-router.get('/portfolio/:userId', WalletController.getPortfolio);
+// Wallet Management
+router.get('/list', WalletController.listWallets);
+router.post('/create', WalletController.createWallet);
+
+// Wallet Actions (param :userId is deprecated but kept for compat, controller ignores it)
+router.get('/address/:userId?', WalletController.getAddress);
+router.get('/portfolio/:userId?', WalletController.getPortfolio);
 router.post('/deploy', WalletController.deployWallet);
 
 // Transaction Signing Flow

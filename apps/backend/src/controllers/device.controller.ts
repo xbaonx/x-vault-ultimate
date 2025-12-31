@@ -4,6 +4,8 @@ import { PassService } from '../services/pass.service';
 import { AppDataSource } from '../data-source';
 import { PollingSession } from '../entities/PollingSession';
 import { User } from '../entities/User';
+import { Device } from '../entities/Device';
+import { Wallet } from '../entities/Wallet';
 import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -40,50 +42,74 @@ export class DeviceController {
   static async generateRegistrationOptions(req: Request, res: Response) {
     try {
       const { rpId } = DeviceController.getSecurityConfig(req);
-      const { userId } = req.body; // Optional: Link to existing user (SIWA)
+      const { userId } = req.body; 
       
       const userRepo = AppDataSource.getRepository(User);
       let user: User | null = null;
 
       if (userId) {
-          user = await userRepo.findOneBy({ id: userId });
+          user = await userRepo.findOne({ where: { id: userId } });
       }
 
       if (!user) {
-          // Create a provisional user if no ID provided or not found
-          // In a real flow, you might ask for a username or just generate one for a new wallet
+          // If no user found, we might need to create one (Anonymous/Provisional flow)
+          // But ideally we should have a user from Auth step.
+          // For now, create a provisional user.
           user = userRepo.create({
-            walletAddress: 'pending-' + uuidv4(), // Placeholder until address is calculated or we use this UUID
+              email: `anon-${uuidv4().slice(0, 8)}@zaur.local`,
           });
+          await userRepo.save(user);
+          
+          // Create default wallet for provisional user
+          const walletRepo = AppDataSource.getRepository(Wallet);
+          const salt = 'main';
+          const hash = ethers.keccak256(ethers.toUtf8Bytes(`${user.id}-${salt}`));
+          const address = ethers.getAddress(`0x${hash.substring(26)}`);
+          
+          const wallet = walletRepo.create({
+              user,
+              name: 'Main Wallet',
+              salt,
+              address,
+              isActive: true
+          });
+          await walletRepo.save(wallet);
       }
       
-      const username = user.email || `user-${user.id || uuidv4().slice(0, 8)}`;
+      const username = user.email || `user-${user.id.slice(0, 8)}`;
+
+      // Create a NEW Device entity for this registration attempt
+      const deviceRepo = AppDataSource.getRepository(Device);
+      const deviceLibraryId = uuidv4();
+      
+      const newDevice = deviceRepo.create({
+          user,
+          deviceLibraryId,
+          name: 'New Device',
+          isActive: false, // Pending verification
+      });
 
       // Generate options
       const options = await generateRegistrationOptions({
         rpName: config.security.rpName,
         rpID: rpId,
-        userID: new Uint8Array(Buffer.from(user.id || uuidv4())), // Convert string to Uint8Array. Note: if user is new, id might be undefined before save, but TypeORM usually needs save first for UUID.
+        userID: new Uint8Array(Buffer.from(user.id)), // User ID binds the credential to the User Identity
         userName: username,
-        // Don't exclude credentials for now as we are creating a new one
         attestationType: 'none',
         authenticatorSelection: {
           residentKey: 'preferred',
-          userVerification: 'required', // Critical for Biometric Gate
-          authenticatorAttachment: 'platform', // Force Platform authenticator (FaceID/TouchID)
+          userVerification: 'required',
+          authenticatorAttachment: 'platform',
         },
       });
 
-      // Save challenge to user
-      // We need to persist this user to retrieve challenge later.
-      user.currentChallenge = options.challenge;
-      
-      // If user was just created (no ID), save will generate ID. 
-      // If user existed, save updates it.
-      await userRepo.save(user);
+      // Save challenge to the DEVICE entity
+      newDevice.currentChallenge = options.challenge;
+      await deviceRepo.save(newDevice);
 
-      // Return the ID we just created so frontend can send it back
-      res.status(200).json({ options, tempUserId: user.id });
+      // Return the DEVICE ID as 'tempUserId' so verify step knows which device to update
+      // The frontend treats this as an opaque ID handle.
+      res.status(200).json({ options, tempUserId: newDevice.id });
     } catch (error) {
       console.error('Error generating registration options:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -95,75 +121,83 @@ export class DeviceController {
    */
   static async verifyRegistration(req: Request, res: Response) {
     try {
-      const { tempUserId, response } = req.body;
+      const { tempUserId, response } = req.body; // tempUserId is actually Device.id here
       const { rpId, origin } = DeviceController.getSecurityConfig(req);
       
-      const userRepo = AppDataSource.getRepository(User);
-      const user = await userRepo.findOneBy({ id: tempUserId });
+      const deviceRepo = AppDataSource.getRepository(Device);
+      const device = await deviceRepo.findOne({ 
+          where: { id: tempUserId },
+          relations: ['user']
+      });
 
-      if (!user || !user.currentChallenge) {
-        res.status(400).json({ error: 'User or challenge not found' });
+      if (!device || !device.currentChallenge) {
+        res.status(400).json({ error: 'Device registration session not found' });
         return;
       }
 
       const verification = await verifyRegistrationResponse({
         response,
-        expectedChallenge: user.currentChallenge,
+        expectedChallenge: device.currentChallenge,
         expectedOrigin: origin,
         expectedRPID: rpId,
       });
 
       if (verification.verified && verification.registrationInfo) {
         const { credential } = verification.registrationInfo;
-        const credentialID = credential.id;
-        const credentialPublicKey = credential.publicKey;
-        const counter = credential.counter;
 
-        // 1. Update User with Credential Info
-        user.credentialID = Buffer.from(credentialID).toString('base64');
-        user.credentialPublicKey = Buffer.from(credentialPublicKey);
-        user.counter = counter;
-        user.isBiometricEnabled = true;
-        user.currentChallenge = ''; // Clear challenge
+        // 1. Update Device with Credential Info
+        device.credentialID = Buffer.from(credential.id).toString('base64');
+        device.credentialPublicKey = Buffer.from(credential.publicKey);
+        device.counter = credential.counter;
+        device.isActive = true;
+        device.currentChallenge = ''; // Clear challenge
+        device.lastActiveAt = new Date();
         
-        // 2. Calculate Deterministic Wallet Address
-        // Only generate if not already set (or if pending)
-        let deviceLibraryId = user.deviceLibraryId;
-        if (!deviceLibraryId) {
-             deviceLibraryId = uuidv4();
-             user.deviceLibraryId = deviceLibraryId;
-        }
+        await deviceRepo.save(device);
 
-        // Always calculate the expected deterministic address
-        const hash = ethers.keccak256(ethers.toUtf8Bytes(deviceLibraryId));
-        const deterministicAddress = ethers.getAddress(`0x${hash.substring(26)}`);
-
-        // If address is missing, pending, or using the old format (not checksummed or different), update it
-        if (!user.walletAddress || user.walletAddress.startsWith('pending-') || user.walletAddress !== deterministicAddress) {
-            console.log(`[Device] Updating wallet address for User ${user.id} from ${user.walletAddress} to ${deterministicAddress}`);
-            user.walletAddress = deterministicAddress;
+        // 2. Fetch User's Wallet Address
+        const walletRepo = AppDataSource.getRepository(Wallet);
+        let mainWallet = await walletRepo.findOne({ 
+            where: { user: { id: device.user.id }, isActive: true } 
+        });
+        
+        // Safety net: If no wallet exists (migration case), create one deterministically
+        if (!mainWallet) {
+             console.log(`[Device] No wallet found for User ${device.user.id} during verification. Creating default...`);
+             const salt = 'main';
+             const hash = ethers.keccak256(ethers.toUtf8Bytes(`${device.user.id}-${salt}`));
+             const address = ethers.getAddress(`0x${hash.substring(26)}`);
+             
+             mainWallet = walletRepo.create({
+                 user: device.user,
+                 name: 'Main Wallet',
+                 salt,
+                 address,
+                 isActive: true
+             });
+             await walletRepo.save(mainWallet);
         }
         
-        await userRepo.save(user);
+        const walletAddress = mainWallet.address;
 
-        // 3. Create Session for Pass Generation (Legacy support for Onboarding flow)
+        // 3. Create Session for Pass Generation
         const sessionRepo = AppDataSource.getRepository(PollingSession);
         const sessionId = uuidv4();
         const newSession = sessionRepo.create({
             id: sessionId,
             status: 'completed',
-            deviceId: deviceLibraryId,
-            passUrl: `/api/device/pass/${deviceLibraryId}`
+            deviceId: device.deviceLibraryId,
+            passUrl: `/api/device/pass/${device.deviceLibraryId}`
         });
         await sessionRepo.save(newSession);
 
-        console.log(`[Device] WebAuthn Registration success. User: ${user.id}, Address: ${user.walletAddress}`);
+        console.log(`[Device] WebAuthn Registration success. User: ${device.user.id}, Device: ${device.deviceLibraryId}`);
 
         res.status(200).json({ 
             verified: true, 
             sessionId,
-            deviceLibraryId,
-            walletAddress: user.walletAddress 
+            deviceLibraryId: device.deviceLibraryId,
+            walletAddress: walletAddress 
         });
       } else {
         res.status(400).json({ verified: false, error: 'Verification failed' });
@@ -176,13 +210,13 @@ export class DeviceController {
   }
 
   static async register(req: Request, res: Response) {
-    // Legacy mock register - kept for fallback or testing if WebAuthn fails in dev
-    // ... logic same as before ...
+    // Legacy mock register - kept for fallback or testing
     try {
       const sessionRepo = AppDataSource.getRepository(PollingSession);
       const userRepo = AppDataSource.getRepository(User);
+      const deviceRepo = AppDataSource.getRepository(Device);
+      const walletRepo = AppDataSource.getRepository(Wallet);
       
-      // Start a new polling session
       const sessionId = uuidv4();
       const newSession = sessionRepo.create({
         id: sessionId,
@@ -203,18 +237,36 @@ export class DeviceController {
                 session.passUrl = `/api/device/pass/${deviceLibraryId}`;
                 await sessionRepo.save(session);
 
-                // Consistent address generation
-                const hash = ethers.keccak256(ethers.toUtf8Bytes(deviceLibraryId));
-                const mockWalletAddress = ethers.getAddress(`0x${hash.substring(26)}`);
-
-                let user = await userRepo.findOneBy({ walletAddress: mockWalletAddress });
+                // Create User + Wallet + Device
+                let user = await userRepo.findOne({ where: { email: 'legacy@mock.com' } });
                 if (!user) {
                     user = userRepo.create({
-                        walletAddress: mockWalletAddress,
-                        deviceLibraryId: deviceLibraryId,
-                        isBiometricEnabled: true
+                        email: 'legacy@mock.com',
                     });
                     await userRepo.save(user);
+
+                    const salt = 'main';
+                    const hash = ethers.keccak256(ethers.toUtf8Bytes(`${user.id}-${salt}`));
+                    const address = ethers.getAddress(`0x${hash.substring(26)}`);
+                    const wallet = walletRepo.create({
+                        user,
+                        name: 'Main Wallet',
+                        salt,
+                        address,
+                        isActive: true
+                    });
+                    await walletRepo.save(wallet);
+                }
+
+                let device = await deviceRepo.findOneBy({ deviceLibraryId });
+                if (!device) {
+                    device = deviceRepo.create({
+                        user,
+                        deviceLibraryId,
+                        isActive: true,
+                        name: 'Legacy Device'
+                    });
+                    await deviceRepo.save(device);
                 }
             }
         } catch (err) {
@@ -253,30 +305,24 @@ export class DeviceController {
     try {
       const { deviceId } = req.params;
       
-      // Look up user by deviceId
-      const userRepo = AppDataSource.getRepository(User);
-      const user = await userRepo.findOneBy({ deviceLibraryId: deviceId });
+      const deviceRepo = AppDataSource.getRepository(Device);
+      const device = await deviceRepo.findOne({
+          where: { deviceLibraryId: deviceId },
+          relations: ['user', 'user.wallets']
+      });
 
-      if (!user) {
-         res.status(404).json({ error: 'User not found for this device' });
+      if (!device) {
+         res.status(404).json({ error: 'Device not found' });
          return;
       }
 
-      // Self-healing: Ensure address is deterministic if deviceId exists (match WalletController logic)
-      if (user.deviceLibraryId) {
-          const hash = ethers.keccak256(ethers.toUtf8Bytes(user.deviceLibraryId));
-          const deterministicAddress = ethers.getAddress(`0x${hash.substring(26)}`);
-          
-          if (!user.walletAddress || user.walletAddress !== deterministicAddress) {
-              console.log(`[Device] Auto-healing address for Pass Gen (User ${user.id}) from ${user.walletAddress} to ${deterministicAddress}`);
-              user.walletAddress = deterministicAddress;
-              await userRepo.save(user);
-          }
-      }
+      // Find Main Wallet
+      const mainWallet = device.user.wallets?.find(w => w.isActive) || device.user.wallets?.[0];
+      const walletAddress = mainWallet?.address || '0x0000000000000000000000000000000000000000';
 
       // Fetch Real Balance for Pass (Aggregated across chains)
       let totalBalanceUsd = 0;
-      if (user.walletAddress && user.walletAddress.startsWith('0x')) {
+      if (walletAddress && walletAddress.startsWith('0x')) {
           // 1. Fetch Prices
           let ethPrice = 0;
           let maticPrice = 0;
@@ -297,8 +343,6 @@ export class DeviceController {
 
           // 2. Scan all chains
           const chains = Object.values(config.blockchain.chains || {});
-          
-          // If no specific chains configured (fallback), use default single RPC
           if (chains.length === 0) {
              chains.push({ 
                  rpcUrl: config.blockchain.rpcUrl, 
@@ -311,27 +355,23 @@ export class DeviceController {
           await Promise.all(chains.map(async (chain) => {
               try {
                   const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
-                  // Short timeout
                   const balanceWei = await Promise.race([
-                      provider.getBalance(user.walletAddress),
+                      provider.getBalance(walletAddress),
                       new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
                   ]);
-                  
                   const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
                   if (nativeBalance > 0) {
                       const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? maticPrice : ethPrice;
                       totalBalanceUsd += nativeBalance * price;
                   }
-              } catch (e) {
-                  // Ignore errors for individual chains
-              }
+              } catch (e) { }
           }));
       }
 
       const balance = totalBalanceUsd.toFixed(2);
 
       const userData = {
-        address: user.walletAddress || '0x0000000000000000000000000000000000000000',
+        address: walletAddress,
         balance: balance
       };
 
@@ -355,12 +395,11 @@ export class DeviceController {
         return;
       }
 
-      // Verify against DB (mocked for now)
-      // In production, check if deviceId exists in activeDevices table
-      const isValid = true; // Assume valid for MVP demo
+      const deviceRepo = AppDataSource.getRepository(Device);
+      const device = await deviceRepo.findOneBy({ deviceLibraryId: deviceId });
 
-      if (!isValid) {
-        res.status(403).json({ error: 'Invalid Device ID' });
+      if (!device || !device.isActive) {
+        res.status(403).json({ error: 'Invalid or Inactive Device ID' });
         return;
       }
 

@@ -2,8 +2,10 @@ import { Request, Response } from 'express';
 import appleSignin from 'apple-signin-auth';
 import { AppDataSource } from '../data-source';
 import { User } from '../entities/User';
+import { Wallet } from '../entities/Wallet';
 import { config } from '../config';
 import { v4 as uuidv4 } from 'uuid';
+import { ethers } from 'ethers';
 
 export class AuthController {
   
@@ -16,26 +18,21 @@ export class AuthController {
       }
 
       // Verify identity token
-      // In production, verify against Apple's public keys
-      // For MVP/Dev with mock, we might skip strict verification if configured to do so,
-      // but let's assume we want to try real verification or fail gracefully.
-      
       let email = '';
       let appleUserId = '';
       
       try {
           const { sub, email: tokenEmail } = await appleSignin.verifyIdToken(identityToken, {
             audience: config.apple.clientId,
-            ignoreExpiration: true, // For testing if needed, usually false
+            ignoreExpiration: true,
           });
           
           appleUserId = sub;
           email = tokenEmail || '';
       } catch (err: any) {
           console.error('Apple Token Verification Failed:', JSON.stringify(err, null, 2));
-          console.error('Configured Client ID:', config.apple.clientId);
           
-          // Fallback for Dev/Mock environment if token is obviously fake
+          // Fallback for Dev/Mock environment
           if (config.nodeEnv === 'development' && identityToken.startsWith('mock-')) {
               appleUserId = `mock-apple-${uuidv4()}`;
               email = 'mock@example.com';
@@ -44,46 +41,55 @@ export class AuthController {
           }
       }
 
-      // If user object is provided (only on first sign in), use it to update name if we had name fields
-      if (appleUserString) {
-          try {
-            const appleUser = JSON.parse(appleUserString);
-            // We could save name here if User entity had firstName/lastName
-          } catch (e) {}
-      }
-
       const userRepo = AppDataSource.getRepository(User);
-      let user = await userRepo.findOne({ where: { appleUserId } });
+      let user = await userRepo.findOne({ 
+          where: [{ appleUserId }, { email }],
+          relations: ['wallets'] 
+      });
 
-      if (!user && email) {
-          // Try to find by email if appleUserId didn't match (rare case of linking?)
-          user = await userRepo.findOne({ where: { email } });
-      }
-
+      // Create User if not exists
       if (!user) {
-        // Create new user (provisional, will be fully activated after Passkey setup)
         user = userRepo.create({
             appleUserId,
             email,
-            walletAddress: 'pending-' + uuidv4(), // Placeholder
         });
         await userRepo.save(user);
       } else {
-          // Update email if missing
-          if (!user.email && email) {
-              user.email = email;
-              await userRepo.save(user);
-          }
-          if (!user.appleUserId && appleUserId) {
-              user.appleUserId = appleUserId;
-              await userRepo.save(user);
-          }
+          // Update missing fields
+          if (!user.email && email) user.email = email;
+          if (!user.appleUserId && appleUserId) user.appleUserId = appleUserId;
+          await userRepo.save(user);
       }
 
+      // Ensure User has a Default Wallet
+      const walletRepo = AppDataSource.getRepository(Wallet);
+      let mainWallet = user.wallets?.find(w => w.name === 'Main Wallet');
+
+      if (!mainWallet) {
+          const salt = 'main';
+          const hash = ethers.keccak256(ethers.toUtf8Bytes(`${user.id}-${salt}`));
+          const address = ethers.getAddress(`0x${hash.substring(26)}`);
+
+          mainWallet = walletRepo.create({
+              user,
+              name: 'Main Wallet',
+              salt,
+              address,
+              isActive: true
+          });
+          await walletRepo.save(mainWallet);
+      }
+
+      // Determine status based on whether they have a device/pin set up
+      // For now, we return basic info. The frontend checks if they have a device linked via other API or assumes flow.
+      // But actually, "hasWallet" in the legacy response meant "has address".
+      // Now "hasWallet" is always true after this step.
+      // "hasPin" checks if spendingPinHash is set.
+      
       res.status(200).json({ 
           userId: user.id,
           email: user.email,
-          hasWallet: !user.walletAddress.startsWith('pending-'),
+          hasWallet: true,
           hasPin: !!user.spendingPinHash
       });
       

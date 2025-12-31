@@ -1,15 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from "typeorm";
+import { Device } from "./Device";
+import { Wallet } from "./Wallet";
 
 @Entity()
 export class User {
     @PrimaryGeneratedColumn("uuid")
     id!: string;
-
-    @Column({ unique: true })
-    walletAddress!: string;
-
-    @Column({ nullable: true })
-    deviceLibraryId!: string;
 
     @Column({ unique: true, nullable: true })
     email!: string;
@@ -17,25 +13,14 @@ export class User {
     @Column({ unique: true, nullable: true })
     appleUserId!: string;
 
-    @Column({ default: false })
-    isBiometricEnabled!: boolean;
+    // Relations
+    @OneToMany(() => Device, (device) => device.user)
+    devices!: Device[];
 
-    // WebAuthn Credentials
-    @Column({ nullable: true })
-    currentChallenge!: string; // Temporary storage for registration challenge
+    @OneToMany(() => Wallet, (wallet) => wallet.user)
+    wallets!: Wallet[];
 
-    @Column({ nullable: true })
-    credentialID!: string;
-
-    @Column({ type: 'bytea', nullable: true })
-    credentialPublicKey!: Buffer;
-
-    @Column({ default: 0 })
-    counter!: number;
-
-    @Column("simple-array", { nullable: true })
-    transports!: string[];
-
+    // Configuration
     @Column({ default: false })
     isFrozen!: boolean;
 
@@ -45,15 +30,16 @@ export class User {
     @Column({ type: 'float', default: 500.0 })
     largeTransactionThresholdUsd!: number;
 
-    @Column({ nullable: true, select: false }) // Do not return by default
+    @Column({ nullable: true, select: false })
     spendingPinHash!: string;
 
-    // Device Migration Fields
+    // Legacy fields - kept temporarily if needed for migration, 
+    // but in a clean break we remove them. 
+    // For this refactor, I will remove them to enforce usage of new tables.
+    
+    // Quick access to main wallet address (optional, can be derived from wallets[0])
     @Column({ nullable: true })
-    pendingDeviceLibraryId!: string;
-
-    @Column({ nullable: true })
-    migrationExpiry!: Date;
+    defaultWalletAddress!: string;
 
     @CreateDateColumn()
     createdAt!: Date;

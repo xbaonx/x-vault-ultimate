@@ -1,72 +1,111 @@
 import { Request, Response } from 'express';
 import { ethers } from 'ethers';
+import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config';
 import { AppDataSource } from '../data-source';
 import { User } from '../entities/User';
+import { Wallet } from '../entities/Wallet';
+import { Device } from '../entities/Device';
 import { generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
 
 export class WalletController {
   static async getAddress(req: Request, res: Response) {
     try {
-      // Use the user authenticated by Gatekeeper (via x-device-library-id)
-      // This ensures consistency between the device, the pass, and the dashboard.
+      // Authenticated by Gatekeeper
       const user = (req as any).user as User;
       
       if (!user) {
-        res.status(401).json({ error: 'Unauthorized: Device not recognized' });
+        res.status(401).json({ error: 'Unauthorized' });
         return;
       }
       
-      // Self-healing: Ensure address is deterministic if deviceId exists
-      if (user.deviceLibraryId) {
-          const hash = ethers.keccak256(ethers.toUtf8Bytes(user.deviceLibraryId));
-          const deterministicAddress = ethers.getAddress(`0x${hash.substring(26)}`);
-          
-          if (!user.walletAddress || user.walletAddress !== deterministicAddress) {
-              console.log(`[Wallet] Auto-healing address for User ${user.id} (Device: ${user.deviceLibraryId}) from ${user.walletAddress} to ${deterministicAddress}`);
-              user.walletAddress = deterministicAddress;
-              const userRepo = AppDataSource.getRepository(User);
-              await userRepo.save(user);
-          } else {
-              console.log(`[Wallet] Address verified deterministic for User ${user.id}: ${user.walletAddress}`);
-          }
+      const walletRepo = AppDataSource.getRepository(Wallet);
+      // Get the requested wallet ID from query, or default to active/main
+      const walletId = req.query.walletId as string;
+      
+      let wallet: Wallet | null = null;
+      if (walletId) {
+          wallet = await walletRepo.findOne({ where: { id: walletId, user: { id: user.id } } });
       } else {
-          console.warn(`[Wallet] User ${user.id} has no deviceLibraryId! Cannot generate deterministic address.`);
+          wallet = await walletRepo.findOne({ where: { user: { id: user.id }, isActive: true } });
       }
 
-      // Return the persistent address assigned during registration
-      console.log(`[Wallet] Returning address for User ${user.id}: ${user.walletAddress}`);
-      res.status(200).json({ address: user.walletAddress });
+      const address = wallet?.address || '0x0000000000000000000000000000000000000000';
+
+      res.status(200).json({ address, walletId: wallet?.id });
     } catch (error) {
       console.error('Error in getAddress:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
 
+  static async listWallets(req: Request, res: Response) {
+    try {
+        const user = (req as any).user as User;
+        if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+        const walletRepo = AppDataSource.getRepository(Wallet);
+        const wallets = await walletRepo.find({ 
+            where: { user: { id: user.id } },
+            order: { createdAt: 'ASC' }
+        });
+
+        res.status(200).json(wallets);
+    } catch (error) {
+        console.error('Error in listWallets:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  static async createWallet(req: Request, res: Response) {
+      try {
+          const user = (req as any).user as User;
+          if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+          const { name } = req.body;
+          const walletRepo = AppDataSource.getRepository(Wallet);
+          
+          // Generate deterministic address based on user ID and a unique salt (timestamp or uuid)
+          const salt = uuidv4(); 
+          const hash = ethers.keccak256(ethers.toUtf8Bytes(`${user.id}-${salt}`));
+          const address = ethers.getAddress(`0x${hash.substring(26)}`);
+
+          const newWallet = walletRepo.create({
+              user,
+              name: name || `Wallet ${new Date().toLocaleDateString()}`,
+              salt,
+              address,
+              isActive: false // Default new wallets to inactive? Or active? Let's say inactive unless switched.
+          });
+
+          await walletRepo.save(newWallet);
+          res.status(201).json(newWallet);
+      } catch (error) {
+          console.error('Error in createWallet:', error);
+          res.status(500).json({ error: 'Internal server error' });
+      }
+  }
+
   static async getPortfolio(req: Request, res: Response) {
     try {
-      // Use the user authenticated by Gatekeeper
       const user = (req as any).user as User;
 
       if (!user) {
-        res.status(401).json({ error: 'Unauthorized: Device not recognized' });
+        res.status(401).json({ error: 'Unauthorized' });
         return;
       }
 
-      // Self-healing: Ensure address is deterministic if deviceId exists
-      if (user.deviceLibraryId) {
-          const hash = ethers.keccak256(ethers.toUtf8Bytes(user.deviceLibraryId));
-          const deterministicAddress = ethers.getAddress(`0x${hash.substring(26)}`);
-          
-          if (!user.walletAddress || user.walletAddress !== deterministicAddress) {
-              console.log(`[Wallet] Auto-healing address in Portfolio for User ${user.id} from ${user.walletAddress} to ${deterministicAddress}`);
-              user.walletAddress = deterministicAddress;
-              const userRepo = AppDataSource.getRepository(User);
-              await userRepo.save(user);
-          }
+      const walletId = req.query.walletId as string;
+      const walletRepo = AppDataSource.getRepository(Wallet);
+      
+      let wallet: Wallet | null = null;
+      if (walletId) {
+          wallet = await walletRepo.findOne({ where: { id: walletId, user: { id: user.id } } });
+      } else {
+          wallet = await walletRepo.findOne({ where: { user: { id: user.id }, isActive: true } });
       }
 
-      const address = user.walletAddress;
+      const address = wallet?.address;
       
       // If address is pending or invalid, return empty portfolio
       if (!address || !address.startsWith('0x')) {
@@ -162,27 +201,26 @@ export class WalletController {
    */
   static async getTransactionOptions(req: Request, res: Response) {
     try {
-      const { userId } = req.body;
-      const userRepo = AppDataSource.getRepository(User);
-      const user = await userRepo.findOneBy({ id: userId });
+      const device = (req as any).device as Device;
 
-      if (!user) {
-        res.status(404).json({ error: 'User not found' });
+      if (!device) {
+        res.status(401).json({ error: 'Unauthorized Device' });
         return;
       }
 
       const options = await generateAuthenticationOptions({
         rpID: config.security.rpId === 'localhost' ? 'localhost' : config.security.rpId,
-        allowCredentials: user.credentialID ? [{
-          id: user.credentialID,
+        allowCredentials: device.credentialID ? [{
+          id: device.credentialID,
           transports: ['internal'],
         }] : [],
         userVerification: 'required',
       });
 
-      // Save challenge
-      user.currentChallenge = options.challenge;
-      await userRepo.save(user);
+      // Save challenge to DEVICE
+      device.currentChallenge = options.challenge;
+      const deviceRepo = AppDataSource.getRepository(Device);
+      await deviceRepo.save(device);
 
       res.status(200).json(options);
     } catch (error) {
@@ -196,31 +234,26 @@ export class WalletController {
    */
   static async sendTransaction(req: Request, res: Response) {
     try {
-      const { userId, transaction, signature } = req.body;
-      
-      const userRepo = AppDataSource.getRepository(User);
-      const user = await userRepo.findOneBy({ id: userId });
+      const { transaction, signature } = req.body;
+      const device = (req as any).device as Device;
+      const user = (req as any).user as User;
 
-      if (!user || !user.currentChallenge) {
-        res.status(400).json({ error: 'User or challenge not found' });
+      if (!device || !device.currentChallenge) {
+        res.status(400).json({ error: 'Device or challenge not found' });
         return;
       }
 
       // Verify Passkey Signature (Authentication Assertion)
       let verification;
       try {
-          // credentialID and credentialPublicKey must be Uint8Array for the verification function in this version if not string?
-          // The error suggested 'authenticator' is missing, implying it MIGHT be looking for flattened props or I need to check the types better.
-          // However, commonly it takes 'credentialPublicKey' (Buffer/Uint8Array), 'credentialID' (Buffer/Uint8Array), 'counter' (number).
-          
           verification = await verifyAuthenticationResponse({
             response: signature,
-            expectedChallenge: user.currentChallenge,
+            expectedChallenge: device.currentChallenge,
             expectedOrigin: config.security.origin,
             expectedRPID: config.security.rpId,
-            credentialPublicKey: user.credentialPublicKey,
-            credentialID: user.credentialID,
-            counter: user.counter,
+            credentialPublicKey: device.credentialPublicKey,
+            credentialID: device.credentialID,
+            counter: device.counter,
           } as any);
       } catch (err) {
           console.error('Verification failed:', err);
@@ -228,16 +261,18 @@ export class WalletController {
       }
 
       if (verification.verified) {
-          // Update counter
-          user.counter = verification.authenticationInfo.newCounter;
-          user.currentChallenge = ''; // Clear challenge
-          await userRepo.save(user);
+          // Update device counter
+          device.counter = verification.authenticationInfo.newCounter;
+          device.currentChallenge = ''; // Clear challenge
+          
+          const deviceRepo = AppDataSource.getRepository(Device);
+          await deviceRepo.save(device);
 
           // ---------------------------------------------------------
           // AT THIS POINT, THE REQUEST IS AUTHENTICATED & NON-REPUDIABLE
           // ---------------------------------------------------------
           
-          console.log(`[Wallet] Transaction authorized for User ${userId}:`, transaction);
+          console.log(`[Wallet] Transaction authorized for User ${user.id} via Device ${device.deviceLibraryId}:`, transaction);
 
           // TODO: Submit transaction to Blockchain via Relayer/Bundler
           // For MVP, we simulate success

@@ -129,15 +129,32 @@ export const migrationService = {
 };
 
 export const walletService = {
-  getPortfolio: async (userId: string, deviceId: string) => {
-    const response = await api.get(`/wallet/portfolio/${userId}`, {
+  listWallets: async (deviceId: string) => {
+    const response = await api.get('/wallet/list', {
+      headers: { 'x-device-library-id': deviceId }
+    });
+    return response.data;
+  },
+
+  createWallet: async (name: string, deviceId: string) => {
+    const response = await api.post('/wallet/create', { name }, {
+      headers: { 'x-device-library-id': deviceId }
+    });
+    return response.data;
+  },
+
+  getPortfolio: async (userId: string, deviceId: string, walletId?: string) => {
+    // userId param is legacy/ignored by backend now, but kept for route compatibility
+    const url = walletId ? `/wallet/portfolio/${userId}?walletId=${walletId}` : `/wallet/portfolio/${userId}`;
+    const response = await api.get(url, {
       headers: { 'x-device-library-id': deviceId }
     });
     return response.data;
   },
   
-  getAddress: async (userId: string, deviceId: string) => {
-    const response = await api.get(`/wallet/address/${userId}`, {
+  getAddress: async (userId: string, deviceId: string, walletId?: string) => {
+    const url = walletId ? `/wallet/address/${userId}?walletId=${walletId}` : `/wallet/address/${userId}`;
+    const response = await api.get(url, {
       headers: { 'x-device-library-id': deviceId }
     });
     return response.data;

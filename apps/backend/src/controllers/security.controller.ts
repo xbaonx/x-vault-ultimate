@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { AppDataSource } from '../data-source';
 import { User } from '../entities/User';
+import { Device } from '../entities/Device';
 import bcrypt from 'bcryptjs';
 
 export class SecurityController {
@@ -12,9 +13,6 @@ export class SecurityController {
       // 2. Or existing PIN if changing it
       
       const { userId, pin } = req.body;
-      // Also expect a 'deviceLibraryId' in headers to verify caller, or use the 'user' attached by middleware if we had auth middleware for users.
-      // For now, we'll rely on userId + deviceId check.
-      
       const deviceId = req.headers['x-device-library-id'] as string;
       if (!deviceId) {
           return res.status(401).json({ error: 'Device ID required' });
@@ -24,15 +22,19 @@ export class SecurityController {
         return res.status(400).json({ error: 'PIN must be 4-6 digits' });
       }
 
-      const userRepo = AppDataSource.getRepository(User);
-      // Find user by ID AND Device ID to ensure ownership
-      const user = await userRepo.findOne({ 
-          where: { id: userId, deviceLibraryId: deviceId } 
+      // 1. Verify Device Ownership
+      const deviceRepo = AppDataSource.getRepository(Device);
+      const device = await deviceRepo.findOne({ 
+          where: { deviceLibraryId: deviceId },
+          relations: ['user']
       });
 
-      if (!user) {
+      if (!device || !device.user || device.user.id !== userId) {
         return res.status(404).json({ error: 'User not found or unauthorized device' });
       }
+
+      const user = device.user;
+      const userRepo = AppDataSource.getRepository(User);
 
       // Hash PIN
       const salt = await bcrypt.genSalt(10);
@@ -41,7 +43,7 @@ export class SecurityController {
       user.spendingPinHash = hash;
       await userRepo.save(user);
 
-      console.log(`[Security] Spending PIN set for user ${user.id}`);
+      console.log(`[Security] Spending PIN set for user ${user.id} via Device ${deviceId}`);
       res.status(200).json({ success: true });
     } catch (error) {
       console.error('Error in setSpendingPin:', error);
@@ -55,9 +57,20 @@ export class SecurityController {
         const { userId, pin } = req.body;
         const deviceId = req.headers['x-device-library-id'] as string;
         
+        // 1. Verify Device Ownership
+        const deviceRepo = AppDataSource.getRepository(Device);
+        const device = await deviceRepo.findOne({ 
+            where: { deviceLibraryId: deviceId },
+            relations: ['user']
+        });
+
+        if (!device || !device.user || device.user.id !== userId) {
+            return res.status(404).json({ error: 'Unauthorized device' });
+        }
+
         const userRepo = AppDataSource.getRepository(User);
         const user = await userRepo.findOne({ 
-            where: { id: userId, deviceLibraryId: deviceId },
+            where: { id: userId },
             select: ['id', 'spendingPinHash'] // Explicitly select hash
         });
 
