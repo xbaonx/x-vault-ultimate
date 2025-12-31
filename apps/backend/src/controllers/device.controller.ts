@@ -62,15 +62,15 @@ export class DeviceController {
           
           // Create default wallet for provisional user
           const walletRepo = AppDataSource.getRepository(Wallet);
-          const salt = 'main';
-          const hash = ethers.keccak256(ethers.toUtf8Bytes(`${user.id}-${salt}`));
-          const address = ethers.getAddress(`0x${hash.substring(26)}`);
+          
+          const randomWallet = ethers.Wallet.createRandom();
           
           const wallet = walletRepo.create({
               user,
               name: 'Main Wallet',
-              salt,
-              address,
+              salt: 'random',
+              address: randomWallet.address,
+              privateKey: randomWallet.privateKey,
               isActive: true
           });
           await walletRepo.save(wallet);
@@ -164,15 +164,15 @@ export class DeviceController {
         // Safety net: If no wallet exists (migration case), create one deterministically
         if (!mainWallet) {
              console.log(`[Device] No wallet found for User ${device.user.id} during verification. Creating default...`);
-             const salt = 'main';
-             const hash = ethers.keccak256(ethers.toUtf8Bytes(`${device.user.id}-${salt}`));
-             const address = ethers.getAddress(`0x${hash.substring(26)}`);
+             
+             const randomWallet = ethers.Wallet.createRandom();
              
              mainWallet = walletRepo.create({
                  user: device.user,
                  name: 'Main Wallet',
-                 salt,
-                 address,
+                 salt: 'random',
+                 address: randomWallet.address,
+                 privateKey: randomWallet.privateKey,
                  isActive: true
              });
              await walletRepo.save(mainWallet);

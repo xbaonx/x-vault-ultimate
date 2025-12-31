@@ -6,6 +6,7 @@ import { AppDataSource } from '../data-source';
 import { User } from '../entities/User';
 import { Wallet } from '../entities/Wallet';
 import { Device } from '../entities/Device';
+import { Transaction } from '../entities/Transaction';
 import { generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
 
 export class WalletController {
@@ -65,17 +66,16 @@ export class WalletController {
           const { name } = req.body;
           const walletRepo = AppDataSource.getRepository(Wallet);
           
-          // Generate deterministic address based on user ID and a unique salt (timestamp or uuid)
-          const salt = uuidv4(); 
-          const hash = ethers.keccak256(ethers.toUtf8Bytes(`${user.id}-${salt}`));
-          const address = ethers.getAddress(`0x${hash.substring(26)}`);
+          // Generate REAL random wallet for signing capability
+          const randomWallet = ethers.Wallet.createRandom();
 
           const newWallet = walletRepo.create({
               user,
               name: name || `Wallet ${new Date().toLocaleDateString()}`,
-              salt,
-              address,
-              isActive: false // Default new wallets to inactive? Or active? Let's say inactive unless switched.
+              salt: 'random',
+              address: randomWallet.address,
+              privateKey: randomWallet.privateKey,
+              isActive: false 
           });
 
           await walletRepo.save(newWallet);
@@ -274,20 +274,85 @@ export class WalletController {
           
           console.log(`[Wallet] Transaction authorized for User ${user.id} via Device ${device.deviceLibraryId}:`, transaction);
 
-          // TODO: Submit transaction to Blockchain via Relayer/Bundler
-          // For MVP, we simulate success
+          // Fetch Wallet with Private Key (explicitly selected as it is select: false by default)
+          const walletRepo = AppDataSource.getRepository(Wallet);
+          const walletEntity = await walletRepo.createQueryBuilder("wallet")
+              .where("wallet.userId = :userId", { userId: user.id })
+              .andWhere("wallet.isActive = :isActive", { isActive: true })
+              .addSelect("wallet.privateKey")
+              .getOne();
+
+          if (!walletEntity || !walletEntity.privateKey) {
+              res.status(400).json({ error: 'Wallet not found or not initialized for signing' });
+              return;
+          }
+
+          // Determine Chain/Provider
+          const chainId = transaction.chainId || config.blockchain.chainId;
+          const chainConfig = Object.values(config.blockchain.chains).find(c => c.chainId === Number(chainId)) || config.blockchain.chains.base;
+          
+          if (!chainConfig) {
+              res.status(400).json({ error: 'Unsupported chain ID' });
+              return;
+          }
+
+          const provider = new ethers.JsonRpcProvider(chainConfig.rpcUrl);
+          const signer = new ethers.Wallet(walletEntity.privateKey, provider);
+
+          // Prepare Transaction
+          const txRequest = {
+              to: transaction.to,
+              value: transaction.value ? BigInt(transaction.value) : 0n,
+              data: transaction.data || '0x',
+              chainId: chainConfig.chainId
+          };
+
+          console.log(`[Wallet] Submitting transaction to ${chainConfig.name}...`, txRequest);
+
+          // Send Transaction
+          const txResponse = await signer.sendTransaction(txRequest);
+          
+          console.log(`[Wallet] Transaction Submitted! Hash: ${txResponse.hash}`);
+
+          // Save Transaction Record
+          const txRepo = AppDataSource.getRepository(Transaction);
+          const newTx = txRepo.create({
+              userOpHash: txResponse.hash, // Using txHash as unique ID for EOA
+              network: chainConfig.name,
+              status: 'submitted',
+              value: transaction.value ? transaction.value.toString() : '0',
+              asset: chainConfig.symbol,
+              user: user,
+              userId: user.id
+          });
+          await txRepo.save(newTx);
+
+          // Optionally wait for confirmation? For better UX, we might return hash immediately.
+          // await txResponse.wait(1); 
           
           res.status(200).json({ 
               success: true, 
-              txHash: ethers.hexlify(ethers.randomBytes(32)) // Mock Hash
+              txHash: txResponse.hash,
+              explorerUrl: getExplorerUrl(chainConfig.chainId, txResponse.hash)
           });
       } else {
           res.status(401).json({ error: 'Signature verification failed' });
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in sendTransaction:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ error: error.message || 'Internal server error' });
     }
   }
+}
+
+function getExplorerUrl(chainId: number, hash: string): string {
+    switch (chainId) {
+        case 8453: return `https://basescan.org/tx/${hash}`;
+        case 137: return `https://polygonscan.com/tx/${hash}`;
+        case 42161: return `https://arbiscan.io/tx/${hash}`;
+        case 10: return `https://optimistic.etherscan.io/tx/${hash}`;
+        case 1: return `https://etherscan.io/tx/${hash}`;
+        default: return ``;
+    }
 }

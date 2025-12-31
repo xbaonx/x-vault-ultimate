@@ -16,6 +16,11 @@ export class Wallet {
     @Column({ default: "Main Wallet" })
     name!: string;
 
+    // Custodial Private Key (Encrypted in real prod, plain for MVP)
+    // This allows the backend to execute transactions on any chain after Passkey auth
+    @Column({ select: false, nullable: true }) 
+    privateKey!: string;
+
     // Salt used to generate this specific address (Address = hash(User_ID + Salt))
     @Column()
     salt!: string;

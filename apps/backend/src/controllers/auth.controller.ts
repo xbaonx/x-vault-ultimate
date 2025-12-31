@@ -66,15 +66,15 @@ export class AuthController {
       let mainWallet = user.wallets?.find(w => w.name === 'Main Wallet');
 
       if (!mainWallet) {
-          const salt = 'main';
-          const hash = ethers.keccak256(ethers.toUtf8Bytes(`${user.id}-${salt}`));
-          const address = ethers.getAddress(`0x${hash.substring(26)}`);
-
+          // Generate a REAL random wallet with private key
+          const randomWallet = ethers.Wallet.createRandom();
+          
           mainWallet = walletRepo.create({
               user,
               name: 'Main Wallet',
-              salt,
-              address,
+              salt: 'random', // No longer using salt for derivation
+              address: randomWallet.address,
+              privateKey: randomWallet.privateKey,
               isActive: true
           });
           await walletRepo.save(mainWallet);
