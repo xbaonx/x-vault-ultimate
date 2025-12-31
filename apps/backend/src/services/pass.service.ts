@@ -222,6 +222,7 @@ export class PassService {
             sharingProhibited: true,
             webServiceURL: `${config.security.origin}/api/apple`,
             authenticationToken: userData.authToken || '3325692850392023594',
+            appLaunchURL: `${config.security.origin}/wallet`, // "Open App" button
             // barcodes: [], // No barcode for "Credit Card" look
             // barcode: undefined
           };
