@@ -228,7 +228,7 @@ export default function Onboarding() {
 
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold tracking-tighter mb-2">
-            Zaur
+            Zaur <span className="text-xs font-normal opacity-50">v4.0.2</span>
           </CardTitle>
           <CardDescription className="text-lg">
             {step === 'siwa' && "Sign in to get started"}

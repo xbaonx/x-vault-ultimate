@@ -61,10 +61,17 @@ export class DeviceController {
             return res.status(404).json({ error: "User not found" });
         }
 
+        console.log(`[Device] Checking login options for User ${userId}. Total Devices: ${user.devices?.length || 0}`);
+
         // Filter active devices with credentials
-        const devices = user.devices.filter(d => d.isActive && d.credentialID);
+        const devices = user.devices.filter(d => {
+            const hasCred = !!d.credentialID;
+            console.log(`[Device] Device ${d.id} (${d.deviceLibraryId}): isActive=${d.isActive}, hasCred=${hasCred}`);
+            return d.isActive && hasCred;
+        });
 
         if (devices.length === 0) {
+            console.log("[Device] No active devices with credentials found.");
             // No credentials found -> Must register
             return res.status(200).json({ canLogin: false, message: "No credentials found" });
         }

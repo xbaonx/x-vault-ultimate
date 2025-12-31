@@ -70,6 +70,17 @@ export class AuthController {
         console.log(`[Auth] New user created: ${user.id}. Welcome Bonus: 25 USDZ credited.`);
         
         // Re-fetch to get all default fields if needed, but for new user pin is null.
+        const refetchedUser = await userRepo.findOne({ 
+          where: { id: user.id },
+          relations: ['wallets'],
+          select: ['id', 'email', 'appleUserId', 'usdzBalance', 'spendingPinHash', 'createdAt', 'updatedAt']
+        });
+        
+        if (!refetchedUser) {
+            throw new Error("User creation failed or could not be retrieved");
+        }
+        user = refetchedUser;
+
       } else {
           // Update fields if changed
           let hasUpdates = false;
@@ -99,7 +110,7 @@ export class AuthController {
           const randomWallet = ethers.Wallet.createRandom();
           
           mainWallet = walletRepo.create({
-              user,
+              user: user,
               name: 'Main Wallet',
               salt: 'random', // No longer using salt for derivation
               address: randomWallet.address,
