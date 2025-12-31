@@ -5,6 +5,7 @@ import { User } from "../entities/User";
 import { Device } from "../entities/Device";
 import { Transaction } from "../entities/Transaction";
 import * as forge from "node-forge";
+import { ILike } from "typeorm";
 
 import { PassService } from "../services/pass.service";
 
@@ -101,10 +102,24 @@ export class AdminController {
     }
 
     try {
+      const { q } = req.query; // Search query
       const userRepo = AppDataSource.getRepository(User);
+      
+      let whereClause: any = {};
+      
+      if (q && typeof q === 'string') {
+          // Search by ID, Email, or AppleUserID
+          whereClause = [
+              { id: q },
+              { email: ILike(`%${q}%`) },
+              { appleUserId: ILike(`%${q}%`) }
+          ];
+      }
+
       const users = await userRepo.find({
+        where: q ? whereClause : undefined,
         order: { createdAt: "DESC" },
-        take: 50, // limit 50 for now
+        take: 50,
         relations: ['wallets']
       });
 
@@ -112,6 +127,9 @@ export class AdminController {
         const mainWallet = u.wallets?.find(w => w.isActive) || u.wallets?.[0];
         return {
             id: u.id,
+            appleUserId: u.appleUserId,
+            email: u.email,
+            isFrozen: u.isFrozen,
             address: mainWallet?.address || 'No Wallet',
             createdAt: u.createdAt,
             updatedAt: u.updatedAt
