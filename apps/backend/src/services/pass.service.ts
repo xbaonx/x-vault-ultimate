@@ -170,6 +170,20 @@ export class PassService {
           passJson.webServiceURL = `${config.security.origin}/api/apple`;
           passJson.authenticationToken = userData.authToken || '3325692850392023594'; // Token for APNs updates
           
+          // SEMANTICS (Enables '123' Icon / Native Card Info)
+          passJson.semantics = {
+              primaryAccountNumber: userData.address, // Full Wallet Address
+              totalValue: {
+                  amount: userData.balance,
+                  currencyCode: "USD"
+              },
+              balance: {
+                  amount: userData.balance,
+                  currencyCode: "USD"
+              },
+              accountOwner: userData.ownerName || "Vault Owner"
+          };
+          
           // QR CODE: REMOVED for "Credit Card" style
           // We intentionally do not inject barcodes here.
 
