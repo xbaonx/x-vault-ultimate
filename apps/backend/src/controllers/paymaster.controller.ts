@@ -4,6 +4,8 @@ import { MoreThan } from 'typeorm';
 import { config } from '../config';
 import { AppDataSource } from '../data-source';
 import { User } from '../entities/User';
+import { Wallet } from '../entities/Wallet';
+import { Device } from '../entities/Device';
 import { Transaction } from '../entities/Transaction';
 
 import bcrypt from 'bcryptjs';
@@ -41,30 +43,39 @@ export class PaymasterController {
 
       const sender = userOp.sender;
       
-      // 1. Get User
-      const userRepo = AppDataSource.getRepository(User);
-      // In a real app, 'walletAddress' should match 'sender'.
-      // Note: case-insensitivity might be needed for addresses.
-      let user = await userRepo.findOne({ 
-          where: { walletAddress: sender },
-          select: ['id', 'walletAddress', 'isFrozen', 'dailyLimitUsd', 'largeTransactionThresholdUsd', 'spendingPinHash', 'deviceLibraryId'] 
+      // 1. Get User via Wallet Address
+      const walletRepo = AppDataSource.getRepository(Wallet);
+      const wallet = await walletRepo.findOne({
+          where: { address: sender },
+          relations: ['user']
       });
 
-      // If user not found by exact address, try case-insensitive search or mock association logic
-      // For MVP, we assume exact match or strict requirement
-      if (!user) {
-          // ... (same as before)
+      if (!wallet || !wallet.user) {
+          // If wallet not found, we can't sponsor
+          res.status(404).json({ error: 'Wallet not found' });
+          return;
       }
       
+      const user = wallet.user;
+
       if (user) {
           // 2. Check Device Lock (Security Layer 3)
           const currentDeviceId = req.headers['x-device-library-id'] as string;
           
-          // If user has a bound device, enforce it matches the current request
-          if (user.deviceLibraryId && user.deviceLibraryId !== currentDeviceId) {
-              console.warn(`[Paymaster] Blocked: Device Mismatch. Registered: ${user.deviceLibraryId}, Current: ${currentDeviceId}`);
+          if (!currentDeviceId) {
+              res.status(403).json({ error: 'Device ID missing' });
+              return;
+          }
+
+          const deviceRepo = AppDataSource.getRepository(Device);
+          const device = await deviceRepo.findOne({
+              where: { deviceLibraryId: currentDeviceId, user: { id: user.id } }
+          });
+
+          // If device not found or not active or doesn't belong to user
+          if (!device || !device.isActive) {
+              console.warn(`[Paymaster] Blocked: Invalid Device. User: ${user.id}, Device: ${currentDeviceId}`);
               
-              // Return specific error to trigger migration flow on frontend
               res.status(403).json({ 
                   error: 'Device not recognized', 
                   code: 'DEVICE_MISMATCH',
@@ -140,7 +151,8 @@ export class PaymasterController {
                 status: 'pending',
                 value: value.toString(),
                 asset: 'ETH',
-                user: user
+                user: user,
+                userId: user.id
             });
             await txRepo.save(newTx);
           }
