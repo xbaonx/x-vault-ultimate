@@ -92,32 +92,44 @@ export default function Onboarding() {
     
     // Path A: Try Login first if options available (Existing User with Synced Key)
     if (loginOptions) {
+        let assertion;
         try {
             console.log("Attempting Passkey Login...");
-            const assertion = await startAuthentication(loginOptions);
-            const verification = await deviceService.verifyLogin(userId!, assertion);
-            
-            if (verification.verified) {
-                // Success! Logged in.
-                localStorage.setItem('x_device_id', verification.deviceLibraryId);
-                localStorage.setItem('x_user_id', userId!);
-                
-                // If they have a PIN, go to dashboard. Otherwise, finish setup.
-                if (hasPin) {
-                    navigate('/dashboard');
-                } else {
-                    setStep('pin-setup');
-                }
-                return;
-            }
+            // 1. Client-side: Ask user to scan face/finger
+            assertion = await startAuthentication(loginOptions);
         } catch (e: any) {
-            console.warn("Passkey Login failed (possibly new device), falling back to Registration:", e);
-            // If error is "NotAllowedError" (User cancelled), stop.
-            // Otherwise, assume it's "No credential found" -> Fallthrough to Register
+            console.warn("Passkey Login client-side failed (user cancelled or no credential):", e);
             if (e.name === 'NotAllowedError') {
                  setError("Authentication cancelled.");
                  setLoading(false);
                  return;
+            }
+            // If client-side fails (e.g. "No credentials found"), we naturally fall through to Registration
+        }
+
+        if (assertion) {
+            try {
+                // 2. Server-side: Verify the signature
+                const verification = await deviceService.verifyLogin(userId!, assertion);
+                
+                if (verification.verified) {
+                    // Success! Logged in.
+                    localStorage.setItem('x_device_id', verification.deviceLibraryId);
+                    localStorage.setItem('x_user_id', userId!);
+                    
+                    if (hasPin) {
+                        navigate('/dashboard');
+                    } else {
+                        setStep('pin-setup');
+                    }
+                    return;
+                }
+            } catch (e: any) {
+                // Server rejected the login. Do NOT fallback to register. Show error.
+                console.error("Passkey Login server verification failed:", e);
+                setError("Login failed: " + (e.response?.data?.error || "Verification rejected"));
+                setLoading(false);
+                return;
             }
         }
     }
