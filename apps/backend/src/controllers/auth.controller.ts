@@ -34,16 +34,27 @@ export class AuthController {
           
           // Fallback for Dev/Mock environment
           if (config.nodeEnv === 'development' && identityToken.startsWith('mock-')) {
-              appleUserId = `mock-apple-${uuidv4()}`;
-              email = 'mock@example.com';
+              // Stable ID to simulate the same user logging in again
+              appleUserId = `mock-apple-stable-id`;
+              
+              // Dynamic Email to simulate Apple's "Hide My Email" / Private Relay
+              // This verifies that we can link the user by ID even if email changes.
+              email = `mock-${Date.now()}@privaterelay.appleid.com`;
           } else {
               return res.status(401).json({ error: 'Invalid identity token' });
           }
       }
 
       const userRepo = AppDataSource.getRepository(User);
+      
+      // Build query criteria
+      const whereCriteria: any[] = [{ appleUserId }];
+      if (email) {
+          whereCriteria.push({ email });
+      }
+
       let user = await userRepo.findOne({ 
-          where: [{ appleUserId }, { email }],
+          where: whereCriteria,
           relations: ['wallets'] 
       });
 
@@ -57,10 +68,23 @@ export class AuthController {
         await userRepo.save(user);
         console.log(`[Auth] New user created: ${user.id}. Welcome Bonus: 25 USDZ credited.`);
       } else {
-          // Update missing fields
-          if (!user.email && email) user.email = email;
-          if (!user.appleUserId && appleUserId) user.appleUserId = appleUserId;
-          await userRepo.save(user);
+          // Update fields if changed
+          let hasUpdates = false;
+          
+          if (email && user.email !== email) {
+              console.log(`[Auth] Updating email for user ${user.id}: ${user.email} -> ${email}`);
+              user.email = email;
+              hasUpdates = true;
+          }
+          
+          if (appleUserId && user.appleUserId !== appleUserId) {
+              user.appleUserId = appleUserId;
+              hasUpdates = true;
+          }
+          
+          if (hasUpdates) {
+              await userRepo.save(user);
+          }
       }
 
       // Ensure User has a Default Wallet
