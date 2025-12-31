@@ -291,7 +291,8 @@ export class DeviceController {
         const { credential } = verification.registrationInfo;
 
         // 1. Update Device with Credential Info
-        device.credentialID = Buffer.from(credential.id).toString('base64');
+        // credential.id is Base64URL string. Store it directly.
+        device.credentialID = credential.id;
         device.credentialPublicKey = Buffer.from(credential.publicKey);
         device.counter = credential.counter;
         device.isActive = true;
