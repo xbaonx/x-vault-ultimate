@@ -55,7 +55,8 @@ export class AuthController {
 
       let user = await userRepo.findOne({ 
           where: whereCriteria,
-          relations: ['wallets'] 
+          relations: ['wallets'],
+          select: ['id', 'email', 'appleUserId', 'usdzBalance', 'spendingPinHash', 'createdAt', 'updatedAt'] // Explicitly select spendingPinHash to check existence
       });
 
       // Create User if not exists
@@ -63,10 +64,12 @@ export class AuthController {
         user = userRepo.create({
             appleUserId,
             email,
-            usdzBalance: 25.0 // Welcome Bonus: 25 USDZ for commission-free trading
+            usdzBalance: 25.0 // Welcome Bonus
         });
         await userRepo.save(user);
         console.log(`[Auth] New user created: ${user.id}. Welcome Bonus: 25 USDZ credited.`);
+        
+        // Re-fetch to get all default fields if needed, but for new user pin is null.
       } else {
           // Update fields if changed
           let hasUpdates = false;

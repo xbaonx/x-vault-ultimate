@@ -45,7 +45,7 @@ export default function Onboarding() {
         setHasPin(!!data.hasPin);
 
         // Check for existing passkey login options if user has account
-        if (data.hasPin) {
+        if (data.userId) {
             try {
                 const loginOpts = await deviceService.getLoginOptions(data.userId);
                 if (loginOpts.canLogin) {
