@@ -21,8 +21,8 @@ export class DeviceController {
     let { rpId, origin } = config.security;
 
     // If we are in production or receiving a request from a real domain,
-    // and the config is still default 'localhost', try to adapt.
-    if (rpId === 'localhost' && requestOrigin && !requestOrigin.includes('localhost')) {
+    // and the config is still default 'localhost' or 'zaur.at', try to adapt.
+    if ((rpId === 'localhost' || rpId === 'zaur.at') && requestOrigin && !requestOrigin.includes('localhost')) {
       try {
         const url = new URL(requestOrigin);
         rpId = url.hostname;
