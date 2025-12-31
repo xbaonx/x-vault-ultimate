@@ -289,14 +289,8 @@ export class PassService {
           passJson.serialNumber = String(userData.address);
           passJson.description = "Zaur.at Smart Vault";
           
-          // DEBUG: FORCE GENERIC STYLE
-          // Store Card requires strict strip image dimensions (e.g. 980x376).
-          // Our fallback from logo.png (square) likely causes validation failure.
-          // We switch to GENERIC to prove the certs are valid.
-          if (passJson.storeCard) {
-              passJson.generic = passJson.storeCard;
-              delete passJson.storeCard;
-          } else if (!passJson.generic && !passJson.eventTicket && !passJson.coupon && !passJson.boardingPass) {
+          // Ensure a style is defined (Default to Generic if missing)
+          if (!passJson.storeCard && !passJson.generic && !passJson.eventTicket && !passJson.coupon && !passJson.boardingPass) {
               passJson.generic = {
                   primaryFields: [],
                   secondaryFields: [],
