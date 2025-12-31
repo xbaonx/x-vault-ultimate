@@ -180,6 +180,14 @@ export class PassService {
             signerKeyPassphrase: config.apple.certificates.signerKeyPassphrase,
           };
 
+          // QR CODE DATA
+          const barcode = {
+            format: 'PKBarcodeFormatQR',
+            message: `ethereum:${userData.address}`,
+            messageEncoding: 'iso-8859-1',
+            altText: `Vault Address: ${userData.address.slice(0,6)}...${userData.address.slice(-4)}`
+          };
+
           // Prepare props - DESIGN SPEC UPDATE
           // Background: Deep Obsidian Black
           // Text: White/Silver
@@ -195,7 +203,9 @@ export class PassService {
             logoText: 'zaur.at',
             sharingProhibited: true,
             webServiceURL: `${config.security.origin}/api/apple`,
-            authenticationToken: userData.authToken || '3325692850392023594'
+            authenticationToken: userData.authToken || '3325692850392023594',
+            barcodes: [barcode],
+            barcode: barcode // Legacy fallback
           };
 
           // Instantiate PKPass
@@ -334,18 +344,6 @@ export class PassService {
              });
           }
           
-          // QR Code for receiving address (Explicit assignment to ensure PKPass includes it)
-          const barcode = {
-            format: 'PKBarcodeFormatQR',
-            message: `ethereum:${userData.address}`,
-            messageEncoding: 'iso-8859-1',
-            altText: `Vault Address: ${userData.address.slice(0,6)}...${userData.address.slice(-4)}`
-          };
-          
-          // Force both properties for maximum compatibility
-          (pass as any).barcodes = [barcode];
-          (pass as any).barcode = barcode;
-
           const buffer = await pass.getAsBuffer();
           return buffer;
 
