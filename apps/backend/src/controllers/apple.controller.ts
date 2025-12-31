@@ -213,6 +213,11 @@ export class ApplePassController {
               ownerName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
           }
 
+          // Dynamic API URL from request
+          const protocol = req.protocol === 'http' && req.get('host')?.includes('localhost') ? 'http' : 'https';
+          const host = req.get('host');
+          const apiUrl = `${protocol}://${host}`;
+
           const userData = {
             address: walletAddress,
             balance: totalBalanceUsd.toFixed(2),
@@ -221,7 +226,8 @@ export class ApplePassController {
             smartContract: "0x4337...Vault",
             securityDelay: "Active: 48h Window",
             authToken: req.headers.authorization?.replace("ApplePass ", ""), // Keep existing token
-            ownerName: ownerName
+            ownerName: ownerName,
+            apiUrl: apiUrl
           };
 
           const passBuffer = await PassService.generatePass(userData);

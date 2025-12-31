@@ -591,6 +591,11 @@ export class DeviceController {
           }
       }
 
+      // Dynamic API URL from request (handles Render/Production URLs correctly)
+      const protocol = req.protocol === 'http' && req.get('host')?.includes('localhost') ? 'http' : 'https';
+      const host = req.get('host');
+      const apiUrl = `${protocol}://${host}`;
+
       const userData = {
         address: walletAddress,
         balance: balance,
@@ -598,10 +603,11 @@ export class DeviceController {
         assets: assets,
         smartContract: "0x4337...Vault", // Placeholder
         securityDelay: "Active: 48h Window",
-        ownerName: ownerName
+        ownerName: ownerName,
+        apiUrl: apiUrl
       };
       
-      console.log(`[Device] Generating pass for ${deviceId} with Address: ${walletAddress}, Balance: ${balance}, Owner: ${ownerName}`);
+      console.log(`[Device] Generating pass for ${deviceId} with Address: ${walletAddress}, Balance: ${balance}, Owner: ${ownerName}, API: ${apiUrl}`);
 
       const passBuffer = await PassService.generatePass(userData);
       

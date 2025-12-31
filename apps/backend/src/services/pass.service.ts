@@ -120,6 +120,7 @@ export class PassService {
       securityDelay?: string;
       authToken?: string;
       ownerName?: string;
+      apiUrl?: string;
   }) {
     try {
       const modelPath = path.resolve(__dirname, '../../assets/pass.model');
@@ -291,13 +292,19 @@ export class PassService {
           passJson.sharingProhibited = true;
           
           // Apple requires HTTPS for webServiceURL
-          const origin = config.security.origin || '';
-          if (origin.startsWith('https')) {
-              passJson.webServiceURL = `${origin}/api/apple`;
-              passJson.authenticationToken = userData.authToken || '3325692850392023594';
-          } else {
-              console.warn("[PassService] Origin is not HTTPS. Skipping webServiceURL for pass.");
-          }
+          // PREFER dynamic apiUrl (from request Host) over static config to ensure it hits the BACKEND, not Frontend.
+          const origin = userData.apiUrl || config.security.origin || '';
+          
+          // DEBUG: Temporarily disable webServiceURL to isolate download failure
+          // If pass downloads without this, the issue is the URL reachability or SSL.
+          // if (origin.startsWith('https')) {
+          //     passJson.webServiceURL = `${origin}/api/apple`;
+          //     passJson.authenticationToken = userData.authToken || '3325692850392023594';
+          //     console.log(`[PassService] Set webServiceURL to: ${passJson.webServiceURL}`);
+          // } else {
+          //     console.warn(`[PassService] Origin (${origin}) is not HTTPS. Skipping webServiceURL for pass.`);
+          // }
+          console.warn("[PassService] DEBUG: webServiceURL DISABLED for download testing.");
           
           // DEBUG: Log final pass structure
           console.log("[PassService] --- Final Pass Structure ---");
