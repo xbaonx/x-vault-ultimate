@@ -149,22 +149,28 @@ export class PassService {
           passJson.serialNumber = userData.address; // Ensure serial number matches
           passJson.description = "Zaur.at Smart Vault";
           
+          // STYLE CHANGE: GENERIC -> STORE CARD
+          // To match the "Credit Card" aesthetic (Visa Signature style), we switch to 'storeCard'.
+          // This allows for a strip image and better field placement for this look.
+          if (passJson.generic) {
+              passJson.storeCard = passJson.generic;
+              delete passJson.generic;
+          } else if (!passJson.storeCard) {
+              passJson.storeCard = {
+                  primaryFields: [],
+                  secondaryFields: [],
+                  auxiliaryFields: [],
+                  backFields: []
+              };
+          }
+
           // SECURITY & PUSH UPDATE LOGIC
           passJson.sharingProhibited = true; // Prevent sharing via AirDrop/iMessage
           passJson.webServiceURL = `${config.security.origin}/api/apple`;
           passJson.authenticationToken = userData.authToken || '3325692850392023594'; // Token for APNs updates
           
-          // QR CODE (HARDWARE BOUND)
-          // We embed this directly into the JSON model to ensure it renders.
-          // Apple automatically handles the contrast (Black QR on White box or similar).
-          const barcodeData = {
-              format: 'PKBarcodeFormatQR',
-              message: `ethereum:${userData.address}`,
-              messageEncoding: 'iso-8859-1',
-              altText: `Vault Address: ${userData.address.slice(0,6)}...${userData.address.slice(-4)}`
-          };
-          passJson.barcodes = [barcodeData];
-          passJson.barcode = barcodeData; // Legacy fallback
+          // QR CODE: REMOVED for "Credit Card" style
+          // We intentionally do not inject barcodes here.
 
           modelBuffers['pass.json'] = Buffer.from(JSON.stringify(passJson));
       } catch (e) {
@@ -181,13 +187,10 @@ export class PassService {
           };
 
           // QR CODE DATA
-          const barcode = {
-            format: 'PKBarcodeFormatQR',
-            message: `ethereum:${userData.address}`,
-            messageEncoding: 'iso-8859-1',
-            altText: `Vault Address: ${userData.address.slice(0,6)}...${userData.address.slice(-4)}`
-          };
-
+          // User requested "Credit Card" style (Clean Front).
+          // We REMOVE the barcode from the front to match the "Visa Signature" aesthetic.
+          // The address is still available in the Back Fields.
+          
           // Prepare props - DESIGN SPEC UPDATE
           // Background: Deep Obsidian Black
           // Text: White/Silver
@@ -200,12 +203,12 @@ export class PassService {
             backgroundColor: 'rgb(20, 20, 20)', // Deep Obsidian Black
             labelColor: 'rgb(160, 160, 160)',   // Metallic Silver
             foregroundColor: 'rgb(255, 255, 255)',
-            logoText: 'zaur.at',
+            logoText: 'X-VAULT', // Simulates the Bank Brand Top-Right
             sharingProhibited: true,
             webServiceURL: `${config.security.origin}/api/apple`,
             authenticationToken: userData.authToken || '3325692850392023594',
-            barcodes: [barcode],
-            barcode: barcode // Legacy fallback
+            // barcodes: [], // No barcode for "Credit Card" look
+            // barcode: undefined
           };
 
           // Instantiate PKPass
@@ -219,34 +222,45 @@ export class PassService {
 
           // --- FRONT OF CARD (Primary View) ---
           
-          // Header: Status Indicator
+          // Header: Top Right Branding (Simulating "ACB" logo position)
           if (pass.headerFields) {
               pass.headerFields.push({
-                  key: 'status',
-                  label: 'STATUS',
-                  value: 'SECURE', // Neon Green via UI logic or just text
+                  key: 'header_brand',
+                  label: 'VAULT TIER',
+                  value: 'ULTIMATE', 
                   textAlignment: 'PKTextAlignmentRight'
               });
           }
 
-          // Primary: Total Vault Balance
-          if (pass.primaryFields) {
-             pass.primaryFields.push({
-                key: 'balance',
-                label: 'TOTAL VAULT BALANCE',
-                value: parseFloat(userData.balance), 
-                currencyCode: 'USD',
-             });
-          } else {
-             console.warn("[PassService] pass.primaryFields is undefined.");
-          }
-
-          // Secondary: Hardware Label
+          // Primary: REMOVED to clear the center for the background image
+          
+          // Secondary: Vault Balance (Subtle Middle Row)
           if (pass.secondaryFields) {
              pass.secondaryFields.push({
-                key: 'hardware_label',
-                label: 'SECURITY LAYER',
-                value: 'Hardware-Bound Vault',
+                key: 'balance',
+                label: 'VAULT BALANCE',
+                value: parseFloat(userData.balance), 
+                currencyCode: 'USD',
+                textAlignment: 'PKTextAlignmentLeft'
+             });
+          }
+
+          // Auxiliary: Bottom Row (Credit Card Style)
+          if (pass.auxiliaryFields) {
+             // Left: Masked Number ".... 2863"
+             pass.auxiliaryFields.push({
+                key: 'account_number',
+                label: 'VAULT NUMBER',
+                value: `•••• ${userData.address.slice(-4)}`,
+                textAlignment: 'PKTextAlignmentLeft'
+             });
+             
+             // Right: Tier Branding "Visa Signature"
+             pass.auxiliaryFields.push({
+                key: 'card_tier',
+                label: 'TIER',
+                value: 'Signature',
+                textAlignment: 'PKTextAlignmentRight'
              });
           }
 
