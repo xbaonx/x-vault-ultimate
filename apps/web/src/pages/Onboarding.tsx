@@ -94,8 +94,12 @@ export default function Onboarding() {
                 localStorage.setItem('x_device_id', verification.deviceLibraryId);
                 localStorage.setItem('x_user_id', userId!);
                 
-                // Skip PIN setup since they authenticated with biometrics + account exists
-                navigate('/dashboard');
+                // If they have a PIN, go to dashboard. Otherwise, finish setup.
+                if (hasPin) {
+                    navigate('/dashboard');
+                } else {
+                    setStep('pin-setup');
+                }
                 return;
             }
         } catch (e: any) {
