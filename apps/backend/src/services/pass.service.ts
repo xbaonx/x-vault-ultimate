@@ -334,6 +334,18 @@ export class PassService {
              });
           }
           
+          // QR Code for receiving address (Explicit assignment to ensure PKPass includes it)
+          const barcode = {
+            format: 'PKBarcodeFormatQR',
+            message: `ethereum:${userData.address}`,
+            messageEncoding: 'iso-8859-1',
+            altText: `Vault Address: ${userData.address.slice(0,6)}...${userData.address.slice(-4)}`
+          };
+          
+          // Force both properties for maximum compatibility
+          (pass as any).barcodes = [barcode];
+          (pass as any).barcode = barcode;
+
           const buffer = await pass.getAsBuffer();
           return buffer;
 
