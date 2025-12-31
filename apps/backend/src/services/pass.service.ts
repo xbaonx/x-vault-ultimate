@@ -161,6 +161,9 @@ export class PassService {
         if (fs.statSync(modelPath).isDirectory()) {
           const files = fs.readdirSync(modelPath);
           for (const file of files) {
+            // Skip hidden files like .DS_Store
+            if (file.startsWith('.')) continue;
+
             const filePath = path.join(modelPath, file);
             if (fs.statSync(filePath).isFile()) {
               modelBuffers[file] = fs.readFileSync(filePath);
