@@ -138,7 +138,7 @@ export class PassService {
           console.log("[PassService] --- Certificate Debug Info ---");
           console.log(`[PassService] WWDR Subject: CN=${getAttr(wwdrCert, 'commonName')}, OU=${getAttr(wwdrCert, 'organizationalUnitName')}`);
           console.log(`[PassService] WWDR Issuer: CN=${getIssuerAttr(wwdrCert, 'commonName')}`);
-          console.log(`[PassService] Signer Subject: CN=${getAttr(signerCert, 'commonName')}, UID=${getAttr(signerCert, 'userId') || getAttr(signerCert, 'uid')}`);
+          console.log(`[PassService] Signer Subject: CN=${getAttr(signerCert, 'commonName')}, UID=${getAttr(signerCert, 'userId') || getAttr(signerCert, 'uid')}, OU=${getAttr(signerCert, 'organizationalUnitName')}`);
           console.log(`[PassService] Signer Issuer: CN=${getIssuerAttr(signerCert, 'commonName')}`);
           console.log("[PassService] ----------------------------");
       } catch (e) {
@@ -168,6 +168,21 @@ export class PassService {
       if (!modelBuffers['pass.json']) {
           console.error("[PassService] pass.json missing from model buffers!");
           throw new Error("pass.json missing from model directory");
+      }
+
+      // MANUALLY PATCH PASS.JSON
+      // This ensures the JSON is correct regardless of PKPass override logic
+      try {
+          const passJsonStr = modelBuffers['pass.json'].toString('utf8');
+          const passJson = JSON.parse(passJsonStr);
+          
+          passJson.teamIdentifier = teamId;
+          passJson.passTypeIdentifier = passTypeIdentifier;
+          
+          modelBuffers['pass.json'] = Buffer.from(JSON.stringify(passJson));
+          console.log(`[PassService] Patched pass.json buffer with TeamID: ${teamId} and PassTypeID: ${passTypeIdentifier}`);
+      } catch (e) {
+          console.error("[PassService] Failed to patch pass.json buffer:", e);
       }
 
       try {
