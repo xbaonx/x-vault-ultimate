@@ -65,6 +65,52 @@ export class PassService {
     return formatted;
   }
 
+  // Generate Mock Certificates for Development/Testing
+  private static async createMockCertificates(teamId: string, passTypeId: string, orgName: string): Promise<{ key: string, cert: string }> {
+      console.log(`[PassService] Generating self-signed mock certificates for Team ID: ${teamId}, PassType: ${passTypeId}...`);
+      return new Promise((resolve, reject) => {
+          forge.pki.rsa.generateKeyPair({ bits: 2048, workers: 2 }, (err, keypair) => {
+              if (err) return reject(err);
+              
+              const cert = forge.pki.createCertificate();
+              cert.publicKey = keypair.publicKey;
+              cert.serialNumber = '01';
+              cert.validity.notBefore = new Date();
+              cert.validity.notAfter = new Date();
+              cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
+              
+              const attrs = [{
+                  name: 'commonName',
+                  value: passTypeId // Match Pass Type ID (Critical for validation)
+              }, {
+                  name: 'countryName',
+                  value: 'US'
+              }, {
+                  shortName: 'ST',
+                  value: 'Virginia'
+              }, {
+                  name: 'localityName',
+                  value: 'Blacksburg'
+              }, {
+                  name: 'organizationName',
+                  value: orgName // Match Pass Organization
+              }, {
+                  shortName: 'OU',
+                  value: teamId // Match Team ID
+              }];
+              
+              cert.setSubject(attrs);
+              cert.setIssuer(attrs);
+              cert.sign(keypair.privateKey, forge.md.sha256.create());
+
+              resolve({
+                  key: forge.pki.privateKeyToPem(keypair.privateKey),
+                  cert: forge.pki.certificateToPem(cert)
+              });
+          });
+      });
+  }
+
   static async generatePass(userData: { 
       address: string; 
       balance: string;
@@ -80,8 +126,8 @@ export class PassService {
       const hasModel = fs.existsSync(modelPath);
 
       if (!hasModel) {
-        // ... (existing error handling)
-        return Buffer.from('Mock PKPass File Content') as any;
+        console.error(`[PassService] Model directory not found at: ${modelPath}`);
+        throw new Error(`Pass model directory missing at ${modelPath}`);
       }
 
       let dbConfig: AppleConfig | null = null;
@@ -102,18 +148,29 @@ export class PassService {
 
       const hasCerts = !!(wwdrRaw && signerCertRaw && signerKeyRaw && teamId && passTypeIdentifier);
       
+      let wwdrPem = "";
+      let signerCertPem = "";
+      let signerKeyPem = "";
+      let useMockCerts = false;
+
       if (!hasCerts) {
-        console.warn("Apple Certificates or Config incomplete. Returning mock pass buffer.");
-        return Buffer.from("Mock PKPass File Content") as any;
+        console.warn("[PassService] Apple Certificates missing. Generating MOCK SELF-SIGNED certificates. Pass will NOT be verifiable on real iOS devices but will download.");
+        try {
+            const mock = await PassService.createMockCertificates(teamId, passTypeIdentifier, "Zaur.at Smart Vault");
+            wwdrPem = mock.cert; // Use same cert for WWDR in mock mode
+            signerCertPem = mock.cert;
+            signerKeyPem = mock.key;
+            useMockCerts = true;
+        } catch (err) {
+            console.error("[PassService] Failed to generate mock certs:", err);
+            throw new Error("Certificates missing and mock generation failed.");
+        }
+      } else {
+        console.log(`[PassService] Generating pass with TeamID: ${teamId}, PassType: ${passTypeIdentifier}`);
+        wwdrPem = PassService.formatPem(wwdrRaw!);
+        signerCertPem = PassService.formatPem(signerCertRaw!);
+        signerKeyPem = PassService.formatPem(signerKeyRaw!);
       }
-
-      console.log(`[PassService] Generating pass with TeamID: ${teamId}, PassType: ${passTypeIdentifier}`);
-      
-      const wwdrPem = PassService.formatPem(wwdrRaw!);
-      const signerCertPem = PassService.formatPem(signerCertRaw!);
-      const signerKeyPem = PassService.formatPem(signerKeyRaw!);
-
-      // ... (existing PEM validation)
 
       // Load model files manually since PKPass constructor expects buffers object or template structure
       const modelBuffers: { [key: string]: Buffer } = {};
@@ -140,6 +197,24 @@ export class PassService {
           throw new Error("pass.json missing from model directory");
       }
 
+      // FALLBACK: Ensure strip.png exists for storeCard style
+      if (!modelBuffers['strip.png'] && modelBuffers['logo.png']) {
+          console.log("[PassService] strip.png missing for storeCard. Creating from logo.png.");
+          modelBuffers['strip.png'] = Buffer.from(modelBuffers['logo.png']);
+      }
+      if (!modelBuffers['strip@2x.png'] && modelBuffers['logo@2x.png']) {
+          modelBuffers['strip@2x.png'] = Buffer.from(modelBuffers['logo@2x.png']);
+      }
+
+      // FALLBACK: Ensure icon.png exists (Critical for Pass)
+      if (!modelBuffers['icon.png'] && modelBuffers['logo.png']) {
+           console.log("[PassService] icon.png missing. Creating from logo.png.");
+           modelBuffers['icon.png'] = Buffer.from(modelBuffers['logo.png']);
+      }
+      if (!modelBuffers['icon@2x.png'] && modelBuffers['logo@2x.png']) {
+           modelBuffers['icon@2x.png'] = Buffer.from(modelBuffers['logo@2x.png']);
+      }
+
       // MANUALLY PATCH PASS.JSON
       try {
           const passJsonStr = modelBuffers['pass.json'].toString('utf8');
@@ -147,12 +222,10 @@ export class PassService {
           
           passJson.teamIdentifier = teamId;
           passJson.passTypeIdentifier = passTypeIdentifier;
-          passJson.serialNumber = userData.address; // Ensure serial number matches
+          passJson.serialNumber = String(userData.address);
           passJson.description = "Zaur.at Smart Vault";
           
           // STYLE CHANGE: GENERIC -> STORE CARD
-          // To match the "Credit Card" aesthetic (Visa Signature style), we switch to 'storeCard'.
-          // This allows for a strip image and better field placement for this look.
           if (passJson.generic) {
               passJson.storeCard = passJson.generic;
               delete passJson.generic;
@@ -166,13 +239,20 @@ export class PassService {
           }
 
           // SECURITY & PUSH UPDATE LOGIC
-          passJson.sharingProhibited = true; // Prevent sharing via AirDrop/iMessage
-          passJson.webServiceURL = `${config.security.origin}/api/apple`;
-          passJson.authenticationToken = userData.authToken || '3325692850392023594'; // Token for APNs updates
+          passJson.sharingProhibited = true;
           
-          // SEMANTICS (Enables '123' Icon / Native Card Info)
+          // Apple requires HTTPS for webServiceURL
+          const origin = config.security.origin || '';
+          if (origin.startsWith('https')) {
+              passJson.webServiceURL = `${origin}/api/apple`;
+              passJson.authenticationToken = userData.authToken || '3325692850392023594';
+          } else {
+              console.warn("[PassService] Origin is not HTTPS. Skipping webServiceURL for pass.");
+          }
+          
+          // SEMANTICS
           passJson.semantics = {
-              primaryAccountNumber: userData.address, // Full Wallet Address
+              primaryAccountNumber: userData.address,
               totalValue: {
                   amount: userData.balance,
                   currencyCode: "USD"
@@ -184,12 +264,19 @@ export class PassService {
               accountOwner: userData.ownerName || "Vault Owner"
           };
           
-          // QR CODE: REMOVED for "Credit Card" style
-          // We intentionally do not inject barcodes here.
+          // No Barcode for Store Card Style
+          passJson.barcodes = [];
+          if (passJson.barcode) delete passJson.barcode; // Remove legacy singular barcode if present
+          
+          // Force strip image usage for storeCard
+          if (passJson.storeCard) {
+              passJson.suppressStrip = false;
+          }
 
           modelBuffers['pass.json'] = Buffer.from(JSON.stringify(passJson));
       } catch (e) {
           console.error("[PassService] Failed to patch pass.json buffer:", e);
+          throw new Error("Failed to patch pass.json: " + e);
       }
 
       try {
@@ -198,37 +285,28 @@ export class PassService {
             wwdr: wwdrPem,
             signerCert: signerCertPem,
             signerKey: signerKeyPem,
-            signerKeyPassphrase: config.apple.certificates.signerKeyPassphrase,
+            signerKeyPassphrase: useMockCerts ? undefined : config.apple.certificates.signerKeyPassphrase,
           };
 
-          // QR CODE DATA
-          // User requested "Credit Card" style (Clean Front).
-          // We REMOVE the barcode from the front to match the "Visa Signature" aesthetic.
-          // The address is still available in the Back Fields.
-          
-          // Prepare props - DESIGN SPEC UPDATE
-          // Background: Deep Obsidian Black
-          // Text: White/Silver
-          // Label: Metallic Silver (Gray)
+          // QR CODE DATA - REMOVED for "Credit Card" style
           const props = {
-            serialNumber: userData.address,
+            serialNumber: String(userData.address),
             description: 'Zaur.at Smart Vault',
             teamIdentifier: teamId,
             passTypeIdentifier: passTypeIdentifier,
             backgroundColor: 'rgb(20, 20, 20)', // Deep Obsidian Black
             labelColor: 'rgb(160, 160, 160)',   // Metallic Silver
             foregroundColor: 'rgb(255, 255, 255)',
-            logoText: 'X-VAULT', // Simulates the Bank Brand Top-Right
+            logoText: 'X-VAULT',
             sharingProhibited: true,
             webServiceURL: `${config.security.origin}/api/apple`,
             authenticationToken: userData.authToken || '3325692850392023594',
-            appLaunchURL: `${config.security.origin}/wallet`, // "Open App" button
-            // barcodes: [], // No barcode for "Credit Card" look
-            // barcode: undefined
+            appLaunchURL: `${config.security.origin}/wallet`,
           };
 
           // Instantiate PKPass
           const pass = new PKPass(modelBuffers as any, certificates as any, props as any);
+
 
           // Helper for formatting currency
           const formatCurrency = (val: number | string) => {
@@ -408,8 +486,9 @@ export class PassService {
 
       } catch (pkError: any) {
           console.error("[PassService] PKPass instantiation failed:", pkError);
-          console.warn("[PassService] Falling back to MOCK pass due to certificate error.");
-          return Buffer.from("Mock PKPass File Content: Certificate validation failed.") as any;
+          // Do NOT return a text buffer here. Throw so the controller returns 500.
+          // Returning a text buffer with pkpass mime type causes "Download Failed" in Safari.
+          throw new Error("PKPass instantiation failed: " + (pkError.message || pkError));
       }
     } catch (error: any) {
       console.error('[PassService] Error generating pass:', error);

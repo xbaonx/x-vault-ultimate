@@ -1,10 +1,14 @@
 import { Router } from 'express';
 import { ApplePassController } from '../controllers/apple.controller';
+import { AppleHealthController } from '../controllers/apple.health.controller';
 
 const router = Router();
 
 // Apple Wallet Web Service Endpoints
 // Base URL: /api/apple
+
+// 0. Health Check (Diagnostics)
+router.get('/health', AppleHealthController.check);
 
 // 1. Register Device for Push Notifications
 router.post('/v1/devices/:deviceLibraryIdentifier/registrations/:passTypeIdentifier/:serialNumber', ApplePassController.registerDevice);
