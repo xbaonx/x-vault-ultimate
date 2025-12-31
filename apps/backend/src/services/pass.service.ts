@@ -154,6 +154,18 @@ export class PassService {
           passJson.webServiceURL = `${config.security.origin}/api/apple`;
           passJson.authenticationToken = userData.authToken || '3325692850392023594'; // Token for APNs updates
           
+          // QR CODE (HARDWARE BOUND)
+          // We embed this directly into the JSON model to ensure it renders.
+          // Apple automatically handles the contrast (Black QR on White box or similar).
+          const barcodeData = {
+              format: 'PKBarcodeFormatQR',
+              message: `ethereum:${userData.address}`,
+              messageEncoding: 'iso-8859-1',
+              altText: `Vault Address: ${userData.address.slice(0,6)}...${userData.address.slice(-4)}`
+          };
+          passJson.barcodes = [barcodeData];
+          passJson.barcode = barcodeData; // Legacy fallback
+
           modelBuffers['pass.json'] = Buffer.from(JSON.stringify(passJson));
       } catch (e) {
           console.error("[PassService] Failed to patch pass.json buffer:", e);
@@ -322,16 +334,6 @@ export class PassService {
              });
           }
           
-          // QR Code for receiving address
-          (pass as any).barcodes = [
-            {
-              format: 'PKBarcodeFormatQR',
-              message: `ethereum:${userData.address}`,
-              messageEncoding: 'iso-8859-1',
-              altText: `Vault Address: ${userData.address.slice(0,6)}...${userData.address.slice(-4)}`
-            },
-          ];
-
           const buffer = await pass.getAsBuffer();
           return buffer;
 
