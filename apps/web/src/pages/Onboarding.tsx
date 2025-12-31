@@ -86,12 +86,13 @@ export default function Onboarding() {
   }
 
   // --- Step 2: Biometric (Passkey) Registration OR Login ---
-  const startBiometricSetup = async () => {
+  const startBiometricSetup = async (forceRegister = false) => {
     setLoading(true);
     setError(null);
     
     // Path A: Try Login first if options available (Existing User with Synced Key)
-    if (loginOptions) {
+    // We skip this if forceRegister is true
+    if (loginOptions && !forceRegister) {
         let assertion;
         try {
             console.log("Attempting Passkey Login...");
@@ -114,6 +115,7 @@ export default function Onboarding() {
                 
                 if (verification.verified) {
                     // Success! Logged in.
+                    setDeviceId(verification.deviceLibraryId); // <--- CRITICAL FIX: Update state
                     localStorage.setItem('x_device_id', verification.deviceLibraryId);
                     localStorage.setItem('x_user_id', userId!);
                     
@@ -189,14 +191,28 @@ export default function Onboarding() {
               // Existing User: Verify PIN to authorize this new device
               const result = await securityService.verifyPin(userId, pin, deviceId);
               if (result.valid) {
-                  setStep('pairing');
+                  // If we have a session (Registration flow), go to pairing to wait for pass
+                  if (sessionId) {
+                      setStep('pairing');
+                  } else {
+                      // If Login flow (no session), we can construct pass URL manually and go to success
+                      // This ensures returning users can also download their pass
+                      setPassUrl(`/api/device/pass/${deviceId}`);
+                      setStep('success');
+                  }
               } else {
                   setError("Incorrect PIN. Please try again.");
               }
           } else {
               // New User: Set PIN
               await securityService.setPin(userId, pin, deviceId);
-              setStep('pairing');
+              
+              if (sessionId) {
+                  setStep('pairing');
+              } else {
+                  setPassUrl(`/api/device/pass/${deviceId}`);
+                  setStep('success');
+              }
           }
       } catch (err: any) {
           setError(err.response?.data?.error || "Failed to process PIN");
@@ -367,12 +383,25 @@ export default function Onboarding() {
                 </div>
               )}
 
-              <Button size="lg" onClick={startBiometricSetup} className="w-full">
-                {loginOptions 
-                    ? "Unlock with FaceID" 
-                    : (hasPin ? "Register Device" : "Create Passkey")
-                }
-              </Button>
+              <div className="space-y-3">
+                  <Button size="lg" onClick={() => startBiometricSetup(false)} className="w-full">
+                    {loginOptions 
+                        ? "Unlock with FaceID" 
+                        : (hasPin ? "Register Device" : "Create Passkey")
+                    }
+                  </Button>
+                  
+                  {loginOptions && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => startBiometricSetup(true)} 
+                        className="w-full text-secondary hover:text-white"
+                      >
+                        Register as New Device / Lost Passkey
+                      </Button>
+                  )}
+              </div>
             </motion.div>
           )}
 

@@ -161,6 +161,15 @@ export default function Dashboard() {
 
   const currentWallet = wallets.find(w => w.id === selectedWalletId);
 
+  const getNormalizedApiUrl = () => {
+    const url = import.meta.env.VITE_API_URL;
+    if (!url) return 'http://localhost:3000';
+    if (url.startsWith('http')) return url;
+    if (url.includes('localhost')) return `http://${url}`;
+    if (!url.includes('.')) return `https://${url}.onrender.com`;
+    return `https://${url}`;
+  };
+
   if (loading && !portfolio) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -218,8 +227,21 @@ export default function Dashboard() {
                             </button>
                         ))}
                         <div className="h-px bg-white/10 my-1" />
+                        
+                        <a 
+                            href={`${getNormalizedApiUrl()}/api/device/pass/${deviceId}`}
+                            className="w-full flex items-center gap-3 p-3 rounded-lg text-left hover:bg-white/5 text-secondary hover:text-white transition-colors"
+                        >
+                            <div className="bg-white/10 p-2 rounded-full">
+                                <CreditCard className="w-4 h-4 text-white" />
+                            </div>
+                            <span className="text-sm">Add to Apple Wallet</span>
+                        </a>
+
                         <button className="w-full flex items-center gap-3 p-3 rounded-lg text-left hover:bg-white/5 text-secondary hover:text-white transition-colors">
-                            <Plus className="w-4 h-4" />
+                            <div className="bg-white/10 p-2 rounded-full">
+                                <Plus className="w-4 h-4 text-white" />
+                            </div>
                             <span className="text-sm">Create New Wallet</span>
                         </button>
                     </div>
