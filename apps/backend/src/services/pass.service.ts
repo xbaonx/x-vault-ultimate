@@ -306,10 +306,18 @@ export class PassService {
           passJson.barcodes = [];
           if (passJson.barcode) delete passJson.barcode; // Remove legacy singular barcode if present
           
-          // DEBUG: Suppress strip image to isolate if 'strip.png' is causing validation failure
-          // If pass downloads with this set to true, the issue is the strip.png file (dimensions/format).
+          // DEBUG STRATEGY: 
+          // 1. Remove invalid 'suppressStrip' key (it causes validation errors on storeCard).
+          // 2. Explicitly remove strip images from buffers to test if the pass loads without them.
+          // Apple docs say strip is optional for storeCard. 
+          // If this works, the previous error was likely due to "logo.png" being used as "strip.png" with wrong dimensions.
           if (passJson.storeCard) {
-              passJson.suppressStrip = true;
+              if (passJson.suppressStrip) delete passJson.suppressStrip;
+              
+              // Remove the strip images from the archive
+              delete modelBuffers['strip.png'];
+              delete modelBuffers['strip@2x.png'];
+              console.log("[PassService] DEBUG: Removed strip.png/strip@2x.png from pass to isolate validation error.");
           }
 
           modelBuffers['pass.json'] = Buffer.from(JSON.stringify(passJson));
