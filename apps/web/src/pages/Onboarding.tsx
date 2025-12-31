@@ -23,6 +23,7 @@ export default function Onboarding() {
   const [email, setEmail] = useState<string | null>(null);
   const [passUrl, setPassUrl] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [hasPin, setHasPin] = useState<boolean>(false);
 
   // --- Step 1: Sign in with Apple ---
   const handleAppleResponse = async (response: any) => {
@@ -40,15 +41,10 @@ export default function Onboarding() {
         
         setUserId(data.userId);
         setEmail(data.email);
+        setHasPin(!!data.hasPin);
 
         // Determine next step based on user status
-        if (data.hasWallet && data.hasPin) {
-            setStep('biometric');
-        } else if (data.hasWallet && !data.hasPin) {
-             setStep('biometric');
-        } else {
-            setStep('biometric');
-        }
+        setStep('biometric');
 
     } catch (err: any) {
         console.error("SIWA Error:", err);
@@ -98,7 +94,7 @@ export default function Onboarding() {
         localStorage.setItem('x_device_id', verification.deviceLibraryId);
         if (userId) localStorage.setItem('x_user_id', userId);
 
-        // Move to PIN setup
+        // Move to PIN setup/verify
         setStep('pin-setup');
       } else {
         throw new Error('Verification failed on server.');
@@ -111,19 +107,31 @@ export default function Onboarding() {
     }
   };
 
-  // --- Step 3: PIN Setup ---
+  // --- Step 3: PIN Setup / Verify ---
   const handlePinComplete = async (pin: string) => {
       if (!userId || !deviceId) {
           setError("Session invalid. Please restart.");
           return;
       }
       setLoading(true);
+      setError(null); // Clear previous errors
+      
       try {
-          await securityService.setPin(userId, pin, deviceId);
-          // Success -> Start polling for Pass generation or just finish
-          setStep('pairing');
+          if (hasPin) {
+              // Existing User: Verify PIN to authorize this new device
+              const result = await securityService.verifyPin(userId, pin, deviceId);
+              if (result.valid) {
+                  setStep('pairing');
+              } else {
+                  setError("Incorrect PIN. Please try again.");
+              }
+          } else {
+              // New User: Set PIN
+              await securityService.setPin(userId, pin, deviceId);
+              setStep('pairing');
+          }
       } catch (err: any) {
-          setError(err.response?.data?.error || "Failed to set PIN");
+          setError(err.response?.data?.error || "Failed to process PIN");
       } finally {
           setLoading(false);
       }
@@ -177,7 +185,7 @@ export default function Onboarding() {
           <CardDescription className="text-lg">
             {step === 'siwa' && "Sign in to get started"}
             {step === 'biometric' && "Secure your Vault"}
-            {step === 'pin-setup' && "Create Spending PIN"}
+            {step === 'pin-setup' && (hasPin ? "Verify Identity" : "Create Spending PIN")}
             {step === 'pairing' && "Finalizing Setup"}
             {step === 'success' && "You're all set!"}
           </CardDescription>
@@ -258,14 +266,19 @@ export default function Onboarding() {
                 <Wallet className="w-12 h-12 text-primary" />
               </div>
               <div className="space-y-2">
-                  <h3 className="font-semibold text-xl text-white">Enable FaceID</h3>
+                  <h3 className="font-semibold text-xl text-white">
+                      {hasPin ? "Link New Device" : "Enable FaceID"}
+                  </h3>
                   {email && (
                     <p className="text-sm text-secondary font-medium bg-white/5 py-1 px-3 rounded-full inline-block mb-2">
                         {email}
                     </p>
                   )}
                   <p className="text-secondary max-w-xs mx-auto">
-                    Zaur uses Secure Enclave to protect your private keys.
+                    {hasPin 
+                        ? "Register this device to access your existing wallet."
+                        : "Zaur uses Secure Enclave to protect your private keys."
+                    }
                   </p>
               </div>
 
@@ -277,12 +290,12 @@ export default function Onboarding() {
               )}
 
               <Button size="lg" onClick={startBiometricSetup} className="w-full">
-                Create Passkey
+                {hasPin ? "Register Device" : "Create Passkey"}
               </Button>
             </motion.div>
           )}
 
-          {/* STEP 3: PIN SETUP */}
+          {/* STEP 3: PIN SETUP / VERIFY */}
           {step === 'pin-setup' && (
              <motion.div
                 initial={{ opacity: 0, x: 20 }}
@@ -294,11 +307,23 @@ export default function Onboarding() {
                 </div>
                 
                 <div className="space-y-2">
-                    <h3 className="font-semibold text-xl text-white">Set Spending PIN</h3>
+                    <h3 className="font-semibold text-xl text-white">
+                        {hasPin ? "Enter Spending PIN" : "Set Spending PIN"}
+                    </h3>
                     <p className="text-secondary max-w-xs mx-auto text-sm">
-                        This 6-digit PIN will be required for transactions over $500.
+                        {hasPin 
+                            ? "Enter your existing 6-digit PIN to verify ownership."
+                            : "This 6-digit PIN will be required for transactions over $500."
+                        }
                     </p>
                 </div>
+
+                {error && (
+                  <div className="bg-destructive/10 border border-destructive/20 p-3 rounded-lg flex items-center gap-2 text-destructive text-sm text-left animate-shake">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>{error}</span>
+                  </div>
+                )}
 
                 <PinInput 
                     length={6} 
@@ -325,7 +350,7 @@ export default function Onboarding() {
               <div>
                 <h3 className="text-xl font-semibold mb-2">Finalizing</h3>
                 <p className="text-secondary text-sm">
-                  Generating your Apple Wallet Pass...
+                  {hasPin ? "Syncing your wallet..." : "Generating your Apple Wallet Pass..."}
                 </p>
               </div>
             </motion.div>
