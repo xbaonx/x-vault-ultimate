@@ -125,6 +125,26 @@ export class PassService {
       if (!signerCertPem.includes("BEGIN CERTIFICATE")) throw new Error("Invalid Signer Certificate content.");
       if (!signerKeyPem.includes("PRIVATE KEY")) throw new Error("Invalid Private Key content.");
 
+      // Inspect Certificates for Debugging
+      try {
+          const wwdrCert = forge.pki.certificateFromPem(wwdrPem);
+          const signerCert = forge.pki.certificateFromPem(signerCertPem);
+
+          const getAttr = (cert: forge.pki.Certificate, name: string) => 
+              cert.subject.attributes.find(a => a.name === name || a.shortName === name)?.value;
+          const getIssuerAttr = (cert: forge.pki.Certificate, name: string) => 
+              cert.issuer.attributes.find(a => a.name === name || a.shortName === name)?.value;
+
+          console.log("[PassService] --- Certificate Debug Info ---");
+          console.log(`[PassService] WWDR Subject: CN=${getAttr(wwdrCert, 'commonName')}, OU=${getAttr(wwdrCert, 'organizationalUnitName')}`);
+          console.log(`[PassService] WWDR Issuer: CN=${getIssuerAttr(wwdrCert, 'commonName')}`);
+          console.log(`[PassService] Signer Subject: CN=${getAttr(signerCert, 'commonName')}, UID=${getAttr(signerCert, 'userId') || getAttr(signerCert, 'uid')}`);
+          console.log(`[PassService] Signer Issuer: CN=${getIssuerAttr(signerCert, 'commonName')}`);
+          console.log("[PassService] ----------------------------");
+      } catch (e) {
+          console.warn("[PassService] Failed to inspect certificates:", e);
+      }
+
       // Load model files manually since PKPass constructor expects buffers object or template structure
       const modelBuffers: { [key: string]: Buffer } = {};
       try {
