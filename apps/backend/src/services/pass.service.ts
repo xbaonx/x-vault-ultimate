@@ -73,6 +73,7 @@ export class PassService {
       smartContract?: string;
       securityDelay?: string;
       authToken?: string;
+      ownerName?: string;
   }) {
     try {
       const modelPath = path.resolve(__dirname, '../../assets/pass.model');
@@ -247,7 +248,17 @@ export class PassService {
 
           // Auxiliary: Bottom Row (Credit Card Style)
           if (pass.auxiliaryFields) {
-             // Left: Masked Number ".... 2863"
+             // 1. Owner Name (Far Left)
+             if (userData.ownerName) {
+                 pass.auxiliaryFields.push({
+                    key: 'owner_name',
+                    label: 'CARDHOLDER',
+                    value: userData.ownerName.toUpperCase(),
+                    textAlignment: 'PKTextAlignmentLeft'
+                 });
+             }
+
+             // 2. Masked Number ".... 2863" (Left)
              pass.auxiliaryFields.push({
                 key: 'account_number',
                 label: 'VAULT NUMBER',
@@ -255,7 +266,7 @@ export class PassService {
                 textAlignment: 'PKTextAlignmentLeft'
              });
              
-             // Right: Tier Branding "Visa Signature"
+             // 3. Tier Branding "Visa Signature" (Right)
              pass.auxiliaryFields.push({
                 key: 'card_tier',
                 label: 'TIER',
@@ -267,6 +278,15 @@ export class PassService {
           // --- BACK OF CARD (Details View) ---
           
           if (pass.backFields) {
+             // 0. Owner Name (Requested Feature)
+             if (userData.ownerName) {
+                 pass.backFields.push({
+                     key: 'owner_name_back',
+                     label: 'NAME',
+                     value: userData.ownerName,
+                 });
+             }
+
              // 1. Asset Breakdown
              pass.backFields.push({
                  key: 'assets_header',

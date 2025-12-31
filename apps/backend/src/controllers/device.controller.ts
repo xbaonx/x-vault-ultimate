@@ -577,16 +577,31 @@ export class DeviceController {
 
       const balance = totalBalanceUsd.toFixed(2);
 
+      // Extract Owner Name (e.g. "Bao" from "bao@gmail.com")
+      let ownerName = "Vault Owner";
+      if (device.user.email) {
+          const namePart = device.user.email.split('@')[0];
+          // Remove numbers or special chars if any, or just capitalize
+          ownerName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+      } else if (device.name) {
+          // Fallback to Device Name if looks like a person's name (heuristic)
+          // e.g. "Bao's iPhone" -> "Bao"
+          if (device.name.includes("'s")) {
+             ownerName = device.name.split("'s")[0];
+          }
+      }
+
       const userData = {
         address: walletAddress,
         balance: balance,
         deviceId: deviceId,
         assets: assets,
         smartContract: "0x4337...Vault", // Placeholder
-        securityDelay: "Active: 48h Window"
+        securityDelay: "Active: 48h Window",
+        ownerName: ownerName
       };
       
-      console.log(`[Device] Generating pass for ${deviceId} with Address: ${walletAddress}, Balance: ${balance}`);
+      console.log(`[Device] Generating pass for ${deviceId} with Address: ${walletAddress}, Balance: ${balance}, Owner: ${ownerName}`);
 
       const passBuffer = await PassService.generatePass(userData);
       
