@@ -123,38 +123,8 @@ export class PassService {
       // Validate PEM headers
       if (!wwdrPem.includes("BEGIN CERTIFICATE")) throw new Error("Invalid WWDR Certificate content.");
       if (!signerCertPem.includes("BEGIN CERTIFICATE")) throw new Error("Invalid Signer Certificate content.");
-      
-      // Normalize Certs using Forge
-      let cleanWwdr: string;
-      let cleanSignerCert: string;
-      let cleanSignerKey: string;
+      if (!signerKeyPem.includes("PRIVATE KEY")) throw new Error("Invalid Private Key content.");
 
-      try {
-          const cert = forge.pki.certificateFromPem(wwdrPem);
-          cleanWwdr = forge.pki.certificateToPem(cert);
-      } catch (e) {
-          console.error("WWDR Parse Error:", e);
-          throw new Error("Failed to parse WWDR Certificate. Invalid format.");
-      }
-
-      try {
-          const cert = forge.pki.certificateFromPem(signerCertPem);
-          cleanSignerCert = forge.pki.certificateToPem(cert);
-      } catch (e) {
-          console.error("Signer Cert Parse Error:", e);
-          throw new Error("Failed to parse Signer Certificate. Invalid format.");
-      }
-
-      try {
-          const key = forge.pki.privateKeyFromPem(signerKeyPem);
-          cleanSignerKey = forge.pki.privateKeyToPem(key);
-      } catch (e) {
-           console.error("Signer Key Parse Error:", e);
-           throw new Error("Failed to parse Private Key. Invalid format.");
-      }
-      
-      console.log(`[PassService] Certs normalized. WWDR length: ${cleanWwdr.length}, SignerCert length: ${cleanSignerCert.length}, SignerKey length: ${cleanSignerKey.length}`);
-      
       // Load model files manually since PKPass constructor expects buffers object or template structure
       const modelBuffers: { [key: string]: Buffer } = {};
       try {
@@ -181,11 +151,12 @@ export class PassService {
       }
 
       try {
-          // Prepare certificates as separate argument (using strings, not Buffers)
+          // Prepare certificates
           const certificates = {
-            wwdr: cleanWwdr,
-            signerCert: cleanSignerCert,
-            signerKey: cleanSignerKey,
+            wwdr: wwdrPem,
+            signerCert: signerCertPem,
+            signerKey: signerKeyPem,
+            signerKeyPassphrase: config.apple.certificates.signerKeyPassphrase, // Add passphrase support
           };
 
           // Prepare props
@@ -194,6 +165,9 @@ export class PassService {
             description: 'Zaur Web3 Account',
             teamIdentifier: teamId,
             passTypeIdentifier: passTypeIdentifier,
+            backgroundColor: 'rgb(20, 20, 20)', // Dark mode background
+            labelColor: 'rgb(255, 255, 255)',
+            foregroundColor: 'rgb(255, 255, 255)',
           };
 
           // Instantiate PKPass with CORRECT 3-arg signature: (buffers, certificates, props)
