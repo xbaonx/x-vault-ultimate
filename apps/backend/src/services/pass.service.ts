@@ -299,6 +299,24 @@ export class PassService {
               console.warn("[PassService] Origin is not HTTPS. Skipping webServiceURL for pass.");
           }
           
+          // DEBUG: Log final pass structure
+          console.log("[PassService] --- Final Pass Structure ---");
+          console.log(`[PassService] Style: ${passJson.storeCard ? 'storeCard' : (passJson.generic ? 'generic' : 'unknown')}`);
+          
+          const bufferDetails = Object.keys(modelBuffers).map(k => `${k}: ${modelBuffers[k].length} bytes`);
+          console.log(`[PassService] Buffers: ${bufferDetails.join(', ')}`);
+          
+          // Check for 0-byte assets
+          for (const key of Object.keys(modelBuffers)) {
+              if (modelBuffers[key].length === 0) {
+                  console.error(`[PassService] CRITICAL: Asset ${key} is 0 bytes!`);
+                  throw new Error(`Asset ${key} is empty (0 bytes)`);
+              }
+          }
+
+          console.log(`[PassService] Semantics: ${JSON.stringify(passJson.semantics ? 'Present' : 'Missing')}`);
+          console.log("[PassService] ----------------------------");
+
           // SEMANTICS
           passJson.semantics = {
               primaryAccountNumber: userData.address,
@@ -335,6 +353,12 @@ export class PassService {
       } catch (e) {
           console.error("[PassService] Failed to patch pass.json buffer:", e);
           throw new Error("Failed to patch pass.json: " + e);
+      }
+
+      // FINAL ASSET VALIDATION
+      if (!modelBuffers['icon.png'] && !modelBuffers['icon@2x.png']) {
+          console.error("[PassService] CRITICAL: icon.png is missing! Pass will be rejected by Apple.");
+          throw new Error("Pass generation failed: Missing mandatory icon.png");
       }
 
       try {
