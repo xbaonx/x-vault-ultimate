@@ -253,6 +253,14 @@ export class PassService {
            modelBuffers['icon@2x.png'] = Buffer.from(modelBuffers['logo@2x.png']);
       }
 
+      // FALLBACK: Ensure thumbnail.png exists for GENERIC style
+      if (!modelBuffers['thumbnail.png'] && modelBuffers['logo.png']) {
+          modelBuffers['thumbnail.png'] = Buffer.from(modelBuffers['logo.png']);
+      }
+      if (!modelBuffers['thumbnail@2x.png'] && modelBuffers['logo@2x.png']) {
+          modelBuffers['thumbnail@2x.png'] = Buffer.from(modelBuffers['logo@2x.png']);
+      }
+
       // MANUALLY PATCH PASS.JSON
       try {
           const passJsonStr = modelBuffers['pass.json'].toString('utf8');
@@ -263,12 +271,15 @@ export class PassService {
           passJson.serialNumber = String(userData.address);
           passJson.description = "Zaur.at Smart Vault";
           
-          // STYLE CHANGE: GENERIC -> STORE CARD
-          if (passJson.generic) {
-              passJson.storeCard = passJson.generic;
-              delete passJson.generic;
-          } else if (!passJson.storeCard) {
-              passJson.storeCard = {
+          // DEBUG: FORCE GENERIC STYLE
+          // Store Card requires strict strip image dimensions (e.g. 980x376).
+          // Our fallback from logo.png (square) likely causes validation failure.
+          // We switch to GENERIC to prove the certs are valid.
+          if (passJson.storeCard) {
+              passJson.generic = passJson.storeCard;
+              delete passJson.storeCard;
+          } else if (!passJson.generic && !passJson.eventTicket && !passJson.coupon && !passJson.boardingPass) {
+              passJson.generic = {
                   primaryFields: [],
                   secondaryFields: [],
                   auxiliaryFields: [],

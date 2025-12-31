@@ -171,7 +171,7 @@ export class DeviceController {
           expectedRPID: rpId,
           credentialID: credentialID, // Use the ID from request (Base64URL) to satisfy library check
           credentialPublicKey: targetDevice.credentialPublicKey,
-          counter: targetDevice.counter,
+          counter: targetDevice.counter || 0,
         } as any);
       } catch (e) {
         console.error(`[Device] Verification threw error:`, e);
