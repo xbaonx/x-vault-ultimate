@@ -191,9 +191,22 @@ export class PassService {
             } else if (!certTeamId) {
                  console.warn(`[PassService] Warning: Could not extract Team ID (OU) from certificate subject.`);
             }
+
+            // Check Expiry
+            const now = new Date();
+            if (now > signerCert.validity.notAfter) {
+                console.error(`[PassService] CRITICAL: Signer Certificate is EXPIRED (Expired: ${signerCert.validity.notAfter})`);
+                throw new Error("Signer Certificate Expired");
+            }
+            if (now > wwdrCert.validity.notAfter) {
+                console.error(`[PassService] CRITICAL: WWDR Certificate is EXPIRED (Expired: ${wwdrCert.validity.notAfter})`);
+                throw new Error("WWDR Certificate Expired");
+            }
+
             console.log("[PassService] -----------------------------");
         } catch (diagErr) {
             console.error("[PassService] Failed to parse certificates for diagnostics:", diagErr);
+            // Don't block flow if just diagnostics fail, but log heavily
         }
       }
 
@@ -293,9 +306,10 @@ export class PassService {
           passJson.barcodes = [];
           if (passJson.barcode) delete passJson.barcode; // Remove legacy singular barcode if present
           
-          // Force strip image usage for storeCard
+          // DEBUG: Suppress strip image to isolate if 'strip.png' is causing validation failure
+          // If pass downloads with this set to true, the issue is the strip.png file (dimensions/format).
           if (passJson.storeCard) {
-              passJson.suppressStrip = false;
+              passJson.suppressStrip = true;
           }
 
           modelBuffers['pass.json'] = Buffer.from(JSON.stringify(passJson));
