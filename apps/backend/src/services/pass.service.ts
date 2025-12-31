@@ -170,6 +170,31 @@ export class PassService {
         wwdrPem = PassService.formatPem(wwdrRaw!);
         signerCertPem = PassService.formatPem(signerCertRaw!);
         signerKeyPem = PassService.formatPem(signerKeyRaw!);
+
+        // DIAGNOSTIC: Inspect Certificate Details
+        try {
+            const signerCert = forge.pki.certificateFromPem(signerCertPem);
+            const wwdrCert = forge.pki.certificateFromPem(wwdrPem);
+            
+            console.log("[PassService] --- Certificate Diagnostics ---");
+            console.log(`[PassService] Signer Cert Subject: ${JSON.stringify(signerCert.subject.attributes.map(a => ({ name: a.name, value: a.value })))}`);
+            console.log(`[PassService] Signer Cert Issuer: ${JSON.stringify(signerCert.issuer.attributes.map(a => ({ name: a.name, value: a.value })))}`);
+            console.log(`[PassService] Signer Cert Valid: ${signerCert.validity.notBefore} to ${signerCert.validity.notAfter}`);
+            
+            console.log(`[PassService] WWDR Cert Subject: ${JSON.stringify(wwdrCert.subject.attributes.map(a => ({ name: a.name, value: a.value })))}`);
+            console.log(`[PassService] WWDR Cert Issuer: ${JSON.stringify(wwdrCert.issuer.attributes.map(a => ({ name: a.name, value: a.value })))}`);
+            
+            // Check for Team ID Match
+            const certTeamId = signerCert.subject.getField('OU')?.value;
+            if (certTeamId && certTeamId !== teamId) {
+                console.error(`[PassService] CRITICAL MISMATCH: Certificate Team ID (${certTeamId}) does not match Config Team ID (${teamId})`);
+            } else if (!certTeamId) {
+                 console.warn(`[PassService] Warning: Could not extract Team ID (OU) from certificate subject.`);
+            }
+            console.log("[PassService] -----------------------------");
+        } catch (diagErr) {
+            console.error("[PassService] Failed to parse certificates for diagnostics:", diagErr);
+        }
       }
 
       // Load model files manually since PKPass constructor expects buffers object or template structure
