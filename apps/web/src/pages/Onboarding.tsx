@@ -307,11 +307,18 @@ export default function Onboarding() {
               className="text-center space-y-6 w-full"
             >
               <div className="bg-primary/10 p-6 rounded-full inline-block">
-                <Wallet className="w-12 h-12 text-primary" />
+                {loginOptions ? (
+                    <Lock className="w-12 h-12 text-primary" />
+                ) : (
+                    <Wallet className="w-12 h-12 text-primary" />
+                )}
               </div>
               <div className="space-y-2">
                   <h3 className="font-semibold text-xl text-white">
-                      {hasPin ? "Link New Device" : "Enable FaceID"}
+                      {loginOptions 
+                          ? "Unlock Vault" 
+                          : (hasPin ? "Link New Device" : "Enable FaceID")
+                      }
                   </h3>
                   {email && (
                     <p className="text-sm text-secondary font-medium bg-white/5 py-1 px-3 rounded-full inline-block mb-2">
@@ -319,9 +326,12 @@ export default function Onboarding() {
                     </p>
                   )}
                   <p className="text-secondary max-w-xs mx-auto">
-                    {hasPin 
-                        ? "Register this device to access your existing wallet."
-                        : "Zaur uses Secure Enclave to protect your private keys."
+                    {loginOptions
+                        ? "Use your existing Passkey to access your wallet."
+                        : (hasPin 
+                            ? "Register this device to access your existing wallet."
+                            : "Zaur uses Secure Enclave to protect your private keys."
+                        )
                     }
                   </p>
               </div>
@@ -334,7 +344,10 @@ export default function Onboarding() {
               )}
 
               <Button size="lg" onClick={startBiometricSetup} className="w-full">
-                {hasPin ? "Register Device" : "Create Passkey"}
+                {loginOptions 
+                    ? "Unlock with FaceID" 
+                    : (hasPin ? "Register Device" : "Create Passkey")
+                }
               </Button>
             </motion.div>
           )}
