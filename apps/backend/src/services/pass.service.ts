@@ -65,6 +65,9 @@ export class PassService {
     return formatted;
   }
 
+  // VALID 60x60 PNG (Black Circle with White $ sign) - Fail-safe Icon
+  private static readonly SAFE_ICON_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAADwAAAA8CAYAAAA6/nqHAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAPKADAAQAAAABAAAAPAAAAAAy051DAAAACXBIWXMAAAsTAAALEwEAmpwYAAACxUlEQRoBe9baTUsDQRQ9E0ExlZUqKFgq+P//oFqrShG0GJJPcydMCi67M3dCzOQwJ5fkzZs3Z2Z3JpOJ/WExsAgsBhaBRWCtWnr7+Pj4eP/8/Hz/8vLy/vX19f39/f39w8PD+6enp/ePj4/vH5+fn98/Pz+/f3l5ef/6+vr+4eHh/dPT0/vHx8f3T09P75+fn9+/vLy8f319ff/w8PD+6enp/ePj4/vH5+fn98/Pz+/f39/fPzw8vH96enr/+Pj4/vH5+fn98/Pz+/f39/cP//4W+PLy8n4y39/fPzw8PLx/enp6//j4+P7x+fn5/fPz8/v39/f3Dw8P75+ent4/Pj6+f3x+fn7//Pz8/v39/f3Dw8P7p6en94+Pj+8fn5+f3z8/P79/f39///D/t8D39/f3Dw8P75+ent4/Pj6+f3x+fn7//Pz8/v39/f3Dw8P7p6en94+Pj+8fn5+f3z8/P79/f398/PDy8f3p6ev/4+Pj+8fn5+f3z8/P79/f39w8PD++fnp7ePz4+vn98fn5+//z8/P79/f39w8PD+6enp/ePj4/vH5+fn98/Pz+/f39/f//w8PD+6enp/ePj4/vH5+fn98/Pz+/f39/fPzw8vH96enr/+Pj4/vH5+fn98/Pz+/f39/cPDw/vn56e3j8+Pr5/fH5+fv/8/Pz+/f39/cPDw/unp6f3j4+P7x+fn5/fPz8/v39/f3//8PDw/unp6f3j4+P7x+fn5/fPz8/v39/f3z88PLx/enp6//j4+P7x+fn5/fPz8/v39/f3Dw8P75+ent4/Pj6+f3x+fn7//Pz8/v39/f3Dw8P7p6en94+Pj+8fn5+f3z8/P79/f39///D/t8B/Abv9/wGLwCJwM/EH7b1aW9qO928AAAAASUVORK5CYII=";
+
   // Generate Mock Certificates for Development/Testing
   private static async createMockCertificates(teamId: string, passTypeId: string, orgName: string): Promise<{ key: string, cert: string }> {
       console.log(`[PassService] Generating self-signed mock certificates for Team ID: ${teamId}, PassType: ${passTypeId}...`);
@@ -245,11 +248,25 @@ export class PassService {
           modelBuffers['strip@2x.png'] = Buffer.from(modelBuffers['logo@2x.png']);
       }
 
-      // FALLBACK: Ensure icon.png exists (Critical for Pass)
+      // FALLBACK: Ensure icon.png exists and is valid (Critical for Pass)
+      // 1. If missing, try logo.png
       if (!modelBuffers['icon.png'] && modelBuffers['logo.png']) {
            console.log("[PassService] icon.png missing. Creating from logo.png.");
            modelBuffers['icon.png'] = Buffer.from(modelBuffers['logo.png']);
       }
+      
+      // 2. Check size. If dangerously small (< 200 bytes) or still missing, use SAFE FALLBACK.
+      if (!modelBuffers['icon.png'] || modelBuffers['icon.png'].length < 200) {
+          console.warn(`[PassService] icon.png is missing or invalid size (${modelBuffers['icon.png']?.length || 0} bytes). Using SAFE_ICON_BASE64.`);
+          const safeIcon = Buffer.from(PassService.SAFE_ICON_BASE64, 'base64');
+          modelBuffers['icon.png'] = safeIcon;
+          // Ensure @2x exists too
+          if (!modelBuffers['icon@2x.png'] || modelBuffers['icon@2x.png'].length < 200) {
+              modelBuffers['icon@2x.png'] = safeIcon;
+          }
+      }
+
+      // 3. Fallback for @2x from logo@2x if we didn't force-set it
       if (!modelBuffers['icon@2x.png'] && modelBuffers['logo@2x.png']) {
            modelBuffers['icon@2x.png'] = Buffer.from(modelBuffers['logo@2x.png']);
       }
