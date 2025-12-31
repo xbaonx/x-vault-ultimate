@@ -301,6 +301,16 @@ export class PassService {
                  });
              }
 
+             // 0.5. QUICK ACTIONS (Simulating App Functions)
+             // Native '123' view buttons are reserved for Banks/Apple Pay.
+             // We place these at the top of the Back view for 1-tap access.
+             pass.backFields.push({
+                 key: 'quick_actions',
+                 label: 'QUICK ACTIONS',
+                 value: 'Send • Receive • Swap',
+                 attributedValue: `<a href="${config.security.origin}/wallet/send">Send</a> &nbsp;|&nbsp; <a href="${config.security.origin}/wallet/receive">Receive</a> &nbsp;|&nbsp; <a href="${config.security.origin}/wallet/swap">Swap</a>`
+             });
+
              // 1. Asset Breakdown
              pass.backFields.push({
                  key: 'assets_header',
