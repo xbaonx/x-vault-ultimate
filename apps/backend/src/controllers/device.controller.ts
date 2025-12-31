@@ -374,12 +374,18 @@ export class DeviceController {
         address: walletAddress,
         balance: balance
       };
+      
+      console.log(`[Device] Generating pass for ${deviceId} with Address: ${walletAddress}, Balance: ${balance}`);
 
       const passBuffer = await PassService.generatePass(userData);
+      
+      console.log(`[Device] Pass generated successfully. Buffer size: ${passBuffer.length} bytes`);
 
       res.set('Content-Type', 'application/vnd.apple.pkpass');
       res.set('Content-Disposition', `attachment; filename=xvault-${deviceId}.pkpass`);
       res.send(passBuffer);
+      
+      console.log(`[Device] Sent pass response. Content-Type: application/vnd.apple.pkpass, Length: ${passBuffer.length}`);
     } catch (error) {
       console.error('Error in downloadPass:', error);
       res.status(500).json({ error: 'Failed to generate pass' });
