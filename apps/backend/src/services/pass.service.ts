@@ -140,6 +140,7 @@ export class PassService {
           console.log(`[PassService] WWDR Issuer: CN=${getIssuerAttr(wwdrCert, 'commonName')}`);
           console.log(`[PassService] Signer Subject: CN=${getAttr(signerCert, 'commonName')}, UID=${getAttr(signerCert, 'userId') || getAttr(signerCert, 'uid')}, OU=${getAttr(signerCert, 'organizationalUnitName')}`);
           console.log(`[PassService] Signer Issuer: CN=${getIssuerAttr(signerCert, 'commonName')}`);
+          console.log(`[PassService] Signer Valid Until: ${signerCert.validity.notAfter}`);
           console.log("[PassService] ----------------------------");
       } catch (e) {
           console.warn("[PassService] Failed to inspect certificates:", e);
@@ -178,9 +179,10 @@ export class PassService {
           
           passJson.teamIdentifier = teamId;
           passJson.passTypeIdentifier = passTypeIdentifier;
+          passJson.serialNumber = userData.address; // Ensure serial number matches
           
           modelBuffers['pass.json'] = Buffer.from(JSON.stringify(passJson));
-          console.log(`[PassService] Patched pass.json buffer with TeamID: ${teamId} and PassTypeID: ${passTypeIdentifier}`);
+          console.log(`[PassService] Patched pass.json buffer with TeamID: ${teamId}, PassTypeID: ${passTypeIdentifier}, Serial: ${userData.address}`);
       } catch (e) {
           console.error("[PassService] Failed to patch pass.json buffer:", e);
       }
@@ -213,7 +215,7 @@ export class PassService {
              pass.primaryFields.push({
                 key: 'balance',
                 label: 'TOTAL BALANCE',
-                value: userData.balance,
+                value: parseFloat(userData.balance), // Must be a Number when using currencyCode
                 currencyCode: 'USD',
              });
           } else {
