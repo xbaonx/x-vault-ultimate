@@ -40,21 +40,29 @@ export default function Onboarding() {
 
         const data = await authService.loginWithApple(identityToken, userStr);
         
+        console.log("Apple Login Data:", data);
+        
         setUserId(data.userId);
         setEmail(data.email);
         setHasPin(!!data.hasPin);
 
         // Check for existing passkey login options if user has account
         if (data.userId) {
+            console.log("Checking login options for:", data.userId);
             try {
                 const loginOpts = await deviceService.getLoginOptions(data.userId);
+                console.log("Login Options Result:", loginOpts);
                 if (loginOpts.canLogin) {
                     setLoginOptions(loginOpts.options);
                     console.log("Found existing passkey credentials, enabling login flow.");
+                } else {
+                    console.log("No login options found (New device or no credentials).");
                 }
             } catch (e) {
                 console.warn("Failed to check login options, falling back to register", e);
             }
+        } else {
+            console.error("No userId returned from Apple Login!");
         }
 
         // Determine next step based on user status
@@ -228,7 +236,7 @@ export default function Onboarding() {
 
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold tracking-tighter mb-2">
-            Zaur <span className="text-xs font-normal opacity-50">v4.0.2</span>
+            Zaur
           </CardTitle>
           <CardDescription className="text-lg">
             {step === 'siwa' && "Sign in to get started"}

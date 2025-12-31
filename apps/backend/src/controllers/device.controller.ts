@@ -38,66 +38,80 @@ export class DeviceController {
     return { rpId, origin };
   }
 
+  // Helpers for Base64/Base64URL conversion
+  static toBase64URL(base64: string): string {
+    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  }
+
+  static toBase64(base64url: string): string {
+    let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    return base64;
+  }
+
   /**
    * Login Flow Step 1: Generate Authentication Options (Assertion)
    * This allows existing users to sign in with a synced Passkey
    */
   static async generateLoginOptions(req: Request, res: Response) {
     try {
-        const { userId } = req.body;
-        const { rpId } = DeviceController.getSecurityConfig(req);
+      const { userId } = req.body;
+      const { rpId } = DeviceController.getSecurityConfig(req);
 
-        if (!userId) {
-            return res.status(400).json({ error: "User ID required" });
-        }
+      if (!userId) {
+        return res.status(400).json({ error: "User ID required" });
+      }
 
-        const userRepo = AppDataSource.getRepository(User);
-        const user = await userRepo.findOne({ 
-            where: { id: userId },
-            relations: ['devices']
-        });
+      const userRepo = AppDataSource.getRepository(User);
+      const user = await userRepo.findOne({ 
+        where: { id: userId },
+        relations: ['devices']
+      });
 
-        if (!user) {
-            return res.status(404).json({ error: "User not found" });
-        }
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
 
-        console.log(`[Device] Checking login options for User ${userId}. Total Devices: ${user.devices?.length || 0}`);
+      console.log(`[Device] Checking login options for User ${userId}. Total Devices: ${user.devices?.length || 0}`);
 
-        // Filter active devices with credentials
-        const devices = user.devices.filter(d => {
-            const hasCred = !!d.credentialID;
-            console.log(`[Device] Device ${d.id} (${d.deviceLibraryId}): isActive=${d.isActive}, hasCred=${hasCred}`);
-            return d.isActive && hasCred;
-        });
+      // Filter active devices with credentials
+      const devices = user.devices.filter(d => {
+        const hasCred = !!d.credentialID;
+        console.log(`[Device] Device ${d.id} (${d.deviceLibraryId}): isActive=${d.isActive}, hasCred=${hasCred}`);
+        return d.isActive && hasCred;
+      });
 
-        if (devices.length === 0) {
-            console.log("[Device] No active devices with credentials found.");
-            // No credentials found -> Must register
-            return res.status(200).json({ canLogin: false, message: "No credentials found" });
-        }
+      if (devices.length === 0) {
+        console.log("[Device] No active devices with credentials found.");
+        // No credentials found -> Must register
+        return res.status(200).json({ canLogin: false, message: "No credentials found" });
+      }
 
-        const options = await generateAuthenticationOptions({
-            rpID: rpId,
-            allowCredentials: devices.map(d => ({
-                id: d.credentialID,
-                transports: d.transports ? (d.transports as any) : ['internal', 'hybrid'],
-            })),
-            userVerification: 'required',
-        });
+      const options = await generateAuthenticationOptions({
+        rpID: rpId,
+        allowCredentials: devices.map(d => ({
+          // Ensure ID is Base64URL for the browser
+          id: DeviceController.toBase64URL(DeviceController.toBase64URL(d.credentialID)),
+          transports: d.transports ? (d.transports as any) : ['internal', 'hybrid'],
+        })),
+        userVerification: 'required',
+      });
 
-        // Save challenge to ALL candidate devices (since we don't know which one will sign yet)
-        // In a stricter model, we might use a temporary auth session, but updating devices is OK for MVP.
-        const deviceRepo = AppDataSource.getRepository(Device);
-        for (const device of devices) {
-            device.currentChallenge = options.challenge;
-            await deviceRepo.save(device);
-        }
+      // Save challenge to ALL candidate devices (since we don't know which one will sign yet)
+      // In a stricter model, we might use a temporary auth session, but updating devices is OK for MVP.
+      const deviceRepo = AppDataSource.getRepository(Device);
+      for (const device of devices) {
+        device.currentChallenge = options.challenge;
+        await deviceRepo.save(device);
+      }
 
-        res.status(200).json({ canLogin: true, options });
+      res.status(200).json({ canLogin: true, options });
 
     } catch (error) {
-        console.error('Error generating login options:', error);
-        res.status(500).json({ error: 'Internal server error' });
+      console.error('Error generating login options:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   }
 
@@ -105,87 +119,101 @@ export class DeviceController {
    * Login Flow Step 2: Verify Authentication Response
    */
   static async verifyLogin(req: Request, res: Response) {
-      try {
-          const { userId, response } = req.body;
-          const { rpId, origin } = DeviceController.getSecurityConfig(req);
+    try {
+      const { userId, response } = req.body;
+      const { rpId, origin } = DeviceController.getSecurityConfig(req);
 
-          // Find the device that matches the credential ID used
-          const credentialID = response.id;
-          const deviceRepo = AppDataSource.getRepository(Device);
-          
-          // We search for the device by credentialID AND userId to ensure ownership
-          const device = await deviceRepo.findOne({
-              where: { 
-                  // credentialID is stored as base64url string usually, or just string.
-                  // SimpleWebAuthn uses base64url. Check how we stored it.
-                  // In verifyRegistration: Buffer.from(credential.id).toString('base64') -> This is base64, not base64url.
-                  // But response.id from client is base64url. 
-                  // We might need to handle loose matching or re-encoding.
-                  // For now, let's try finding the user's device that matches.
-                  user: { id: userId }
-              },
-              relations: ['user']
-          });
-          
-          // Actually, we should iterate user's devices to find the matching credentialID
-          // because SQL matching on encoded strings can be tricky if formats differ.
-          const userRepo = AppDataSource.getRepository(User);
-          const user = await userRepo.findOne({ where: { id: userId }, relations: ['devices'] });
-          
-          if (!user) return res.status(404).json({ error: "User not found" });
+      const credentialID = response.id; // Base64URL from client
 
-          const targetDevice = user.devices.find(d => {
-              // Compare as Buffers to be safe
-              // stored: base64
-              // received: base64url
-              // Simple way: convert received base64url to base64
-              const receivedBase64 = Buffer.from(response.id, 'base64url').toString('base64');
-              return d.credentialID === receivedBase64;
-          });
+      // 1. Load User and Devices
+      const userRepo = AppDataSource.getRepository(User);
+      const user = await userRepo.findOne({ where: { id: userId }, relations: ['devices'] });
 
-          if (!targetDevice || !targetDevice.currentChallenge) {
-              return res.status(400).json({ error: "Matching device credential not found or no challenge active" });
-          }
+      if (!user) return res.status(404).json({ error: "User not found" });
 
-          const verification = await verifyAuthenticationResponse({
-              response,
-              expectedChallenge: targetDevice.currentChallenge,
-              expectedOrigin: origin,
-              expectedRPID: rpId,
-              credentialID: targetDevice.credentialID,
-              credentialPublicKey: targetDevice.credentialPublicKey,
-              counter: targetDevice.counter,
-          } as any);
+      // 2. Find Device with Flexible Matching (Base64URL or Base64)
+      const credentialIDBase64 = DeviceController.toBase64(credentialID);
 
-          if (verification.verified) {
-              // Update Counter
-              targetDevice.counter = verification.authenticationInfo.newCounter;
-              targetDevice.currentChallenge = '';
-              targetDevice.lastActiveAt = new Date();
-              await deviceRepo.save(targetDevice);
+      const targetDevice = user.devices.find(d => {
+        // Match exact (Base64URL) OR Legacy (Base64)
+        return d.credentialID === credentialID || d.credentialID === credentialIDBase64;
+      });
 
-              // Success! Return needed info.
-              
-              // Get Wallet Address
-               const walletRepo = AppDataSource.getRepository(Wallet);
-               const mainWallet = await walletRepo.findOne({ 
-                   where: { user: { id: userId }, isActive: true } 
-               });
-
-              res.status(200).json({
-                  verified: true,
-                  deviceLibraryId: targetDevice.deviceLibraryId,
-                  walletAddress: mainWallet?.address,
-                  // We might want to generate a session token here if using JWT
-              });
-          } else {
-              res.status(400).json({ verified: false, error: "Signature invalid" });
-          }
-
-      } catch (error) {
-          console.error('Error verifying login:', error);
-          res.status(500).json({ error: 'Internal server error' });
+      if (!targetDevice) {
+        console.warn(`[Device] VerifyLogin Failed: No device found for CredentialID ${credentialID} (or legacy equivalent)`);
+        return res.status(400).json({ error: "Device credential not found or does not belong to user" });
       }
+
+      if (!targetDevice.currentChallenge) {
+        console.warn(`[Device] VerifyLogin Failed: No active challenge for Device ${targetDevice.id}`);
+        return res.status(400).json({ error: "No active challenge for this device" });
+      }
+
+      console.log(`[Device] Verifying login for Device ${targetDevice.id} (${targetDevice.deviceLibraryId})`);
+      console.log(`[Device] Expected Challenge: ${targetDevice.currentChallenge}`);
+      console.log(`[Device] Expected Origin: ${origin}`);
+      console.log(`[Device] Expected RPID: ${rpId}`);
+      console.log(`[Device] Credential ID (Req): ${credentialID}`);
+      console.log(`[Device] Public Key Length: ${targetDevice.credentialPublicKey?.length}`);
+
+      // 3. Verify
+      console.log(`[Device] Verifying login for Device ${targetDevice.id}`);
+      console.log(`[Device] Challenge: ${targetDevice.currentChallenge}`);
+      console.log(`[Device] Origin: ${origin}, RPID: ${rpId}`);
+      console.log(`[Device] CredentialID (Req): ${credentialID}`);
+
+      let verification;
+      try {
+        verification = await verifyAuthenticationResponse({
+          response,
+          expectedChallenge: targetDevice.currentChallenge,
+          expectedOrigin: origin,
+          expectedRPID: rpId,
+          credentialID: credentialID, // Use the ID from request (Base64URL) to satisfy library check
+          credentialPublicKey: targetDevice.credentialPublicKey,
+          counter: targetDevice.counter,
+        } as any);
+      } catch (e) {
+        console.error(`[Device] Verification threw error:`, e);
+        return res.status(400).json({ verified: false, error: "Verification failed", details: String(e) });
+      }
+
+      console.log(`[Device] Verification Result:`, JSON.stringify(verification, null, 2));
+
+      if (!verification.verified) {
+        console.error(`[Device] Verification failed: ${JSON.stringify(verification, null, 2)}`);
+        return res.status(400).json({ verified: false, error: "Verification failed" });
+      }
+
+      // 4. Update Device
+      targetDevice.counter = verification.authenticationInfo.newCounter;
+      targetDevice.currentChallenge = '';
+      targetDevice.lastActiveAt = new Date();
+      
+      // Self-healing: Migrate legacy Base64 ID to Base64URL if needed
+      if (targetDevice.credentialID !== credentialID) {
+        console.log(`[Device] Migrating credentialID to Base64URL for Device ${targetDevice.id}`);
+        targetDevice.credentialID = credentialID;
+      }
+
+      const deviceRepo = AppDataSource.getRepository(Device);
+      await deviceRepo.save(targetDevice);
+
+      // 5. Success Response
+      const walletRepo = AppDataSource.getRepository(Wallet);
+      const mainWallet = await walletRepo.findOne({ 
+        where: { user: { id: userId }, isActive: true } 
+      });
+
+      res.status(200).json({
+        verified: true,
+        deviceLibraryId: targetDevice.deviceLibraryId,
+        walletAddress: mainWallet?.address,
+      });
+    } catch (error) {
+      console.error('Error verifying login:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
 
   /**
@@ -200,48 +228,46 @@ export class DeviceController {
       let user: User | null = null;
 
       if (userId) {
-          user = await userRepo.findOne({ where: { id: userId } });
+        user = await userRepo.findOne({ where: { id: userId } });
       }
 
       if (!user) {
-          // If no user found, we might need to create one (Anonymous/Provisional flow)
-          // But ideally we should have a user from Auth step.
-          // For now, create a provisional user.
-          user = userRepo.create({
-              email: `anon-${uuidv4().slice(0, 8)}@zaur.local`,
-          });
-          await userRepo.save(user);
-          
-          // Create default wallet for provisional user
-          const walletRepo = AppDataSource.getRepository(Wallet);
-          
-          const randomWallet = ethers.Wallet.createRandom();
-          
-          const wallet = walletRepo.create({
-              user,
-              name: 'Main Wallet',
-              salt: 'random',
-              address: randomWallet.address,
-              privateKey: randomWallet.privateKey,
-              isActive: true
-          });
-          await walletRepo.save(wallet);
+        // If no user found, we might need to create one (Anonymous/Provisional flow)
+        // But ideally we should have a user from Auth step.
+        // For now, create a provisional user.
+        user = userRepo.create({
+          email: `anon-${uuidv4().slice(0, 8)}@zaur.local`,
+        });
+        await userRepo.save(user);
+        
+        // Create default wallet for provisional user
+        const walletRepo = AppDataSource.getRepository(Wallet);
+        
+        const randomWallet = ethers.Wallet.createRandom();
+        
+        const wallet = walletRepo.create({
+          user,
+          name: 'Main Wallet',
+          salt: 'random',
+          address: randomWallet.address,
+          privateKey: randomWallet.privateKey,
+          isActive: true
+        });
+        await walletRepo.save(wallet);
       }
       
       const username = user.email || `user-${user.id.slice(0, 8)}`;
 
-      // Create a NEW Device entity for this registration attempt
       const deviceRepo = AppDataSource.getRepository(Device);
       const deviceLibraryId = uuidv4();
-      
       const newDevice = deviceRepo.create({
-          user,
-          deviceLibraryId,
-          name: 'New Device',
-          isActive: false, // Pending verification
+        user,
+        deviceLibraryId,
+        name: 'New Device',
+        isActive: false, // Pending verification
       });
+      await deviceRepo.save(newDevice);
 
-      // Generate options
       const options = await generateRegistrationOptions({
         rpName: config.security.rpName,
         rpID: rpId,
