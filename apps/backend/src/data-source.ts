@@ -6,6 +6,7 @@ import { Wallet } from "./entities/Wallet";
 import { Transaction } from "./entities/Transaction";
 import { AppleConfig } from "./entities/AppleConfig";
 import { PollingSession } from "./entities/PollingSession";
+import { PassRegistration } from "./entities/PassRegistration";
 
 const dbSslEnabled = (process.env.DB_SSL || "").toLowerCase() === "true";
 const dbSslRejectUnauthorized = (process.env.DB_SSL_REJECT_UNAUTHORIZED || "").toLowerCase() === "true";
@@ -20,10 +21,6 @@ export const AppDataSource = new DataSource({
   database: config.databaseUrl ? undefined : config.database.database,
   synchronize: true,
   logging: false,
-  ssl: dbSslEnabled
-    ? {
-        rejectUnauthorized: dbSslRejectUnauthorized,
-      }
-    : undefined,
-  entities: [User, Device, Wallet, Transaction, AppleConfig, PollingSession],
+  ssl: config.nodeEnv === 'production' ? { rejectUnauthorized: false } : false,
+  entities: [User, Device, Wallet, Transaction, AppleConfig, PollingSession, PassRegistration],
 });

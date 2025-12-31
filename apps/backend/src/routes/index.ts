@@ -6,6 +6,7 @@ import adminRoutes from './admin.routes';
 import securityRoutes from './security.routes';
 import authRoutes from './auth.routes';
 import migrationRoutes from './migration.routes';
+import appleRoutes from './apple.routes';
 
 const router = Router();
 
@@ -16,5 +17,6 @@ router.use('/admin', adminRoutes);
 router.use('/security', securityRoutes);
 router.use('/auth', authRoutes);
 router.use('/migration', migrationRoutes);
+router.use('/apple', appleRoutes);
 
 export default router;
