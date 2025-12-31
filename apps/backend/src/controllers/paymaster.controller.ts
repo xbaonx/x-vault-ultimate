@@ -90,9 +90,47 @@ export class PaymasterController {
               return;
           }
 
-          const { value } = PaymasterController.decodeCallData(userOp.callData);
+            const { value } = PaymasterController.decodeCallData(userOp.callData);
           
-          if (value > 0n) {
+            // --- USDZ Economy: Gas Sponsorship Logic ---
+            // Calculate max gas cost in ETH
+            // gasCost = (callGasLimit + verificationGasLimit + preVerificationGas) * maxFeePerGas
+            const callGasLimit = BigInt(userOp.callGasLimit || 0);
+            const verificationGasLimit = BigInt(userOp.verificationGasLimit || 0);
+            const preVerificationGas = BigInt(userOp.preVerificationGas || 0);
+            const maxFeePerGas = BigInt(userOp.maxFeePerGas || 0);
+            
+            const totalGasLimit = callGasLimit + verificationGasLimit + preVerificationGas;
+            const maxGasCostWei = totalGasLimit * maxFeePerGas;
+            
+            // Convert to USD (Mock rate: 1 ETH = $2500)
+            const gasCostEth = parseFloat(ethers.formatEther(maxGasCostWei));
+            const gasCostUsd = gasCostEth * 2500;
+
+            console.log(`[Paymaster] Estimated Gas Cost: ${gasCostEth} ETH ($${gasCostUsd.toFixed(4)})`);
+            console.log(`[Paymaster] User Balance: ${user.usdzBalance} USDZ`);
+
+            // Check if user has enough USDZ credits (or if we still want to sponsor small amounts)
+            // Policy: If balance > 0, we sponsor and deduct. 
+            // If balance <= 0, we do NOT sponsor (User pays).
+            
+            if (user.usdzBalance <= 0) {
+                 console.log("[Paymaster] User out of USDZ credits. Sponsorship declined.");
+                 // Return empty paymasterAndData -> User pays gas
+                 res.status(200).json({ 
+                     paymasterAndData: '0x',
+                     message: "Insufficient USDZ balance for sponsorship" 
+                 });
+                 return;
+            }
+
+            // Deduct balance (ensure it doesn't go below 0 for display, though logic allows partial subsidy?)
+            // For now, simple deduction.
+            user.usdzBalance = Math.max(0, user.usdzBalance - gasCostUsd);
+            await AppDataSource.getRepository(User).save(user);
+            console.log(`[Paymaster] Sponsored! New Balance: ${user.usdzBalance.toFixed(4)} USDZ`);
+
+            if (value > 0n) {
             // Convert to USD (Mock rate: 1 ETH = $2500)
             const ethValue = parseFloat(ethers.formatEther(value));
             const usdValue = ethValue * 2500;
