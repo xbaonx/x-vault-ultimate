@@ -227,9 +227,10 @@ export class ApplePassController {
           const passBuffer = await PassService.generatePass(userData);
 
           // 4. Send Response
-          // If the pass hasn't changed, we could return 304, but generating fresh is safer for now.
+          console.log(`[ApplePass] Pass generated for ${walletAddress}. Size: ${passBuffer.length}`);
+          
           res.set('Content-Type', 'application/vnd.apple.pkpass');
-          res.set('Content-Disposition', `attachment; filename=xvault.pkpass`);
+          res.set('Content-Disposition', `attachment; filename="xvault.pkpass"`);
           res.set('Last-Modified', new Date().toUTCString());
           res.send(passBuffer);
 

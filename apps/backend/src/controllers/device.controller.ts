@@ -608,7 +608,7 @@ export class DeviceController {
       console.log(`[Device] Pass generated successfully. Buffer size: ${passBuffer.length} bytes`);
 
       res.set('Content-Type', 'application/vnd.apple.pkpass');
-      res.set('Content-Disposition', `attachment; filename=xvault-${deviceId}.pkpass`);
+      res.set('Content-Disposition', `attachment; filename="xvault-${deviceId}.pkpass"`);
       res.send(passBuffer);
       
       console.log(`[Device] Sent pass response. Content-Type: application/vnd.apple.pkpass, Length: ${passBuffer.length}`);
