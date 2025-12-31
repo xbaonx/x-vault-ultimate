@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/baonguyen/CascadeProjects/x-vault-ultimate/packages/contracts/contracts/XAccount.sol": {
-      "lastModificationDate": 1766993942196,
-      "contentHash": "843ca38c48d44d3bd16f2061be3bf140",
+      "lastModificationDate": 1767167583055,
+      "contentHash": "73e70265281eeed9ad56d1b04f770897",
       "sourceName": "contracts/XAccount.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -966,7 +966,7 @@
       ]
     },
     "/Users/baonguyen/CascadeProjects/x-vault-ultimate/packages/contracts/contracts/XFactory.sol": {
-      "lastModificationDate": 1766993993652,
+      "lastModificationDate": 1766994415836,
       "contentHash": "a2aaeb20d580d9f3424ae8a2373666dd",
       "sourceName": "contracts/XFactory.sol",
       "solcConfig": {

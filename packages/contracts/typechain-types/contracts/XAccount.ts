@@ -66,6 +66,7 @@ export type UserOperationStructOutput = [
 export interface XAccountInterface extends Interface {
   getFunction(
     nameOrSignature:
+      | "SECURITY_DELAY"
       | "UPGRADE_INTERFACE_VERSION"
       | "activeDevices"
       | "dailyLimit"
@@ -73,27 +74,38 @@ export interface XAccountInterface extends Interface {
       | "entryPoint"
       | "execute"
       | "executeBatch"
+      | "finalizeUpdatePublicKey"
       | "getNonce"
       | "initialize"
+      | "isFrozen"
+      | "pendingKeyUpdate"
       | "proxiableUUID"
       | "publicKeyX"
       | "publicKeyY"
+      | "requestUpdatePublicKey"
       | "setDailyLimit"
-      | "updatePublicKey"
+      | "toggleFreeze"
       | "upgradeToAndCall"
       | "validateUserOp"
   ): FunctionFragment;
 
   getEvent(
     nameOrSignatureOrTopic:
+      | "AccountFrozen"
       | "DeviceAdded"
       | "DeviceRemoved"
       | "Initialized"
+      | "KeyUpdateFinalized"
+      | "KeyUpdateRequested"
       | "PublicKeyUpdated"
       | "SpendingLimitChanged"
       | "Upgraded"
   ): EventFragment;
 
+  encodeFunctionData(
+    functionFragment: "SECURITY_DELAY",
+    values?: undefined
+  ): string;
   encodeFunctionData(
     functionFragment: "UPGRADE_INTERFACE_VERSION",
     values?: undefined
@@ -122,10 +134,19 @@ export interface XAccountInterface extends Interface {
     functionFragment: "executeBatch",
     values: [AddressLike[], BigNumberish[], BytesLike[]]
   ): string;
+  encodeFunctionData(
+    functionFragment: "finalizeUpdatePublicKey",
+    values?: undefined
+  ): string;
   encodeFunctionData(functionFragment: "getNonce", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "initialize",
     values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(functionFragment: "isFrozen", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "pendingKeyUpdate",
+    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "proxiableUUID",
@@ -140,12 +161,16 @@ export interface XAccountInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "requestUpdatePublicKey",
+    values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "setDailyLimit",
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "updatePublicKey",
-    values: [BigNumberish, BigNumberish]
+    functionFragment: "toggleFreeze",
+    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "upgradeToAndCall",
@@ -156,6 +181,10 @@ export interface XAccountInterface extends Interface {
     values: [UserOperationStruct, BytesLike, BigNumberish]
   ): string;
 
+  decodeFunctionResult(
+    functionFragment: "SECURITY_DELAY",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "UPGRADE_INTERFACE_VERSION",
     data: BytesLike
@@ -172,8 +201,17 @@ export interface XAccountInterface extends Interface {
     functionFragment: "executeBatch",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "finalizeUpdatePublicKey",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "getNonce", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "initialize", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "isFrozen", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "pendingKeyUpdate",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "proxiableUUID",
     data: BytesLike
@@ -181,11 +219,15 @@ export interface XAccountInterface extends Interface {
   decodeFunctionResult(functionFragment: "publicKeyX", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "publicKeyY", data: BytesLike): Result;
   decodeFunctionResult(
+    functionFragment: "requestUpdatePublicKey",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "setDailyLimit",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "updatePublicKey",
+    functionFragment: "toggleFreeze",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -196,6 +238,18 @@ export interface XAccountInterface extends Interface {
     functionFragment: "validateUserOp",
     data: BytesLike
   ): Result;
+}
+
+export namespace AccountFrozenEvent {
+  export type InputTuple = [status: boolean];
+  export type OutputTuple = [status: boolean];
+  export interface OutputObject {
+    status: boolean;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace DeviceAddedEvent {
@@ -227,6 +281,37 @@ export namespace InitializedEvent {
   export type OutputTuple = [version: bigint];
   export interface OutputObject {
     version: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace KeyUpdateFinalizedEvent {
+  export type InputTuple = [x: BigNumberish, y: BigNumberish];
+  export type OutputTuple = [x: bigint, y: bigint];
+  export interface OutputObject {
+    x: bigint;
+    y: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace KeyUpdateRequestedEvent {
+  export type InputTuple = [
+    x: BigNumberish,
+    y: BigNumberish,
+    effectiveTime: BigNumberish
+  ];
+  export type OutputTuple = [x: bigint, y: bigint, effectiveTime: bigint];
+  export interface OutputObject {
+    x: bigint;
+    y: bigint;
+    effectiveTime: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -314,6 +399,8 @@ export interface XAccount extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  SECURITY_DELAY: TypedContractMethod<[], [bigint], "view">;
+
   UPGRADE_INTERFACE_VERSION: TypedContractMethod<[], [string], "view">;
 
   activeDevices: TypedContractMethod<[arg0: BytesLike], [boolean], "view">;
@@ -336,6 +423,8 @@ export interface XAccount extends BaseContract {
     "nonpayable"
   >;
 
+  finalizeUpdatePublicKey: TypedContractMethod<[], [void], "nonpayable">;
+
   getNonce: TypedContractMethod<[], [bigint], "view">;
 
   initialize: TypedContractMethod<
@@ -344,11 +433,27 @@ export interface XAccount extends BaseContract {
     "nonpayable"
   >;
 
+  isFrozen: TypedContractMethod<[], [boolean], "view">;
+
+  pendingKeyUpdate: TypedContractMethod<
+    [],
+    [
+      [bigint, bigint, bigint] & { x: bigint; y: bigint; effectiveTime: bigint }
+    ],
+    "view"
+  >;
+
   proxiableUUID: TypedContractMethod<[], [string], "view">;
 
   publicKeyX: TypedContractMethod<[], [bigint], "view">;
 
   publicKeyY: TypedContractMethod<[], [bigint], "view">;
+
+  requestUpdatePublicKey: TypedContractMethod<
+    [_newX: BigNumberish, _newY: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
 
   setDailyLimit: TypedContractMethod<
     [_newLimit: BigNumberish],
@@ -356,11 +461,7 @@ export interface XAccount extends BaseContract {
     "nonpayable"
   >;
 
-  updatePublicKey: TypedContractMethod<
-    [_newX: BigNumberish, _newY: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
+  toggleFreeze: TypedContractMethod<[], [void], "nonpayable">;
 
   upgradeToAndCall: TypedContractMethod<
     [newImplementation: AddressLike, data: BytesLike],
@@ -382,6 +483,9 @@ export interface XAccount extends BaseContract {
     key: string | FunctionFragment
   ): T;
 
+  getFunction(
+    nameOrSignature: "SECURITY_DELAY"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "UPGRADE_INTERFACE_VERSION"
   ): TypedContractMethod<[], [string], "view">;
@@ -412,6 +516,9 @@ export interface XAccount extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "finalizeUpdatePublicKey"
+  ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "getNonce"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
@@ -420,6 +527,18 @@ export interface XAccount extends BaseContract {
     [_publicKeyX: BigNumberish, _publicKeyY: BigNumberish],
     [void],
     "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "isFrozen"
+  ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "pendingKeyUpdate"
+  ): TypedContractMethod<
+    [],
+    [
+      [bigint, bigint, bigint] & { x: bigint; y: bigint; effectiveTime: bigint }
+    ],
+    "view"
   >;
   getFunction(
     nameOrSignature: "proxiableUUID"
@@ -431,15 +550,18 @@ export interface XAccount extends BaseContract {
     nameOrSignature: "publicKeyY"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
-    nameOrSignature: "setDailyLimit"
-  ): TypedContractMethod<[_newLimit: BigNumberish], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "updatePublicKey"
+    nameOrSignature: "requestUpdatePublicKey"
   ): TypedContractMethod<
     [_newX: BigNumberish, _newY: BigNumberish],
     [void],
     "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "setDailyLimit"
+  ): TypedContractMethod<[_newLimit: BigNumberish], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "toggleFreeze"
+  ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "upgradeToAndCall"
   ): TypedContractMethod<
@@ -460,6 +582,13 @@ export interface XAccount extends BaseContract {
   >;
 
   getEvent(
+    key: "AccountFrozen"
+  ): TypedContractEvent<
+    AccountFrozenEvent.InputTuple,
+    AccountFrozenEvent.OutputTuple,
+    AccountFrozenEvent.OutputObject
+  >;
+  getEvent(
     key: "DeviceAdded"
   ): TypedContractEvent<
     DeviceAddedEvent.InputTuple,
@@ -479,6 +608,20 @@ export interface XAccount extends BaseContract {
     InitializedEvent.InputTuple,
     InitializedEvent.OutputTuple,
     InitializedEvent.OutputObject
+  >;
+  getEvent(
+    key: "KeyUpdateFinalized"
+  ): TypedContractEvent<
+    KeyUpdateFinalizedEvent.InputTuple,
+    KeyUpdateFinalizedEvent.OutputTuple,
+    KeyUpdateFinalizedEvent.OutputObject
+  >;
+  getEvent(
+    key: "KeyUpdateRequested"
+  ): TypedContractEvent<
+    KeyUpdateRequestedEvent.InputTuple,
+    KeyUpdateRequestedEvent.OutputTuple,
+    KeyUpdateRequestedEvent.OutputObject
   >;
   getEvent(
     key: "PublicKeyUpdated"
@@ -503,6 +646,17 @@ export interface XAccount extends BaseContract {
   >;
 
   filters: {
+    "AccountFrozen(bool)": TypedContractEvent<
+      AccountFrozenEvent.InputTuple,
+      AccountFrozenEvent.OutputTuple,
+      AccountFrozenEvent.OutputObject
+    >;
+    AccountFrozen: TypedContractEvent<
+      AccountFrozenEvent.InputTuple,
+      AccountFrozenEvent.OutputTuple,
+      AccountFrozenEvent.OutputObject
+    >;
+
     "DeviceAdded(bytes32)": TypedContractEvent<
       DeviceAddedEvent.InputTuple,
       DeviceAddedEvent.OutputTuple,
@@ -534,6 +688,28 @@ export interface XAccount extends BaseContract {
       InitializedEvent.InputTuple,
       InitializedEvent.OutputTuple,
       InitializedEvent.OutputObject
+    >;
+
+    "KeyUpdateFinalized(uint256,uint256)": TypedContractEvent<
+      KeyUpdateFinalizedEvent.InputTuple,
+      KeyUpdateFinalizedEvent.OutputTuple,
+      KeyUpdateFinalizedEvent.OutputObject
+    >;
+    KeyUpdateFinalized: TypedContractEvent<
+      KeyUpdateFinalizedEvent.InputTuple,
+      KeyUpdateFinalizedEvent.OutputTuple,
+      KeyUpdateFinalizedEvent.OutputObject
+    >;
+
+    "KeyUpdateRequested(uint256,uint256,uint256)": TypedContractEvent<
+      KeyUpdateRequestedEvent.InputTuple,
+      KeyUpdateRequestedEvent.OutputTuple,
+      KeyUpdateRequestedEvent.OutputObject
+    >;
+    KeyUpdateRequested: TypedContractEvent<
+      KeyUpdateRequestedEvent.InputTuple,
+      KeyUpdateRequestedEvent.OutputTuple,
+      KeyUpdateRequestedEvent.OutputObject
     >;
 
     "PublicKeyUpdated(uint256,uint256)": TypedContractEvent<

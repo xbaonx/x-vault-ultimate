@@ -23,20 +23,27 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     // Device binding mapping: deviceIdHash => isActive
     mapping(bytes32 => bool) public activeDevices;
 
-    // Security: Spending Limits
+    // Security: Spending Limits & Freeze
     uint256 public dailyLimit;
     mapping(uint256 => uint256) public dailySpent; // day => amount spent
+    bool public isFrozen;
 
     event DeviceAdded(bytes32 indexed deviceIdHash);
     event DeviceRemoved(bytes32 indexed deviceIdHash);
     event SpendingLimitChanged(uint256 newLimit);
     event PublicKeyUpdated(uint256 x, uint256 y);
+    event AccountFrozen(bool status);
 
     // RIP-7212 Precompile Address
     address constant P256_VERIFIER = address(0x100);
 
     modifier onlyOwner() {
         _checkOwner();
+        _;
+    }
+
+    modifier notFrozen() {
+        require(!isFrozen, "XAccount: Account is frozen");
         _;
     }
 
@@ -113,21 +120,32 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
      * @dev Execute any transaction (Native ETH, ERC-20, NFT, Interaction...)
      * This supports "All Coins".
      */
-    function execute(address dest, uint256 value, bytes calldata func) external {
+    function execute(address dest, uint256 value, bytes calldata func) external notFrozen {
         _requireFromEntryPoint();
+        _checkSpendingLimit(value);
         _call(dest, value, func);
     }
 
     /**
      * @dev Execute Batch (e.g. Approve + Swap)
      */
-    function executeBatch(address[] calldata dest, uint256[] calldata value, bytes[] calldata func) external {
+    function executeBatch(address[] calldata dest, uint256[] calldata value, bytes[] calldata func) external notFrozen {
         _requireFromEntryPoint();
         require(dest.length == value.length && value.length == func.length, "XAccount: length mismatch");
         
+        uint256 totalValue = 0;
         for (uint256 i = 0; i < dest.length; i++) {
+            totalValue += value[i];
             _call(dest[i], value[i], func[i]);
         }
+        _checkSpendingLimit(totalValue);
+    }
+
+    function _checkSpendingLimit(uint256 value) internal {
+        if (value == 0) return;
+        uint256 today = block.timestamp / 1 days;
+        require(dailySpent[today] + value <= dailyLimit, "XAccount: Daily limit exceeded");
+        dailySpent[today] += value;
     }
 
     function _call(address target, uint256 value, bytes memory data) internal {
@@ -146,11 +164,51 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
         emit SpendingLimitChanged(_newLimit);
     }
 
-    function updatePublicKey(uint256 _newX, uint256 _newY) external onlyOwner {
-        publicKeyX = _newX;
-        publicKeyY = _newY;
-        emit PublicKeyUpdated(_newX, _newY);
+    function toggleFreeze() external onlyOwner {
+        isFrozen = !isFrozen;
+        emit AccountFrozen(isFrozen);
     }
+
+    // Security: TimeLock for Sensitive Operations
+    uint256 public constant SECURITY_DELAY = 2 days;
+    
+    struct PendingKeyUpdate {
+        uint256 x;
+        uint256 y;
+        uint256 effectiveTime;
+    }
+    PendingKeyUpdate public pendingKeyUpdate;
+
+    event KeyUpdateRequested(uint256 x, uint256 y, uint256 effectiveTime);
+    event KeyUpdateFinalized(uint256 x, uint256 y);
+
+    // ... existing code ...
+
+    function requestUpdatePublicKey(uint256 _newX, uint256 _newY) external onlyOwner {
+        pendingKeyUpdate = PendingKeyUpdate({
+            x: _newX,
+            y: _newY,
+            effectiveTime: block.timestamp + SECURITY_DELAY
+        });
+        emit KeyUpdateRequested(_newX, _newY, block.timestamp + SECURITY_DELAY);
+    }
+
+    function finalizeUpdatePublicKey() external {
+        // Can be triggered by anyone/bundler as long as time has passed and request is valid
+        require(pendingKeyUpdate.effectiveTime != 0, "XAccount: No pending key update");
+        require(block.timestamp >= pendingKeyUpdate.effectiveTime, "XAccount: Security Delay active");
+        
+        publicKeyX = pendingKeyUpdate.x;
+        publicKeyY = pendingKeyUpdate.y;
+        
+        emit PublicKeyUpdated(pendingKeyUpdate.x, pendingKeyUpdate.y);
+        emit KeyUpdateFinalized(pendingKeyUpdate.x, pendingKeyUpdate.y);
+        
+        delete pendingKeyUpdate;
+    }
+
+    // Deprecated immediate update - removed for V4.0 compliance
+    // function updatePublicKey(...) external onlyOwner { ... }
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
         // Add TimeLock logic here if needed, simplified for P-256 upgrade demo
