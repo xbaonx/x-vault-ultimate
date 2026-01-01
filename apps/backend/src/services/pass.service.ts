@@ -223,7 +223,8 @@ export class PassService {
             foregroundColor: 'rgb(255, 255, 255)',
             logoText: 'ZAUR', // Simulates the Bank Brand Top-Right
             sharingProhibited: true,
-            webServiceURL: `${userData.origin || config.security.origin}/api/apple`,
+            // Use RENDER_EXTERNAL_URL if available (Production Backend), otherwise fallback to origin
+            webServiceURL: `${process.env.RENDER_EXTERNAL_URL || userData.origin || config.security.origin}/api/apple`,
             authenticationToken: userData.authToken || '3325692850392023594',
             // barcodes: [], // No barcode for "Credit Card" look
             // barcode: undefined
