@@ -255,13 +255,14 @@ export class PassService {
            modelBuffers['icon.png'] = Buffer.from(modelBuffers['logo.png']);
       }
       
-      // 2. Check size. If dangerously small (< 200 bytes) or still missing, use SAFE FALLBACK.
-      if (!modelBuffers['icon.png'] || modelBuffers['icon.png'].length < 200) {
+      // 2. Check size. If dangerously small (< 50 bytes) or still missing, use SAFE FALLBACK.
+      // Note: A simple 29x29 PNG can be around 90-100 bytes, so 200 was too aggressive.
+      if (!modelBuffers['icon.png'] || modelBuffers['icon.png'].length < 50) {
           console.warn(`[PassService] icon.png is missing or invalid size (${modelBuffers['icon.png']?.length || 0} bytes). Using SAFE_ICON_BASE64.`);
           const safeIcon = Buffer.from(PassService.SAFE_ICON_BASE64, 'base64');
           modelBuffers['icon.png'] = safeIcon;
           // Ensure @2x exists too
-          if (!modelBuffers['icon@2x.png'] || modelBuffers['icon@2x.png'].length < 200) {
+          if (!modelBuffers['icon@2x.png'] || modelBuffers['icon@2x.png'].length < 50) {
               modelBuffers['icon@2x.png'] = safeIcon;
           }
       }
