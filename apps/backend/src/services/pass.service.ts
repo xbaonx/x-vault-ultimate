@@ -177,7 +177,8 @@ export class PassService {
                   amount: parseFloat(userData.balance).toFixed(2),
                   currencyCode: "USD"
               },
-              lastUpdated: new Date().toISOString()
+              lastUpdated: new Date().toISOString(),
+              membershipNumber: userData.address
           };
 
           // QR CODE: REMOVED for "Credit Card" style
