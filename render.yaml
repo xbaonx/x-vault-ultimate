@@ -12,6 +12,18 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: RPC_URL
+        value: https://mainnet.base.org
+      - key: BASE_RPC_URL
+        value: https://mainnet.base.org
+      - key: ETH_RPC_URL
+        value: https://ethereum-rpc.publicnode.com
+      - key: POLYGON_RPC_URL
+        value: https://polygon-bor.publicnode.com
+      - key: ARBITRUM_RPC_URL
+        value: https://arbitrum-one-rpc.publicnode.com
+      - key: OPTIMISM_RPC_URL
+        value: https://optimism-rpc.publicnode.com
       - key: ADMIN_KEY
         sync: false
       - key: DATABASE_URL

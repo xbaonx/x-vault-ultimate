@@ -36,19 +36,19 @@ export const config = {
             name: 'Polygon'
         },
         arbitrum: {
-            rpcUrl: process.env.ARBITRUM_RPC_URL || 'https://arb1.arbitrum.io/rpc',
+            rpcUrl: process.env.ARBITRUM_RPC_URL || 'https://arbitrum-one-rpc.publicnode.com',
             chainId: 42161,
             symbol: 'ETH',
             name: 'Arbitrum'
         },
         optimism: {
-            rpcUrl: process.env.OPTIMISM_RPC_URL || 'https://mainnet.optimism.io',
+            rpcUrl: process.env.OPTIMISM_RPC_URL || 'https://optimism-rpc.publicnode.com',
             chainId: 10,
             symbol: 'ETH',
             name: 'Optimism'
         },
         ethereum: {
-            rpcUrl: process.env.ETH_RPC_URL || 'https://eth.llamarpc.com',
+            rpcUrl: process.env.ETH_RPC_URL || 'https://ethereum-rpc.publicnode.com',
             chainId: 1,
             symbol: 'ETH',
             name: 'Ethereum'
