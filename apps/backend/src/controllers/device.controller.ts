@@ -567,7 +567,11 @@ export class DeviceController {
       // }
 
       const balance = totalBalanceUsd.toFixed(2);
-      const { origin } = DeviceController.getSecurityConfig(req);
+      
+      // FIX: Use HOST header for webServiceURL to ensure it points to the BACKEND, not the frontend (Origin)
+      const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol;
+      const host = req.get('host');
+      const serverUrl = `${protocol}://${host}`;
 
       const userData = {
         address: walletAddress,
@@ -576,10 +580,10 @@ export class DeviceController {
         assets: assets,
         smartContract: "0x4337...Vault", // Placeholder
         securityDelay: "Active: 48h Window",
-        origin: origin // Pass the dynamic origin to the service
+        origin: serverUrl // Pass the backend URL as origin
       };
       
-      console.log(`[Device] Generating pass for ${deviceId} with Address: ${walletAddress}, Balance: ${balance}, Origin: ${origin}`);
+      console.log(`[Device] Generating pass for ${deviceId} with Address: ${walletAddress}, Balance: ${balance}, ServerUrl: ${serverUrl}`);
 
       const passBuffer = await PassService.generatePass(userData);
       
