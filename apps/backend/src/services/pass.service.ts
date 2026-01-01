@@ -125,6 +125,8 @@ export class PassService {
       ownerName?: string;
       apiUrl?: string;
   }) {
+    let passJson: any;
+    const origin = userData.apiUrl || config.security.origin || '';
     try {
       const modelPath = path.resolve(__dirname, '../../assets/pass.model');
       const hasModel = fs.existsSync(modelPath);
@@ -283,7 +285,7 @@ export class PassService {
       // MANUALLY PATCH PASS.JSON
       try {
           const passJsonStr = modelBuffers['pass.json'].toString('utf8');
-          const passJson = JSON.parse(passJsonStr);
+          passJson = JSON.parse(passJsonStr);
           
           passJson.teamIdentifier = teamId;
           passJson.passTypeIdentifier = passTypeIdentifier;
@@ -305,9 +307,6 @@ export class PassService {
           
           // Apple requires HTTPS for webServiceURL
           // PREFER dynamic apiUrl (from request Host) over static config to ensure it hits the BACKEND, not Frontend.
-          const origin = userData.apiUrl || config.security.origin || '';
-          
-          // Re-enabled webServiceURL for updates
           if (origin.startsWith('https')) {
               passJson.webServiceURL = `${origin}/api/apple`;
               passJson.authenticationToken = userData.authToken || '3325692850392023594';
@@ -354,14 +353,20 @@ export class PassService {
           if (passJson.barcode) delete passJson.barcode; // Remove legacy singular barcode if present
           
           // DEBUG STRATEGY:
-         // For now, always remove strip images to guarantee download (user requested to omit strip).
-         if (passJson.storeCard) {
-             if (passJson.suppressStrip) delete passJson.suppressStrip;
-             
-             delete modelBuffers['strip.png'];
-             delete modelBuffers['strip@2x.png'];
-             console.log("[PassService] DEBUG: Strip images removed per user request (temporary).");
-         }
+          // With corrected strip dimensions, include strip if available; remove only if suspiciously small/missing.
+          if (passJson.storeCard) {
+              if (passJson.suppressStrip) delete passJson.suppressStrip;
+              
+              const stripSize = modelBuffers['strip.png']?.length || 0;
+              const strip2xSize = modelBuffers['strip@2x.png']?.length || 0;
+              if (stripSize === 0 && strip2xSize === 0) {
+                  delete modelBuffers['strip.png'];
+                  delete modelBuffers['strip@2x.png'];
+                  console.warn("[PassService] WARNING: strip images missing; proceeding without strip.");
+              } else {
+                  console.log(`[PassService] DEBUG: Keeping strip images (1x: ${stripSize}b, 2x: ${strip2xSize}b).`);
+              }
+          }
 
           modelBuffers['pass.json'] = Buffer.from(JSON.stringify(passJson));
       } catch (e) {
@@ -395,9 +400,10 @@ export class PassService {
             foregroundColor: 'rgb(255, 255, 255)',
             logoText: 'X-VAULT',
             sharingProhibited: true,
-            webServiceURL: `${config.security.origin}/api/apple`,
-            authenticationToken: userData.authToken || '3325692850392023594',
-            appLaunchURL: `${config.security.origin}/wallet`,
+            // Use the same origin we resolved for passJson (prefer apiUrl from request host)
+            webServiceURL: passJson?.webServiceURL,
+            authenticationToken: passJson?.authenticationToken || userData.authToken || '3325692850392023594',
+            appLaunchURL: `${origin}/wallet`,
           };
 
           // Instantiate PKPass
