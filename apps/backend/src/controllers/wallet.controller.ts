@@ -156,24 +156,26 @@ export class WalletController {
       }
 
       // Fetch Real Prices
-      let ethPrice = 0;
-      let maticPrice = 0;
+      const prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
+      let ethPrice = 3000;
+      let maticPrice = 1.0;
       
       try {
-          const [ethRes, maticRes] = await Promise.all([
-              fetch('https://api.coinbase.com/v2/prices/ETH-USD/spot'),
-              fetch('https://api.coinbase.com/v2/prices/MATIC-USD/spot')
-          ]);
+          const symbols = ['ETH', 'MATIC', 'DAI', 'USDT', 'USDC'];
+          const requests = symbols.map(sym => fetch(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`).then(r => r.json()).catch(() => null));
           
-          const ethData = await ethRes.json();
-          const maticData = await maticRes.json();
+          const results = await Promise.all(requests);
           
-          ethPrice = parseFloat(ethData.data.amount) || 3000;
-          maticPrice = parseFloat(maticData.data.amount) || 1.0;
+          results.forEach((data, index) => {
+              if (data && data.data && data.data.amount) {
+                  const price = parseFloat(data.data.amount);
+                  prices[symbols[index]] = price;
+                  if (symbols[index] === 'ETH') ethPrice = price;
+                  if (symbols[index] === 'MATIC') maticPrice = price;
+              }
+          });
       } catch (e) {
           console.warn("Failed to fetch prices, using fallbacks");
-          ethPrice = 3000;
-          maticPrice = 1.0;
       }
 
       // Define chains to scan
@@ -185,26 +187,64 @@ export class WalletController {
       await Promise.all(chains.map(async (chain) => {
           try {
               const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
+              
+              // 1. Native Balance
               // Set a short timeout for RPC calls to avoid hanging
-              const balanceWei = await Promise.race([
-                  provider.getBalance(address),
-                  new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
-              ]);
-              
-              const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
-              
-              if (nativeBalance > 0) {
-                  const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? maticPrice : ethPrice;
-                  const valueUsd = nativeBalance * price;
+              try {
+                  const balanceWei = await Promise.race([
+                      provider.getBalance(address),
+                      new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
+                  ]);
                   
-                  totalBalanceUsd += valueUsd;
-                  assets.push({
-                      symbol: chain.symbol,
-                      balance: nativeBalance,
-                      network: chain.name.toLowerCase(),
-                      valueUsd: valueUsd
-                  });
+                  const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
+                  
+                  if (nativeBalance > 0) {
+                      const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? maticPrice : ethPrice;
+                      const valueUsd = nativeBalance * price;
+                      
+                      totalBalanceUsd += valueUsd;
+                      assets.push({
+                          symbol: chain.symbol,
+                          balance: nativeBalance,
+                          network: chain.name.toLowerCase(),
+                          valueUsd: valueUsd
+                      });
+                  }
+              } catch (e) {
+                   // Native balance fetch failed (timeout or error), continue to tokens
               }
+
+              // 2. ERC-20 Token Balances
+              const tokens = TOKEN_MAP[chain.chainId];
+              if (tokens) {
+                  await Promise.all(tokens.map(async (token) => {
+                      try {
+                          const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
+                          // Add timeout for token calls too
+                          const tokenBalanceWei = await Promise.race([
+                              contract.balanceOf(address),
+                              new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('Token RPC Timeout')), 3000))
+                          ]) as bigint;
+                          
+                          if (tokenBalanceWei > 0n) {
+                              const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
+                              const price = prices[token.symbol] || 0;
+                              const value = formattedBalance * price;
+                              
+                              totalBalanceUsd += value;
+                              assets.push({
+                                  symbol: token.symbol,
+                                  balance: formattedBalance,
+                                  network: chain.name.toLowerCase(),
+                                  valueUsd: value
+                              });
+                          }
+                      } catch (err) {
+                          // Ignore token fetch errors
+                      }
+                  }));
+              }
+
           } catch (err) {
               console.warn(`Failed to fetch balance for ${chain.name}:`, err);
           }
