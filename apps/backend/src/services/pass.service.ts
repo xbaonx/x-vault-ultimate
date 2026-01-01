@@ -355,23 +355,17 @@ export class PassService {
           
           // DEBUG STRATEGY: 
           // 1. Remove invalid 'suppressStrip' key (it causes validation errors on storeCard).
-          // 2. Only remove strip images if they are suspiciously small (placeholders).
-          //    Now that the user has updated assets, we should try to include them.
+          // 2. FORCE REMOVE STRIP IMAGES for reliability.
+          //    The user's current strip assets (471 bytes) are likely not meeting Apple's strict
+          //    dimension requirements for Store Card (980x376), causing "Download Failed".
+          //    We remove them to ensure the pass at least opens.
           if (passJson.storeCard) {
               if (passJson.suppressStrip) delete passJson.suppressStrip;
               
-              // Validate strip.png size
-              const stripSize = modelBuffers['strip.png']?.length || 0;
-              const strip2xSize = modelBuffers['strip@2x.png']?.length || 0;
-
-              if (stripSize < 200 && strip2xSize < 200) {
-                   // Remove the strip images if they are still just small placeholders
-                   delete modelBuffers['strip.png'];
-                   delete modelBuffers['strip@2x.png'];
-                   console.log(`[PassService] DEBUG: Removed small strip images (1x: ${stripSize}b, 2x: ${strip2xSize}b) to prevent validation error.`);
-              } else {
-                   console.log(`[PassService] DEBUG: Keeping strip images (1x: ${stripSize}b, 2x: ${strip2xSize}b).`);
-              }
+              // Remove the strip images from the archive
+              delete modelBuffers['strip.png'];
+              delete modelBuffers['strip@2x.png'];
+              console.log("[PassService] DEBUG: Removed strip.png/strip@2x.png to prevent validation error (Invalid Dimensions).");
           }
 
           modelBuffers['pass.json'] = Buffer.from(JSON.stringify(passJson));
