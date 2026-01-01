@@ -353,20 +353,15 @@ export class PassService {
           passJson.barcodes = [];
           if (passJson.barcode) delete passJson.barcode; // Remove legacy singular barcode if present
           
-          // DEBUG STRATEGY: 
-          // 1. Remove invalid 'suppressStrip' key (it causes validation errors on storeCard).
-          // 2. FORCE REMOVE STRIP IMAGES for reliability.
-          //    The user's current strip assets (471 bytes) are likely not meeting Apple's strict
-          //    dimension requirements for Store Card (980x376), causing "Download Failed".
-          //    We remove them to ensure the pass at least opens.
-          if (passJson.storeCard) {
-              if (passJson.suppressStrip) delete passJson.suppressStrip;
-              
-              // Remove the strip images from the archive
-              delete modelBuffers['strip.png'];
-              delete modelBuffers['strip@2x.png'];
-              console.log("[PassService] DEBUG: Removed strip.png/strip@2x.png to prevent validation error (Invalid Dimensions).");
-          }
+          // DEBUG STRATEGY:
+         // For now, always remove strip images to guarantee download (user requested to omit strip).
+         if (passJson.storeCard) {
+             if (passJson.suppressStrip) delete passJson.suppressStrip;
+             
+             delete modelBuffers['strip.png'];
+             delete modelBuffers['strip@2x.png'];
+             console.log("[PassService] DEBUG: Strip images removed per user request (temporary).");
+         }
 
           modelBuffers['pass.json'] = Buffer.from(JSON.stringify(passJson));
       } catch (e) {
