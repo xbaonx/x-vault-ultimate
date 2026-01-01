@@ -331,9 +331,6 @@ export class PassService {
               }
           }
 
-          console.log(`[PassService] Semantics: ${JSON.stringify(passJson.semantics ? 'Present' : 'Missing')}`);
-          console.log("[PassService] ----------------------------");
-
           // SEMANTICS
           passJson.semantics = {
               primaryAccountNumber: userData.address,
@@ -347,6 +344,9 @@ export class PassService {
               },
               accountOwner: userData.ownerName || "Vault Owner"
           };
+          
+          console.log(`[PassService] Semantics: ${JSON.stringify(passJson.semantics ? 'Present' : 'Missing')}`);
+          console.log("[PassService] ----------------------------");
           
           // No Barcode for Store Card Style
           passJson.barcodes = [];
