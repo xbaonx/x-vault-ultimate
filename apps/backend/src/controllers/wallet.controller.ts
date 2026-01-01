@@ -251,10 +251,10 @@ export class WalletController {
             expectedChallenge: device.currentChallenge,
             expectedOrigin: config.security.origin,
             expectedRPID: config.security.rpId,
-            authenticator: {
-                credentialPublicKey: device.credentialPublicKey,
-                credentialID: device.credentialID,
-                counter: device.counter,
+            credential: {
+                id: device.credentialID,
+                publicKey: new Uint8Array(device.credentialPublicKey),
+                counter: Number(device.counter || 0),
             },
           } as any);
       } catch (err) {

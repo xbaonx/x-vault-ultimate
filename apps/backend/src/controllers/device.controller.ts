@@ -159,27 +159,24 @@ export class DeviceController {
       // 3. Verify
       console.log(`[Device] Verifying login for Device ${targetDevice.id}`);
       console.log(`[Device] Challenge: ${targetDevice.currentChallenge}`);
-      console.log(`[Device] Origin: ${origin}, RPID: ${rpId}`);
-      console.log(`[Device] CredentialID (Req): ${credentialID}`);
-      console.log(`[Device] Starting verification with nested authenticator structure (v13+ compat)`);
-
+      
       const verificationOptions = {
           response,
           expectedChallenge: targetDevice.currentChallenge,
           expectedOrigin: origin,
           expectedRPID: rpId,
-          authenticator: {
-            credentialID: targetDevice.credentialID,
-            credentialPublicKey: new Uint8Array(targetDevice.credentialPublicKey),
+          credential: {
+            id: targetDevice.credentialID,
+            publicKey: new Uint8Array(targetDevice.credentialPublicKey),
             counter: Number(targetDevice.counter || 0),
           },
       };
 
-      console.log(`[Device] Verification Options prepared:`, JSON.stringify({
+      console.log(`[Device] Verification Options prepared (v13 fix):`, JSON.stringify({
           ...verificationOptions,
-          authenticator: {
-              ...verificationOptions.authenticator,
-              credentialPublicKey: `[Buffer len=${verificationOptions.authenticator.credentialPublicKey.length}]`
+          credential: {
+              ...verificationOptions.credential,
+              publicKey: `[Buffer len=${verificationOptions.credential.publicKey.length}]`
           },
           response: '...'
       }));
