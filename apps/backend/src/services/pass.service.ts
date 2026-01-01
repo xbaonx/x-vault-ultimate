@@ -182,8 +182,6 @@ export class PassService {
           };
 
           // QR CODE: REMOVED for "Credit Card" style
-
-          // QR CODE: REMOVED for "Credit Card" style
           // We intentionally do not inject barcodes here.
 
           modelBuffers['pass.json'] = Buffer.from(JSON.stringify(passJson));
