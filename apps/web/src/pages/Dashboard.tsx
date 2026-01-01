@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowUpRight, ArrowDownLeft, CreditCard, Plus, ChevronDown, Wallet as WalletIcon } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, RefreshCw, Plus, ChevronDown, Wallet as WalletIcon, CreditCard } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
-import { walletService, securityService, migrationService } from '../services/api';
+import { walletService, migrationService } from '../services/api';
 import { formatCurrency, shortenAddress } from '../lib/utils';
-import { PinModal } from '../components/PinModal';
 import { MigrationModal } from '../components/MigrationModal';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [portfolio, setPortfolio] = useState<any>(null);
   const [address, setAddress] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -18,11 +19,6 @@ export default function Dashboard() {
   const [wallets, setWallets] = useState<any[]>([]);
   const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
   const [showWalletMenu, setShowWalletMenu] = useState(false);
-
-  // Transaction State
-  const [showPinModal, setShowPinModal] = useState(false);
-  const [pinError, setPinError] = useState<string | undefined>(undefined);
-  const [isProcessing, setIsProcessing] = useState(false);
 
   // Migration State
   const [showMigrationModal, setShowMigrationModal] = useState(false);
@@ -52,9 +48,6 @@ export default function Dashboard() {
               } catch (e: any) {
                   // If 403, device is invalid or unknown -> redirect or show modal
                   if (e.response?.status === 403) {
-                      // Redirect to onboarding if device is totally unknown
-                      // window.location.href = '/onboarding'; 
-                      // For now, let's just log it, as we might want to allow read-only or specific handling
                       console.warn("Device not authorized:", e);
                   }
               }
@@ -117,40 +110,6 @@ export default function Dashboard() {
   const handleWalletSelect = (walletId: string) => {
       setSelectedWalletId(walletId);
       setShowWalletMenu(false);
-  };
-
-  const handleSend = async () => {
-      // 1. Simulate initiating a transaction
-      const amount = 1000; // Mock amount > $500
-      console.log(`[Dashboard] Attempting to send $${amount}...`);
-
-      // 2. Check if PIN is needed (Frontend check or Backend intercept)
-      // For Demo: We assume Backend returned "401 Spending PIN Required"
-      // So we open the modal.
-      setShowPinModal(true);
-  };
-
-  const handlePinSubmit = async (pin: string) => {
-      setIsProcessing(true);
-      setPinError(undefined);
-      try {
-          // 3. Verify PIN with Backend
-          const result = await securityService.verifyPin(userId, pin, deviceId);
-          
-          if (result.valid) {
-              // 4. If valid, retry transaction (Mock success)
-              console.log("[Dashboard] PIN verified. Transaction sent!");
-              setShowPinModal(false);
-              alert("Transaction of $1,000 sent successfully!");
-          } else {
-              setPinError("Incorrect PIN. Please try again.");
-          }
-      } catch (error) {
-          console.error("PIN verification error:", error);
-          setPinError("Failed to verify PIN.");
-      } finally {
-          setIsProcessing(false);
-      }
   };
 
   const handleMigrationSuccess = () => {
@@ -267,19 +226,25 @@ export default function Dashboard() {
         
         <div className="flex justify-center gap-4">
           <Button 
-            onClick={handleSend}
+            onClick={() => navigate('/app/send')}
             className="rounded-full w-14 h-14 p-0 flex flex-col items-center justify-center gap-1 bg-surface border border-white/10 hover:bg-white/10"
           >
             <ArrowUpRight className="w-5 h-5 text-primary" />
             <span className="text-[10px] text-secondary">Send</span>
           </Button>
-          <Button className="rounded-full w-14 h-14 p-0 flex flex-col items-center justify-center gap-1 bg-surface border border-white/10 hover:bg-white/10">
+          <Button 
+            onClick={() => navigate('/app/receive')}
+            className="rounded-full w-14 h-14 p-0 flex flex-col items-center justify-center gap-1 bg-surface border border-white/10 hover:bg-white/10"
+          >
             <ArrowDownLeft className="w-5 h-5 text-success" />
             <span className="text-[10px] text-secondary">Receive</span>
           </Button>
-          <Button className="rounded-full w-14 h-14 p-0 flex flex-col items-center justify-center gap-1 bg-surface border border-white/10 hover:bg-white/10">
-            <CreditCard className="w-5 h-5 text-white" />
-            <span className="text-[10px] text-secondary">Buy</span>
+          <Button 
+            onClick={() => navigate('/app/swap')}
+            className="rounded-full w-14 h-14 p-0 flex flex-col items-center justify-center gap-1 bg-surface border border-white/10 hover:bg-white/10"
+          >
+            <RefreshCw className="w-5 h-5 text-blue-500" />
+            <span className="text-[10px] text-secondary">Swap</span>
           </Button>
           <Button className="rounded-full w-14 h-14 p-0 flex flex-col items-center justify-center gap-1 bg-surface border border-white/10 hover:bg-white/10">
             <Plus className="w-5 h-5 text-white" />
@@ -357,16 +322,6 @@ export default function Dashboard() {
             ))}
           </div>
       )}
-
-      <PinModal 
-        isOpen={showPinModal}
-        onClose={() => setShowPinModal(false)}
-        onComplete={handlePinSubmit}
-        title="High Value Transaction"
-        description="Please enter your Spending PIN to authorize this $1,000 transaction."
-        isLoading={isProcessing}
-        error={pinError}
-      />
 
       <MigrationModal
         isOpen={showMigrationModal}

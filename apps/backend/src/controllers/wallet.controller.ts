@@ -207,7 +207,10 @@ export class WalletController {
                           symbol: chain.symbol,
                           balance: nativeBalance,
                           network: chain.name.toLowerCase(),
-                          valueUsd: valueUsd
+                          valueUsd: valueUsd,
+                          decimals: 18,
+                          chainId: chain.chainId,
+                          isNative: true
                       });
                   }
               } catch (e) {
@@ -236,7 +239,11 @@ export class WalletController {
                                   symbol: token.symbol,
                                   balance: formattedBalance,
                                   network: chain.name.toLowerCase(),
-                                  valueUsd: value
+                                  valueUsd: value,
+                                  tokenAddress: token.address,
+                                  decimals: token.decimals,
+                                  chainId: chain.chainId,
+                                  isNative: false
                               });
                           }
                       } catch (err) {

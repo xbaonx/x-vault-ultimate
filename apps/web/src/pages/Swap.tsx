@@ -29,11 +29,13 @@ export default function Swap() {
         
         <Card className="bg-surface/50 border-white/5">
           <CardContent className="p-6 text-center">
-            <h2 className="text-lg font-semibold mb-2 text-white">Feature Coming Soon</h2>
-            <p className="text-secondary text-sm">
-              Token swapping functionality is currently under development.
-              Please check back later for updates.
+            <h2 className="text-lg font-semibold mb-2 text-white">Native Swap Coming Soon</h2>
+            <p className="text-secondary text-sm mb-6">
+              We are integrating a high-performance DEX aggregator (0x / 1inch) to verify the best rates for your Zaur Card.
             </p>
+            <div className="p-4 bg-white/5 rounded-lg border border-white/10">
+                <p className="text-xs text-secondary">In the meantime, you can use external swaps like Uniswap or 1inch by connecting via WalletConnect (Coming in v2.0).</p>
+            </div>
           </CardContent>
         </Card>
 
@@ -41,7 +43,7 @@ export default function Swap() {
           className="w-full h-12 text-lg font-medium"
           onClick={() => navigate('/dashboard')}
         >
-          Go to Dashboard
+          Back to Dashboard
         </Button>
       </div>
     </div>
