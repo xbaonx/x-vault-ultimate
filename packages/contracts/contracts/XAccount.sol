@@ -28,11 +28,32 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     mapping(uint256 => uint256) public dailySpent; // day => amount spent
     bool public isFrozen;
 
+    // Security: Delay policy (48h)
+    uint256 public largeTxThresholdWei;
+    mapping(address => uint256) public tokenDelayThreshold;
+
+    struct PendingTx {
+        address dest;
+        uint256 value;
+        bytes func;
+        uint48 executeAfter;
+        bool canceled;
+        bool executed;
+    }
+
+    mapping(bytes32 => PendingTx) public pendingTxs;
+    uint256 public pendingTxNonce;
+
     event DeviceAdded(bytes32 indexed deviceIdHash);
     event DeviceRemoved(bytes32 indexed deviceIdHash);
     event SpendingLimitChanged(uint256 newLimit);
     event PublicKeyUpdated(uint256 x, uint256 y);
     event AccountFrozen(bool status);
+    event LargeTxThresholdChanged(uint256 newThresholdWei);
+    event TokenDelayThresholdChanged(address indexed token, uint256 newThreshold);
+    event TransactionDelayed(bytes32 indexed txId, uint48 executeAfter, address indexed dest, uint256 value);
+    event TransactionExecuted(bytes32 indexed txId);
+    event TransactionCancelled(bytes32 indexed txId);
 
     // RIP-7212 Precompile Address
     address constant P256_VERIFIER = address(0x100);
@@ -67,6 +88,7 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
         publicKeyX = _publicKeyX;
         publicKeyY = _publicKeyY;
         dailyLimit = 1000 ether; // Default limit (high for tokens, logic can be refined)
+        largeTxThresholdWei = 0;
     }
 
     function entryPoint() public view virtual override returns (IEntryPoint) {
@@ -90,21 +112,21 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
         override
         returns (uint256 validationData)
     {
-        // Decode signature. Format: R (32), S (32)
-        // Note: In production, we need full WebAuthn data structure verification.
-        // For this MVP step, we assume the signature is (r, s) over the userOpHash directly
-        // or the userOpHash is passed as the message.
-        
-        // Let's assume input is 64 bytes (r, s)
-        if (userOp.signature.length < 64) {
+        // ABI-encoded tuple head is 5 * 32 bytes; anything less will revert on abi.decode
+        if (userOp.signature.length < 160) {
             return SIG_VALIDATION_FAILED;
         }
 
-        (uint256 r, uint256 s) = abi.decode(userOp.signature, (uint256, uint256));
-        
-        // Call Precompile 0x100
-        // Input: hash (32), r (32), s (32), x (32), y (32)
-        bytes memory input = abi.encodePacked(userOpHash, r, s, publicKeyX, publicKeyY);
+        (uint256 r, uint256 s, bytes memory authenticatorData, bytes memory clientDataPrefix, bytes memory clientDataSuffix) =
+            abi.decode(userOp.signature, (uint256, uint256, bytes, bytes, bytes));
+
+        bytes memory challengeB64 = _base64UrlEncode32(userOpHash);
+        bytes memory clientDataJSON = bytes.concat(clientDataPrefix, challengeB64, clientDataSuffix);
+
+        bytes32 clientDataHash = sha256(clientDataJSON);
+        bytes32 messageHash = sha256(abi.encodePacked(authenticatorData, clientDataHash));
+
+        bytes memory input = abi.encodePacked(messageHash, r, s, publicKeyX, publicKeyY);
         
         (bool success, bytes memory ret) = P256_VERIFIER.staticcall(input);
         
@@ -122,6 +144,11 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
      */
     function execute(address dest, uint256 value, bytes calldata func) external notFrozen {
         _requireFromEntryPoint();
+        if (_shouldDelay(dest, value, func)) {
+            bytes32 txId = _enqueueDelayed(dest, value, func);
+            emit TransactionDelayed(txId, pendingTxs[txId].executeAfter, dest, value);
+            return;
+        }
         _checkSpendingLimit(value);
         _call(dest, value, func);
     }
@@ -139,6 +166,45 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
             _call(dest[i], value[i], func[i]);
         }
         _checkSpendingLimit(totalValue);
+    }
+
+    function executeDelayed(bytes32 txId) external notFrozen {
+        _requireFromEntryPoint();
+        PendingTx storage p = pendingTxs[txId];
+        require(p.executeAfter != 0, "XAccount: Unknown tx");
+        require(!p.canceled, "XAccount: Cancelled");
+        require(!p.executed, "XAccount: Executed");
+        require(block.timestamp >= p.executeAfter, "XAccount: Security Delay active");
+
+        p.executed = true;
+        _checkSpendingLimit(p.value);
+        _call(p.dest, p.value, p.func);
+        emit TransactionExecuted(txId);
+    }
+
+    function executeDelayedDirect(bytes32 txId) external notFrozen {
+        PendingTx storage p = pendingTxs[txId];
+        require(p.executeAfter != 0, "XAccount: Unknown tx");
+        require(!p.canceled, "XAccount: Cancelled");
+        require(!p.executed, "XAccount: Executed");
+        require(block.timestamp >= p.executeAfter, "XAccount: Security Delay active");
+
+        p.executed = true;
+        _checkSpendingLimit(p.value);
+        _call(p.dest, p.value, p.func);
+        emit TransactionExecuted(txId);
+    }
+
+    function cancelDelayed(bytes32 txId) external {
+        PendingTx storage p = pendingTxs[txId];
+        require(p.executeAfter != 0, "XAccount: Unknown tx");
+        require(!p.canceled, "XAccount: Cancelled");
+        require(!p.executed, "XAccount: Executed");
+
+        require(msg.sender == address(_entryPoint) || msg.sender == address(this), "XAccount: caller is not EntryPoint or self");
+
+        p.canceled = true;
+        emit TransactionCancelled(txId);
     }
 
     function _checkSpendingLimit(uint256 value) internal {
@@ -162,6 +228,16 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     function setDailyLimit(uint256 _newLimit) external onlyOwner {
         dailyLimit = _newLimit;
         emit SpendingLimitChanged(_newLimit);
+    }
+
+    function setLargeTxThresholdWei(uint256 _newThresholdWei) external onlyOwner {
+        largeTxThresholdWei = _newThresholdWei;
+        emit LargeTxThresholdChanged(_newThresholdWei);
+    }
+
+    function setTokenDelayThreshold(address token, uint256 thresholdAmount) external onlyOwner {
+        tokenDelayThreshold[token] = thresholdAmount;
+        emit TokenDelayThresholdChanged(token, thresholdAmount);
     }
 
     function toggleFreeze() external onlyOwner {
@@ -212,6 +288,72 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
         // Add TimeLock logic here if needed, simplified for P-256 upgrade demo
+    }
+
+    function _enqueueDelayed(address dest, uint256 value, bytes calldata func) internal returns (bytes32 txId) {
+        pendingTxNonce += 1;
+        txId = keccak256(abi.encodePacked(address(this), pendingTxNonce, dest, value, keccak256(func)));
+
+        PendingTx storage p = pendingTxs[txId];
+        p.dest = dest;
+        p.value = value;
+        p.func = func;
+        p.executeAfter = uint48(block.timestamp + SECURITY_DELAY);
+        p.canceled = false;
+        p.executed = false;
+    }
+
+    function _shouldDelay(address dest, uint256 value, bytes calldata func) internal view returns (bool) {
+        if (largeTxThresholdWei > 0 && value >= largeTxThresholdWei) {
+            return true;
+        }
+
+        uint256 tokenThreshold = tokenDelayThreshold[dest];
+        if (tokenThreshold > 0 && value == 0 && func.length >= 4) {
+            bytes4 selector;
+            assembly {
+                selector := calldataload(func.offset)
+            }
+            if (selector == bytes4(0xa9059cbb)) {
+                (, uint256 amount) = abi.decode(func[4:], (address, uint256));
+                if (amount >= tokenThreshold) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    function _base64UrlEncode32(bytes32 data) internal pure returns (bytes memory) {
+        bytes memory TABLE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        bytes memory out = new bytes(43);
+        uint256 i = 0;
+        uint256 o = 0;
+        while (i + 3 <= 32) {
+            uint256 a = uint8(data[i]);
+            uint256 b = uint8(data[i + 1]);
+            uint256 c = uint8(data[i + 2]);
+
+            uint256 n = (a << 16) | (b << 8) | c;
+            out[o] = TABLE[(n >> 18) & 63];
+            out[o + 1] = TABLE[(n >> 12) & 63];
+            out[o + 2] = TABLE[(n >> 6) & 63];
+            out[o + 3] = TABLE[n & 63];
+
+            i += 3;
+            o += 4;
+        }
+
+        {
+            uint256 a2 = uint8(data[30]);
+            uint256 b2 = uint8(data[31]);
+            uint256 n2 = (a2 << 16) | (b2 << 8);
+            out[40] = TABLE[(n2 >> 18) & 63];
+            out[41] = TABLE[(n2 >> 12) & 63];
+            out[42] = TABLE[(n2 >> 6) & 63];
+        }
+
+        return out;
     }
 
     receive() external payable {}

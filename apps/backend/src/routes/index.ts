@@ -7,6 +7,7 @@ import securityRoutes from './security.routes';
 import authRoutes from './auth.routes';
 import migrationRoutes from './migration.routes';
 import appleRoutes from './apple.routes';
+import aaRoutes from './aa.routes';
 
 const router = Router();
 
@@ -18,5 +19,6 @@ router.use('/security', securityRoutes);
 router.use('/auth', authRoutes);
 router.use('/migration', migrationRoutes);
 router.use('/apple', appleRoutes);
+router.use('/aa', aaRoutes);
 
 export default router;

@@ -16,6 +16,7 @@ export const config = {
     rpcUrl: process.env.RPC_URL || 'https://mainnet.base.org',
     chainId: parseInt(process.env.CHAIN_ID || '8453'),
     bundlerUrl: process.env.BUNDLER_URL || 'https://api.stackup.sh/v1/node/your-api-key',
+    entryPointAddress: process.env.ENTRY_POINT_ADDRESS || '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789',
     paymaster: {
       address: process.env.PAYMASTER_ADDRESS || '',
       signingKey: process.env.PAYMASTER_SIGNING_KEY || '', // Private key for signing gas sponsorship

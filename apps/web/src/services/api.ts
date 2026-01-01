@@ -178,27 +178,26 @@ export const walletService = {
   /**
    * Send a secure transaction with Passkey signing
    */
-  sendTransaction: async (userId: string, transaction: any, deviceId: string) => {
+  sendTransaction: async (_userId: string, transaction: any, deviceId: string) => {
     try {
-      // 1. Get Challenge from Backend
-      const optionsRes = await api.post('/wallet/transaction/options', { userId }, {
+      // 1. Get AA UserOp + Challenge from Backend
+      const optionsRes = await api.post('/aa/userop/options', { transaction }, {
         headers: { 'x-device-library-id': deviceId }
       });
       const options = optionsRes.data;
 
-      // 2. Sign with Passkey (FaceID/TouchID)
-      // This will prompt the user to authenticate on their device
+      // 2. Sign challenge with Passkey (FaceID/TouchID)
       const assertion = await signRequest(options.challenge);
 
-      // 3. Send Signature + Transaction to Backend
-      const response = await api.post('/wallet/transaction/send', {
-        userId,
-        transaction,
-        signature: assertion
+      // 3. Send signed UserOperation to Backend for bundler relay
+      const response = await api.post('/aa/userop/send', {
+        chainId: options.chainId,
+        userOp: options.userOp,
+        assertion,
       }, {
         headers: { 'x-device-library-id': deviceId }
       });
-      
+
       return response.data;
     } catch (error) {
       console.error("Transaction failed:", error);
