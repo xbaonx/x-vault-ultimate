@@ -163,19 +163,30 @@ export class DeviceController {
       console.log(`[Device] CredentialID (Req): ${credentialID}`);
       console.log(`[Device] Starting verification with nested authenticator structure (v13+ compat)`);
 
-      let verification;
-      try {
-        verification = await verifyAuthenticationResponse({
+      const verificationOptions = {
           response,
           expectedChallenge: targetDevice.currentChallenge,
           expectedOrigin: origin,
           expectedRPID: rpId,
           authenticator: {
             credentialID: targetDevice.credentialID,
-            credentialPublicKey: targetDevice.credentialPublicKey,
-            counter: targetDevice.counter,
+            credentialPublicKey: new Uint8Array(targetDevice.credentialPublicKey),
+            counter: Number(targetDevice.counter || 0),
           },
-        } as any);
+      };
+
+      console.log(`[Device] Verification Options prepared:`, JSON.stringify({
+          ...verificationOptions,
+          authenticator: {
+              ...verificationOptions.authenticator,
+              credentialPublicKey: `[Buffer len=${verificationOptions.authenticator.credentialPublicKey.length}]`
+          },
+          response: '...'
+      }));
+
+      let verification;
+      try {
+        verification = await verifyAuthenticationResponse(verificationOptions as any);
       } catch (e) {
         console.error(`[Device] Verification threw error:`, e);
         return res.status(400).json({ verified: false, error: "Verification failed", details: String(e) });
