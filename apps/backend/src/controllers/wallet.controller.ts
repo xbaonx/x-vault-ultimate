@@ -113,7 +113,7 @@ export class WalletController {
               salt: 'random',
               address: randomWallet.address,
               privateKey: randomWallet.privateKey,
-              isActive: false 
+              isActive: true 
           });
 
           await walletRepo.save(newWallet);
