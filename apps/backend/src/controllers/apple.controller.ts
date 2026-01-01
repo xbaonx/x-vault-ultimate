@@ -193,13 +193,13 @@ export class ApplePassController {
           }));
 
            // Mock Data if Empty (Same as DeviceController)
-          if (totalBalanceUsd === 0) {
-            assets['ETH'] = { amount: 15.00, value: 33750 };
-            assets['BTC'] = { amount: 0.52, value: 35100 };
-            assets['USDT'] = { amount: 12000, value: 12000 };
-            assets['SOL'] = { amount: 240.50, value: 0 };
-            totalBalanceUsd = 80850 + 25;
-          }
+          // if (totalBalanceUsd === 0) {
+          //   assets['ETH'] = { amount: 15.00, value: 33750 };
+          //   assets['BTC'] = { amount: 0.52, value: 35100 };
+          //   assets['USDT'] = { amount: 12000, value: 12000 };
+          //   assets['SOL'] = { amount: 240.50, value: 0 };
+          //   totalBalanceUsd = 80850 + 25;
+          // }
 
           // 3. Generate Pass
           // We need a deviceId for the "Device Identity" field. 

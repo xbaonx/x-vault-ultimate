@@ -149,17 +149,6 @@ export class DeviceController {
         return res.status(400).json({ error: "No active challenge for this device" });
       }
 
-      console.log(`[Device] Verifying login for Device ${targetDevice.id} (${targetDevice.deviceLibraryId})`);
-      console.log(`[Device] Expected Challenge: ${targetDevice.currentChallenge}`);
-      console.log(`[Device] Expected Origin: ${origin}`);
-      console.log(`[Device] Expected RPID: ${rpId}`);
-      console.log(`[Device] Credential ID (Req): ${credentialID}`);
-      console.log(`[Device] Public Key Length: ${targetDevice.credentialPublicKey?.length}`);
-
-      // 3. Verify
-      console.log(`[Device] Verifying login for Device ${targetDevice.id}`);
-      console.log(`[Device] Challenge: ${targetDevice.currentChallenge}`);
-      
       const verificationOptions = {
           response,
           expectedChallenge: targetDevice.currentChallenge,
@@ -171,15 +160,6 @@ export class DeviceController {
             counter: Number(targetDevice.counter || 0),
           },
       };
-
-      console.log(`[Device] Verification Options prepared (v13 fix):`, JSON.stringify({
-          ...verificationOptions,
-          credential: {
-              ...verificationOptions.credential,
-              publicKey: `[Buffer len=${verificationOptions.credential.publicKey.length}]`
-          },
-          response: '...'
-      }));
 
       let verification;
       try {
@@ -578,13 +558,13 @@ export class DeviceController {
 
       // If total balance is 0, let's put some dummy data for the user to see the beautiful UI (Mock Mode)
       // REMOVE THIS IN PRODUCTION
-      if (totalBalanceUsd === 0) {
-        assets['ETH'] = { amount: 15.00, value: 33750 };
-        assets['BTC'] = { amount: 0.52, value: 35100 };
-        assets['USDT'] = { amount: 12000, value: 12000 };
-        assets['SOL'] = { amount: 240.50, value: 0 }; // Value depends on price
-        totalBalanceUsd = 80850 + 25; // Including usdz
-      }
+      // if (totalBalanceUsd === 0) {
+      //   assets['ETH'] = { amount: 15.00, value: 33750 };
+      //   assets['BTC'] = { amount: 0.52, value: 35100 };
+      //   assets['USDT'] = { amount: 12000, value: 12000 };
+      //   assets['SOL'] = { amount: 240.50, value: 0 }; // Value depends on price
+      //   totalBalanceUsd = 80850 + 25; // Including usdz
+      // }
 
       const balance = totalBalanceUsd.toFixed(2);
 
