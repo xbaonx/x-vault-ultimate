@@ -211,6 +211,11 @@ export class ApplePassController {
           // 3. Generate Pass
           const deviceId = user.devices?.find(d => d.isActive)?.deviceLibraryId || "Unknown";
 
+          // FIX: Use HOST header for webServiceURL to ensure it points to the BACKEND
+          const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol;
+          const host = req.get('host');
+          const serverUrl = `${protocol}://${host}`;
+
           const userData = {
             address: walletAddress,
             balance: totalBalanceUsd.toFixed(2),
@@ -219,7 +224,7 @@ export class ApplePassController {
             smartContract: "0x4337...Vault",
             securityDelay: "Active: 48h Window",
             authToken: authHeader.replace("ApplePass ", ""),
-            origin: config.security.origin 
+            origin: serverUrl 
           };
 
           const passBuffer = await PassService.generatePass(userData);
