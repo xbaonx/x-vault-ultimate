@@ -222,7 +222,8 @@ export class ApplePassController {
           // Scan chains for this wallet address
           await Promise.all(chains.map(async (chain) => {
               try {
-                  const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
+                  // Pass chainId to avoid "failed to detect network" requests
+                  const provider = new ethers.JsonRpcProvider(chain.rpcUrl, chain.chainId);
                   
                   // 1. Native Balance
                   const balanceWei = await Promise.race([
