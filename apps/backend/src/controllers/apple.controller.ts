@@ -117,18 +117,23 @@ export class ApplePassController {
   static async getLatestPass(req: Request, res: Response) {
       try {
           const { passTypeIdentifier, serialNumber } = req.params;
+          const authHeader = req.headers.authorization;
+          
+          console.log(`[ApplePass] [Update Request] Serial: ${serialNumber}, PassType: ${passTypeIdentifier}`);
+          console.log(`[ApplePass] [Update Request] Auth Header: ${authHeader ? 'Present' : 'Missing'}`);
+          console.log(`[ApplePass] [Update Request] User-Agent: ${req.headers['user-agent']}`);
+
+          // Verify Auth Token
+          if (!authHeader || !authHeader.startsWith("ApplePass")) {
+              console.warn(`[ApplePass] Unauthorized update request for ${serialNumber}`);
+              return res.status(401).json({ error: "Unauthorized" });
+          }
+
           // serialNumber is the wallet address in our case
           const walletAddress = serialNumber;
           
-          console.log(`[ApplePass] Generating updated pass for address: ${walletAddress}`);
-
           // 1. Fetch User Data based on Wallet Address
-          // We need to find the user who owns this wallet to get their assets
-          // Since we don't have a direct Wallet -> User lookup easily exposed (Wallet entity has userId), let's query.
           const userRepo = AppDataSource.getRepository(User);
-          
-          // Find user who has this wallet address
-          // Note: This is a bit expensive, in prod we should look up Wallet entity first.
           const users = await userRepo.find({ relations: ['wallets', 'devices'] });
           const user = users.find(u => u.wallets?.some(w => w.address.toLowerCase() === walletAddress.toLowerCase()));
 
@@ -137,7 +142,9 @@ export class ApplePassController {
               return res.sendStatus(401);
           }
 
-          // 2. Aggregate Assets (Logic copied from DeviceController - should be refactored to service)
+          console.log(`[ApplePass] Found user ${user.id} for wallet ${walletAddress}`);
+
+          // 2. Aggregate Assets
           let totalBalanceUsd = 0;
           const assets: Record<string, { amount: number, value: number }> = {};
           
@@ -159,7 +166,9 @@ export class ApplePassController {
               const maticData = await maticRes.json();
               ethPrice = parseFloat(ethData.data.amount) || 3000;
               maticPrice = parseFloat(maticData.data.amount) || 1.0;
-          } catch (e) {}
+          } catch (e) {
+              console.error("[ApplePass] Failed to fetch prices:", e);
+          }
 
           const chains = Object.values(config.blockchain.chains || {});
            if (chains.length === 0) {
@@ -189,21 +198,17 @@ export class ApplePassController {
                       assets[key].amount += nativeBalance;
                       assets[key].value += nativeBalance * price;
                   }
-              } catch (e) { }
+              } catch (e) { 
+                  console.error(`[ApplePass] Failed to scan chain ${chain.name}:`, e);
+              }
           }));
 
-           // Mock Data if Empty (Same as DeviceController)
-          // if (totalBalanceUsd === 0) {
-          //   assets['ETH'] = { amount: 15.00, value: 33750 };
-          //   assets['BTC'] = { amount: 0.52, value: 35100 };
-          //   assets['USDT'] = { amount: 12000, value: 12000 };
-          //   assets['SOL'] = { amount: 240.50, value: 0 };
-          //   totalBalanceUsd = 80850 + 25;
-          // }
+          console.log(`[ApplePass] Calculated Total Balance: ${totalBalanceUsd}`);
+
+           // Mock Data is DISABLED. 
+           // If balance is 0, it stays 0.
 
           // 3. Generate Pass
-          // We need a deviceId for the "Device Identity" field. 
-          // Use the first active device of the user or a placeholder.
           const deviceId = user.devices?.find(d => d.isActive)?.deviceLibraryId || "Unknown";
 
           const userData = {
@@ -213,17 +218,24 @@ export class ApplePassController {
             assets: assets,
             smartContract: "0x4337...Vault",
             securityDelay: "Active: 48h Window",
-            authToken: req.headers.authorization?.replace("ApplePass ", "") // Keep existing token
+            authToken: authHeader.replace("ApplePass ", "")
           };
 
           const passBuffer = await PassService.generatePass(userData);
+          console.log(`[ApplePass] Generated new pass buffer. Size: ${passBuffer.length}`);
 
           // 4. Send Response
-          // If the pass hasn't changed, we could return 304, but generating fresh is safer for now.
           res.set('Content-Type', 'application/vnd.apple.pkpass');
           res.set('Content-Disposition', `attachment; filename=xvault.pkpass`);
           res.set('Last-Modified', new Date().toUTCString());
+          
+          // Disable caching to ensure update
+          res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.set('Pragma', 'no-cache');
+          res.set('Expires', '0');
+
           res.send(passBuffer);
+          console.log(`[ApplePass] Response sent successfully.`);
 
       } catch (error) {
           console.error("[ApplePass] Get latest pass error:", error);
