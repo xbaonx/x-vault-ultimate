@@ -1,0 +1,143 @@
+import { ethers } from 'ethers';
+import { AppDataSource } from '../data-source';
+import { Wallet } from '../entities/Wallet';
+import { DepositEvent } from '../entities/DepositEvent';
+import { ChainCursor } from '../entities/ChainCursor';
+import { ProviderService } from './provider.service';
+import { PassUpdateService } from './pass-update.service';
+import { config } from '../config';
+
+const TRANSFER_TOPIC = ethers.id('Transfer(address,address,uint256)');
+
+const TOKEN_MAP: Record<number, { address: string; symbol: string; decimals: number }[]> = {
+  8453: [
+    { address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb', symbol: 'DAI', decimals: 18 },
+    { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', symbol: 'USDC', decimals: 6 }
+  ],
+  1: [
+    { address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', symbol: 'DAI', decimals: 18 },
+    { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol: 'USDT', decimals: 6 },
+    { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol: 'USDC', decimals: 6 }
+  ],
+  137: [
+    { address: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063', symbol: 'DAI', decimals: 18 },
+    { address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', symbol: 'USDT', decimals: 6 },
+    { address: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', symbol: 'USDC', decimals: 6 }
+  ],
+  42161: [
+    { address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', symbol: 'DAI', decimals: 18 },
+    { address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', symbol: 'USDT', decimals: 6 },
+    { address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', symbol: 'USDC', decimals: 6 }
+  ],
+  10: [
+    { address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', symbol: 'DAI', decimals: 18 },
+    { address: '0x94b008aA00579c1307B0EF2c499a98a359659fc9', symbol: 'USDT', decimals: 6 },
+    { address: '0x0b2C639c533813f4Aa9D7837CAf992c96bdB5a5f', symbol: 'USDC', decimals: 6 }
+  ]
+};
+
+export class DepositWatcherService {
+  static async runOnce(): Promise<void> {
+    if (!AppDataSource.isInitialized) return;
+
+    const walletRepo = AppDataSource.getRepository(Wallet);
+    const wallets = await walletRepo.find({ where: { isActive: true } });
+
+    if (!wallets.length) return;
+
+    const chains = Object.values(config.blockchain.chains || {});
+
+    for (const chain of chains) {
+      const provider = ProviderService.getProvider(chain.chainId);
+      const latest = await provider.getBlockNumber();
+      const toBlock = Math.max(0, latest - 2);
+
+      const tokens = TOKEN_MAP[chain.chainId] || [];
+
+      for (const wallet of wallets) {
+        const walletAddress = wallet.address;
+        const walletAddressLower = wallet.address.toLowerCase();
+
+        for (const token of tokens) {
+          await this.scanToken(chain.chainId, token.address, walletAddress, walletAddressLower, toBlock);
+        }
+      }
+    }
+  }
+
+  private static async scanToken(
+    chainId: number,
+    tokenAddress: string,
+    walletAddress: string,
+    walletAddressLower: string,
+    toBlock: number
+  ): Promise<void> {
+    const cursorRepo = AppDataSource.getRepository(ChainCursor);
+    const depositRepo = AppDataSource.getRepository(DepositEvent);
+
+    const cursorId = `${chainId}:${walletAddressLower}:${tokenAddress.toLowerCase()}`;
+
+    let cursor = await cursorRepo.findOne({ where: { id: cursorId } });
+    if (!cursor) {
+      cursor = cursorRepo.create({
+        id: cursorId,
+        chainId,
+        walletAddress: walletAddressLower,
+        tokenAddress: tokenAddress.toLowerCase(),
+        lastScannedBlock: '0'
+      });
+      await cursorRepo.save(cursor);
+    }
+
+    let fromBlock = Math.max(0, Number(cursor.lastScannedBlock || '0'));
+
+    // Prevent huge scans on first run (public RPCs often cap log ranges)
+    const maxScanRange = 5000;
+    if (fromBlock === 0 && toBlock > maxScanRange) {
+      fromBlock = toBlock - maxScanRange;
+    }
+    if (toBlock <= fromBlock) return;
+
+    const provider = ProviderService.getProvider(chainId);
+
+    const paddedTo = ethers.zeroPadValue(walletAddressLower, 32);
+
+    const logs = await provider.getLogs({
+      address: tokenAddress,
+      fromBlock: fromBlock + 1,
+      toBlock,
+      topics: [TRANSFER_TOPIC, null, paddedTo]
+    });
+
+    for (const log of logs) {
+      const id = `${chainId}:${log.transactionHash}:${log.index}`;
+
+      const exists = await depositRepo.findOne({ where: { id } });
+      if (exists) continue;
+
+      let amount = '0';
+      try {
+        amount = BigInt(log.data).toString();
+      } catch {
+        amount = '0';
+      }
+
+      const dep = depositRepo.create({
+        id,
+        chainId,
+        txHash: log.transactionHash,
+        logIndex: log.index,
+        walletAddress,
+        tokenAddress: tokenAddress.toLowerCase(),
+        amount
+      });
+
+      await depositRepo.save(dep);
+
+      await PassUpdateService.notifyPassUpdateBySerialNumber(walletAddress);
+    }
+
+    cursor.lastScannedBlock = String(toBlock);
+    await cursorRepo.save(cursor);
+  }
+}

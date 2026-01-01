@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import { config } from './config';
 import routes from './routes';
 import { AppDataSource } from './data-source';
+import { JobRunnerService } from './services/job-runner.service';
 
 const app = express();
 
@@ -30,6 +31,7 @@ async function start() {
   try {
     await AppDataSource.initialize();
     console.log('Data Source has been initialized!');
+    JobRunnerService.start();
   } catch (err) {
     console.error('Error during Data Source initialization. Starting in OFFLINE/MOCK mode.', err);
     // Do not exit, allow server to start for frontend testing
