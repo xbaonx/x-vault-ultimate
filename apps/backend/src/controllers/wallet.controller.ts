@@ -394,34 +394,56 @@ export class WalletController {
               chainId: chainConfig.chainId
           };
 
-          console.log(`[Wallet] Submitting transaction to ${chainConfig.name}...`, txRequest);
+          console.log(`[Wallet] Submitting transaction to ${chainConfig.name} (${chainConfig.rpcUrl})...`, txRequest);
 
-          // Send Transaction
-          const txResponse = await signer.sendTransaction(txRequest);
-          
-          console.log(`[Wallet] Transaction Submitted! Hash: ${txResponse.hash}`);
+          try {
+              // Estimate Gas first to check for errors early
+              const estimatedGas = await provider.estimateGas(txRequest);
+              console.log(`[Wallet] Estimated Gas: ${estimatedGas}`);
+              
+              // Send Transaction
+              const txResponse = await signer.sendTransaction(txRequest);
+              
+              console.log(`[Wallet] Transaction Submitted! Hash: ${txResponse.hash}`);
 
-          // Save Transaction Record
-          const txRepo = AppDataSource.getRepository(Transaction);
-          const newTx = txRepo.create({
-              userOpHash: txResponse.hash, // Using txHash as unique ID for EOA
-              network: chainConfig.name,
-              status: 'submitted',
-              value: transaction.value ? transaction.value.toString() : '0',
-              asset: chainConfig.symbol,
-              user: user,
-              userId: user.id
-          });
-          await txRepo.save(newTx);
+              // Save Transaction Record
+              const txRepo = AppDataSource.getRepository(Transaction);
+              const newTx = txRepo.create({
+                  userOpHash: txResponse.hash, // Using txHash as unique ID for EOA
+                  network: chainConfig.name,
+                  status: 'submitted',
+                  value: transaction.value ? transaction.value.toString() : '0',
+                  asset: chainConfig.symbol,
+                  user: user,
+                  userId: user.id
+              });
+              await txRepo.save(newTx);
+              
+              res.status(200).json({ 
+                  success: true, 
+                  txHash: txResponse.hash,
+                  explorerUrl: getExplorerUrl(chainConfig.chainId, txResponse.hash)
+              });
+          } catch (txError: any) {
+              console.error(`[Wallet] Transaction Submission Failed:`, txError);
+              
+              let errorMessage = 'Transaction failed';
+              if (txError.code === 'INSUFFICIENT_FUNDS') {
+                  errorMessage = 'Insufficient ETH/MATIC for gas fees.';
+              } else if (txError.message.includes('insufficient funds')) {
+                   errorMessage = 'Insufficient funds for gas + value.';
+              } else if (txError.code === 'NETWORK_ERROR') {
+                  errorMessage = 'Blockchain network error. Please try again later.';
+              } else if (txError.info && txError.info.error) {
+                  // Ethers often wraps the actual RPC error in info.error
+                  errorMessage = txError.info.error.message || errorMessage;
+              }
 
-          // Optionally wait for confirmation? For better UX, we might return hash immediately.
-          // await txResponse.wait(1); 
-          
-          res.status(200).json({ 
-              success: true, 
-              txHash: txResponse.hash,
-              explorerUrl: getExplorerUrl(chainConfig.chainId, txResponse.hash)
-          });
+              res.status(400).json({ 
+                  error: errorMessage,
+                  details: txError.message
+              });
+          }
       } else {
           res.status(401).json({ error: 'Signature verification failed' });
       }
