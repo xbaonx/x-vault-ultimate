@@ -104,42 +104,60 @@ export class DepositWatcherService {
 
     const paddedTo = ethers.zeroPadValue(walletAddressLower, 32);
 
-    const logs = await provider.getLogs({
-      address: tokenAddressLower,
-      fromBlock: fromBlock + 1,
-      toBlock,
-      topics: [TRANSFER_TOPIC, null, paddedTo]
-    });
+    let start = fromBlock + 1;
+    let chunkSize = 1000;
 
-    for (const log of logs) {
-      const id = `${chainId}:${log.transactionHash}:${log.index}`;
+    while (start <= toBlock) {
+      const end = Math.min(toBlock, start + chunkSize - 1);
 
-      const exists = await depositRepo.findOne({ where: { id } });
-      if (exists) continue;
-
-      let amount = '0';
+      let logs: ethers.Log[] = [];
       try {
-        amount = BigInt(log.data).toString();
-      } catch {
-        amount = '0';
+        logs = await provider.getLogs({
+          address: tokenAddressLower,
+          fromBlock: start,
+          toBlock: end,
+          topics: [TRANSFER_TOPIC, null, paddedTo]
+        });
+      } catch (e) {
+        // Reduce chunk size and retry same range on flaky public RPCs
+        if (chunkSize > 200) {
+          chunkSize = Math.floor(chunkSize / 2);
+          continue;
+        }
+        throw e;
       }
 
-      const dep = depositRepo.create({
-        id,
-        chainId,
-        txHash: log.transactionHash,
-        logIndex: log.index,
-        walletAddress,
-        tokenAddress: tokenAddressLower,
-        amount
-      });
+      for (const log of logs) {
+        const id = `${chainId}:${log.transactionHash}:${log.index}`;
 
-      await depositRepo.save(dep);
+        const exists = await depositRepo.findOne({ where: { id } });
+        if (exists) continue;
 
-      await PassUpdateService.notifyPassUpdateBySerialNumber(walletAddress);
+        let amount = '0';
+        try {
+          amount = BigInt(log.data).toString();
+        } catch {
+          amount = '0';
+        }
+
+        const dep = depositRepo.create({
+          id,
+          chainId,
+          txHash: log.transactionHash,
+          logIndex: log.index,
+          walletAddress,
+          tokenAddress: tokenAddressLower,
+          amount
+        });
+
+        await depositRepo.save(dep);
+
+        await PassUpdateService.notifyPassUpdateBySerialNumber(walletAddress);
+      }
+
+      cursor.lastScannedBlock = String(end);
+      await cursorRepo.save(cursor);
+      start = end + 1;
     }
-
-    cursor.lastScannedBlock = String(toBlock);
-    await cursorRepo.save(cursor);
   }
 }

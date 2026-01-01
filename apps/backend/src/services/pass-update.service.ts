@@ -6,6 +6,10 @@ export class PassUpdateService {
   static async notifyPassUpdateBySerialNumber(serialNumber: string) {
     if (!AppDataSource.isInitialized) return;
 
+    if (!ApnsService.isEnabled()) {
+      return;
+    }
+
     const repo = AppDataSource.getRepository(PassRegistration);
 
     const registrations = await repo

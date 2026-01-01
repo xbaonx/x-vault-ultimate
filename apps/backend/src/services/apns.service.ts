@@ -35,12 +35,8 @@ export class ApnsService {
   static async pushPassUpdate(pushToken: string): Promise<{ ok: boolean; status?: number; body?: string }> {
     const { topic } = this.getConfig();
 
-    if (!topic) {
-      throw new Error('APNs topic missing (APNS_TOPIC)');
-    }
-
-    if (!this.isEnabled()) {
-      console.log('[APNs] Disabled. Skipping push update.');
+    if (!this.isEnabled() || !topic) {
+      console.log('[APNs] Disabled (missing APNS env). Skipping push update.');
       return { ok: false, body: 'disabled' };
     }
 
