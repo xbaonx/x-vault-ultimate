@@ -27,7 +27,7 @@ services:
       - key: ORIGIN
         value: https://x-vault-web.onrender.com
       - key: RP_NAME
-        value: X-Vault Wallet
+        value: Zaur Wallet
     autoDeploy: true
 
   # Frontend Web App (Static Site)
