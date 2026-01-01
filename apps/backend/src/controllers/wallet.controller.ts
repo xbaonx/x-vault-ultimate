@@ -8,6 +8,7 @@ import { Wallet } from '../entities/Wallet';
 import { Device } from '../entities/Device';
 import { Transaction } from '../entities/Transaction';
 import { generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
+import { ProviderService } from '../services/provider.service';
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -186,8 +187,8 @@ export class WalletController {
       // Scan all chains in parallel
       await Promise.all(chains.map(async (chain) => {
           try {
-              // Pass chainId to avoid "failed to detect network" requests
-              const provider = new ethers.JsonRpcProvider(chain.rpcUrl, chain.chainId);
+              // Use singleton provider
+              const provider = ProviderService.getProvider(chain.chainId);
               
               // 1. Native Balance
               // Set a short timeout for RPC calls to avoid hanging
@@ -403,7 +404,7 @@ export class WalletController {
               return;
           }
 
-          const provider = new ethers.JsonRpcProvider(chainConfig.rpcUrl);
+          const provider = ProviderService.getProvider(chainConfig.chainId);
           const signer = new ethers.Wallet(walletEntity.privateKey, provider);
 
           // ---------------------------------------------------------

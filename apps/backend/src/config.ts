@@ -24,31 +24,31 @@ export const config = {
     // Multi-chain Configuration
     chains: {
         base: {
-            rpcUrl: process.env.BASE_RPC_URL || 'https://rpc.ankr.com/base',
+            rpcUrl: process.env.BASE_RPC_URL || 'https://mainnet.base.org',
             chainId: 8453,
             symbol: 'ETH',
             name: 'Base'
         },
         polygon: {
-            rpcUrl: process.env.POLYGON_RPC_URL || 'https://rpc.ankr.com/polygon',
+            rpcUrl: process.env.POLYGON_RPC_URL || 'https://polygon-bor.publicnode.com',
             chainId: 137,
             symbol: 'MATIC', // Now POL, but let's keep MATIC/POL symbol flexible
             name: 'Polygon'
         },
         arbitrum: {
-            rpcUrl: process.env.ARBITRUM_RPC_URL || 'https://rpc.ankr.com/arbitrum',
+            rpcUrl: process.env.ARBITRUM_RPC_URL || 'https://arb1.arbitrum.io/rpc',
             chainId: 42161,
             symbol: 'ETH',
             name: 'Arbitrum'
         },
         optimism: {
-            rpcUrl: process.env.OPTIMISM_RPC_URL || 'https://rpc.ankr.com/optimism',
+            rpcUrl: process.env.OPTIMISM_RPC_URL || 'https://mainnet.optimism.io',
             chainId: 10,
             symbol: 'ETH',
             name: 'Optimism'
         },
         ethereum: {
-            rpcUrl: process.env.ETH_RPC_URL || 'https://rpc.ankr.com/eth',
+            rpcUrl: process.env.ETH_RPC_URL || 'https://eth.llamarpc.com',
             chainId: 1,
             symbol: 'ETH',
             name: 'Ethereum'

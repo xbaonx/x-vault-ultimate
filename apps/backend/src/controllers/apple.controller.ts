@@ -6,6 +6,7 @@ import { User } from "../entities/User";
 import { PassService } from "../services/pass.service";
 import { ethers } from "ethers";
 import { config } from "../config";
+import { ProviderService } from "../services/provider.service";
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -222,8 +223,8 @@ export class ApplePassController {
           // Scan chains for this wallet address
           await Promise.all(chains.map(async (chain) => {
               try {
-                  // Pass chainId to avoid "failed to detect network" requests
-                  const provider = new ethers.JsonRpcProvider(chain.rpcUrl, chain.chainId);
+                  // Use singleton provider
+                  const provider = ProviderService.getProvider(chain.chainId);
                   
                   // 1. Native Balance
                   const balanceWei = await Promise.race([
