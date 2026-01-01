@@ -23,9 +23,9 @@ services:
       - key: DB_SSL_REJECT_UNAUTHORIZED
         sync: false
       - key: RP_ID
-        value: x-vault-web.onrender.com
+        value: zaur.at
       - key: ORIGIN
-        value: https://x-vault-web.onrender.com
+        value: https://zaur.at
       - key: RP_NAME
         value: Zaur Wallet
     autoDeploy: true
