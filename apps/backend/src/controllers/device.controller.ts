@@ -15,6 +15,32 @@ import {
 import { config } from '../config';
 import { ethers } from 'ethers';
 
+const ERC20_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)"
+];
+
+const TOKEN_MAP: Record<number, { address: string; symbol: string; decimals: number }[]> = {
+    // Base
+    8453: [
+        { address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb', symbol: 'DAI', decimals: 18 },
+        { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', symbol: 'USDC', decimals: 6 }
+    ],
+    // Ethereum
+    1: [
+        { address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', symbol: 'DAI', decimals: 18 },
+        { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol: 'USDT', decimals: 6 },
+        { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol: 'USDC', decimals: 6 }
+    ],
+    // Polygon
+    137: [
+        { address: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063', symbol: 'DAI', decimals: 18 },
+        { address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', symbol: 'USDT', decimals: 6 },
+        { address: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', symbol: 'USDC', decimals: 6 }
+    ]
+};
+
 export class DeviceController {
   
   // Helper to determine RP_ID and Origin dynamically if not set in env
@@ -504,21 +530,20 @@ export class DeviceController {
 
       if (walletAddress && walletAddress.startsWith('0x')) {
           // 1. Fetch Prices
-          let ethPrice = 0;
-          let maticPrice = 0;
+          let prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
           try {
-              const [ethRes, maticRes] = await Promise.all([
-                  fetch('https://api.coinbase.com/v2/prices/ETH-USD/spot'),
-                  fetch('https://api.coinbase.com/v2/prices/MATIC-USD/spot')
-              ]);
-              const ethData = await ethRes.json();
-              const maticData = await maticRes.json();
-              ethPrice = parseFloat(ethData.data.amount) || 3000;
-              maticPrice = parseFloat(maticData.data.amount) || 1.0;
+              const symbols = ['ETH', 'MATIC', 'DAI', 'USDT', 'USDC'];
+              const requests = symbols.map(sym => fetch(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`).then(r => r.json()).catch(() => null));
+              
+              const results = await Promise.all(requests);
+              
+              results.forEach((data, index) => {
+                  if (data && data.data && data.data.amount) {
+                      prices[symbols[index]] = parseFloat(data.data.amount);
+                  }
+              });
           } catch (e) {
               console.warn("Failed to fetch prices for pass, using fallbacks");
-              ethPrice = 3000;
-              maticPrice = 1.0;
           }
 
           // 2. Scan all chains
@@ -535,23 +560,50 @@ export class DeviceController {
           await Promise.all(chains.map(async (chain) => {
               try {
                   const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
+                  
+                  // 1. Native Balance
                   const balanceWei = await Promise.race([
                       provider.getBalance(walletAddress),
                       new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
                   ]);
                   const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
                   if (nativeBalance > 0) {
-                      const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? maticPrice : ethPrice;
+                      const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? prices['MATIC'] : prices['ETH'];
                       totalBalanceUsd += nativeBalance * price;
-                      
-                      // Map chain symbol to asset key (simplification)
-                      const symbol = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? 'ETH' : chain.symbol; // Treat EVM as ETH-like for summary or keep separate
                       
                       const key = (chain.symbol === 'MATIC' || chain.symbol === 'POL') ? 'ETH' : chain.symbol;
                       if (!assets[key]) assets[key] = { amount: 0, value: 0 };
                       assets[key].amount += nativeBalance;
                       assets[key].value += nativeBalance * price;
                   }
+
+                  // 2. ERC-20 Token Balances
+                  const tokens = TOKEN_MAP[chain.chainId];
+                  if (tokens) {
+                      await Promise.all(tokens.map(async (token) => {
+                          try {
+                              const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
+                              const tokenBalanceWei: bigint = await contract.balanceOf(walletAddress);
+                              
+                              if (tokenBalanceWei > 0n) {
+                                  const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
+                                  const price = prices[token.symbol] || 0;
+                                  const value = formattedBalance * price;
+                                  
+                                  totalBalanceUsd += value;
+                                  
+                                  if (!assets[token.symbol]) assets[token.symbol] = { amount: 0, value: 0 };
+                                  assets[token.symbol].amount += formattedBalance;
+                                  assets[token.symbol].value += value;
+                                  
+                                  console.log(`[Device] Found ${formattedBalance} ${token.symbol} on chain ${chain.chainId}`);
+                              }
+                          } catch (err) {
+                              // Ignore token fetch errors
+                          }
+                      }));
+                  }
+
               } catch (e) { }
           }));
       }
