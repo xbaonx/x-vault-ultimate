@@ -218,7 +218,8 @@ export class ApplePassController {
             assets: assets,
             smartContract: "0x4337...Vault",
             securityDelay: "Active: 48h Window",
-            authToken: authHeader.replace("ApplePass ", "")
+            authToken: authHeader.replace("ApplePass ", ""),
+            origin: config.security.origin 
           };
 
           const passBuffer = await PassService.generatePass(userData);
