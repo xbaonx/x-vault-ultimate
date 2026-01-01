@@ -66,7 +66,10 @@ export class PassService {
   }
 
   // VALID 60x60 PNG (Black Circle with White $ sign) - Fail-safe Icon
-  private static readonly SAFE_ICON_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAADwAAAA8CAYAAAA6/nqHAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAPKADAAQAAAABAAAAPAAAAAAy051DAAAACXBIWXMAAAsTAAALEwEAmpwYAAACxUlEQRoBe9baTUsDQRQ9E0ExlZUqKFgq+P//oFqrShG0GJJPcydMCi67M3dCzOQwJ5fkzZs3Z2Z3JpOJ/WExsAgsBhaBRWCtWnr7+Pj4eP/8/Hz/8vLy/vX19f39/f39w8PD+6enp/ePj4/vH5+fn98/Pz+/f3l5ef/6+vr+4eHh/dPT0/vHx8f3T09P75+fn9+/vLy8f319ff/w8PD+6enp/ePj4/vH5+fn98/Pz+/f39/fPzw8vH96enr/+Pj4/vH5+fn98/Pz+/f39/cP//4W+PLy8n4y39/fPzw8PLx/enp6//j4+P7x+fn5/fPz8/v39/f3Dw8P75+ent4/Pj6+f3x+fn7//Pz8/v39/f3Dw8P7p6en94+Pj+8fn5+f3z8/P79/f39///D/t8D39/f3Dw8P75+ent4/Pj6+f3x+fn7//Pz8/v39/f3Dw8P7p6en94+Pj+8fn5+f3z8/P79/f398/PDy8f3p6ev/4+Pj+8fn5+f3z8/P79/f39w8PD++fnp7ePz4+vn98fn5+//z8/P79/f39w8PD+6enp/ePj4/vH5+fn98/Pz+/f39/f//w8PD+6enp/ePj4/vH5+fn98/Pz+/f39/fPzw8vH96enr/+Pj4/vH5+fn98/Pz+/f39/cPDw/vn56e3j8+Pr5/fH5+fv/8/Pz+/f39/cPDw/unp6f3j4+P7x+fn5/fPz8/v39/f3//8PDw/unp6f3j4+P7x+fn5/fPz8/v39/f3z88PLx/enp6//j4+P7x+fn5/fPz8/v39/f3Dw8P75+ent4/Pj6+f3x+fn7//Pz8/v39/f3Dw8P7p6en94+Pj+8fn5+f3z8/P79/f39///D/t8B/Abv9/wGLwCJwM/EH7b1aW9qO928AAAAASUVORK5CYII=";
+  private static readonly SAFE_ICON_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAADwAAAA8CAYAAAA6/nqHAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAPKADAAQAAAABAAAAPAAAAAAy051DAAAACXBIWXMAAAsTAAALEwEAmpwYAAACxUlEQRoBe9baTUsDQRQ9E0ExlZUqKFgq+P//oFqrShG0GJJPcydMCi67M3dCzOQwJ5fkzZs3Z2Z3JpOJ/WExsAgsBhaBRWCtWnr7+Pj4eP/8/Hz/8vLy/vX19f39/f39w8PD+6enp/ePj4/vH5+fn98/Pz+/f3l5ef/6+vr+4eHh/dPT0/vHx8f3T09P75+fn98/vLy8f319ff/w8PD+6enp/ePj4/vH5+fn98/Pz+/f39/fPzw8vH96enr/+Pj4/vH5+fn98/Pz+/f39/cP//4W+PLy8n4y39/fPzw8PLx/enp6//j4+P7x+fn5/fPz8/v39/f3Dw8P75+ent4/Pj6+f3x+fn7//Pz8/v39/f3Dw8P7p6en94+Pj+8fn5+f3z8/P79/f39///D/t8D39/f3Dw8P75+ent4/Pj6+f3x+fn7//Pz8/v39/f3Dw8P7p6en94+Pj+8fn5+f3z8/P79/f398/PDy8f3p6ev/4+Pj+8fn5+f3z8/P79/f39w8PD++fnp7ePz4+vn98fn5+//z8/P79/f39w8PD+6enp/ePj4/vH5+fn98/Pz+/f39/f//w8PD+6enp/ePj4/vH5+fn98/Pz+/f39/fPzw8vH96enr/+Pj4/vH5+fn98/Pz+/f39/cPDw/vn56e3j8+Pr5/fH5+fv/8/Pz+/f39/cPDw/unp6f3j4+P7x+fn5/fPz8/v39/f3//8PDw/unp6f3j4+P7x+fn5/fPz8/v39/f3z88PLx/enp6//j4+P7x+fn5/fPz8/v39/f3Dw8P75+ent4/Pj6+f3x+fn7//Pz8/v39/f3Dw8P7p6en94+Pj+8fn5+f3z8/P79/f39///D/t8B/Abv9/wGLwCJwM/EH7b1aW9qO928AAAAASUVORK5CYII=";
+
+  // DEBUG FLAG: Set to true to force 'generic' style and remove strip images for testing
+  private static readonly DEBUG_SAFE_MODE = false;
 
   // Generate Mock Certificates for Development/Testing
   private static async createMockCertificates(teamId: string, passTypeId: string, orgName: string): Promise<{ key: string, cert: string }> {
@@ -127,6 +130,7 @@ export class PassService {
   }) {
     let passJson: any;
     const origin = userData.apiUrl || config.security.origin || '';
+
     try {
       const modelPath = path.resolve(__dirname, '../../assets/pass.model');
       const hasModel = fs.existsSync(modelPath);
@@ -293,6 +297,18 @@ export class PassService {
           passJson.description = "Zaur.at Smart Vault";
           
           // Ensure a style is defined (Default to Generic if missing)
+          // DEBUG: Force Generic Mode
+          if (PassService.DEBUG_SAFE_MODE) {
+             console.warn("[PassService] DEBUG_SAFE_MODE ENABLED: Forcing 'generic' style.");
+             if (passJson.storeCard) delete passJson.storeCard;
+             passJson.generic = {
+                primaryFields: [],
+                secondaryFields: [],
+                auxiliaryFields: [],
+                backFields: []
+             };
+          }
+
           if (!passJson.storeCard && !passJson.generic && !passJson.eventTicket && !passJson.coupon && !passJson.boardingPass) {
               passJson.generic = {
                   primaryFields: [],
@@ -354,17 +370,21 @@ export class PassService {
           
           // DEBUG STRATEGY:
           // With corrected strip dimensions, include strip if available; remove only if suspiciously small/missing.
-          if (passJson.storeCard) {
+          if (PassService.DEBUG_SAFE_MODE) {
+              console.warn("[PassService] DEBUG_SAFE_MODE ENABLED: Removing strip images.");
+              delete modelBuffers['strip.png'];
+              delete modelBuffers['strip@2x.png'];
+          } else if (passJson.storeCard) {
               if (passJson.suppressStrip) delete passJson.suppressStrip;
               
               const stripSize = modelBuffers['strip.png']?.length || 0;
               const strip2xSize = modelBuffers['strip@2x.png']?.length || 0;
-              if (stripSize === 0 && strip2xSize === 0) {
+              if (stripSize > 0 && strip2xSize > 0) {
+                  console.log(`[PassService] DEBUG: Keeping strip images (1x: ${stripSize}b, 2x: ${strip2xSize}b).`);
+              } else {
                   delete modelBuffers['strip.png'];
                   delete modelBuffers['strip@2x.png'];
-                  console.warn("[PassService] WARNING: strip images missing; proceeding without strip.");
-              } else {
-                  console.log(`[PassService] DEBUG: Keeping strip images (1x: ${stripSize}b, 2x: ${strip2xSize}b).`);
+                  console.warn("[PassService] WARNING: strip images missing or empty; proceeding without strip.");
               }
           }
 
@@ -485,11 +505,12 @@ export class PassService {
              // 0.5. QUICK ACTIONS (Simulating App Functions)
              // Native '123' view buttons are reserved for Banks/Apple Pay.
              // We place these at the top of the Back view for 1-tap access.
+             const baseUrl = origin || 'https://zaur.at';
              pass.backFields.push({
                  key: 'quick_actions',
                  label: 'QUICK ACTIONS',
                  value: 'Send • Receive • Swap',
-                 attributedValue: `<a href="${config.security.origin}/wallet/send">Send</a> &nbsp;|&nbsp; <a href="${config.security.origin}/wallet/receive">Receive</a> &nbsp;|&nbsp; <a href="${config.security.origin}/wallet/swap">Swap</a>`
+                 attributedValue: `<a href="${baseUrl}/wallet/send">Send</a> &nbsp;|&nbsp; <a href="${baseUrl}/wallet/receive">Receive</a> &nbsp;|&nbsp; <a href="${baseUrl}/wallet/swap">Swap</a>`
              });
 
              // 1. Asset Breakdown
