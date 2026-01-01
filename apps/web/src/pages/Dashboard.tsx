@@ -294,7 +294,7 @@ export default function Dashboard() {
             <h3 className="text-lg font-semibold px-1">Assets</h3>
             {portfolio.assets.map((asset: any, index: number) => (
               <motion.div
-                key={asset.symbol}
+                key={`${asset.symbol}-${asset.network}`}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: index * 0.1 }}
