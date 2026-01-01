@@ -171,7 +171,7 @@ export class DeviceController {
           expectedRPID: rpId,
           credentialID: credentialID, // Use the ID from request (Base64URL) to satisfy library check
           credentialPublicKey: targetDevice.credentialPublicKey,
-          counter: targetDevice.counter || 0,
+          counter: targetDevice.counter,
         } as any);
       } catch (e) {
         console.error(`[Device] Verification threw error:`, e);
@@ -577,44 +577,23 @@ export class DeviceController {
 
       const balance = totalBalanceUsd.toFixed(2);
 
-      // Extract Owner Name (e.g. "Bao" from "bao@gmail.com")
-      let ownerName = "Vault Owner";
-      if (device.user.email) {
-          const namePart = device.user.email.split('@')[0];
-          // Remove numbers or special chars if any, or just capitalize
-          ownerName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-      } else if (device.name) {
-          // Fallback to Device Name if looks like a person's name (heuristic)
-          // e.g. "Bao's iPhone" -> "Bao"
-          if (device.name.includes("'s")) {
-             ownerName = device.name.split("'s")[0];
-          }
-      }
-
-      // Dynamic API URL from request (handles Render/Production URLs correctly)
-      const protocol = req.protocol === 'http' && req.get('host')?.includes('localhost') ? 'http' : 'https';
-      const host = req.get('host');
-      const apiUrl = `${protocol}://${host}`;
-
       const userData = {
         address: walletAddress,
         balance: balance,
         deviceId: deviceId,
         assets: assets,
         smartContract: "0x4337...Vault", // Placeholder
-        securityDelay: "Active: 48h Window",
-        ownerName: ownerName,
-        apiUrl: apiUrl
+        securityDelay: "Active: 48h Window"
       };
       
-      console.log(`[Device] Generating pass for ${deviceId} with Address: ${walletAddress}, Balance: ${balance}, Owner: ${ownerName}, API: ${apiUrl}`);
+      console.log(`[Device] Generating pass for ${deviceId} with Address: ${walletAddress}, Balance: ${balance}`);
 
       const passBuffer = await PassService.generatePass(userData);
       
       console.log(`[Device] Pass generated successfully. Buffer size: ${passBuffer.length} bytes`);
 
       res.set('Content-Type', 'application/vnd.apple.pkpass');
-      res.set('Content-Disposition', `attachment; filename="xvault-${deviceId}.pkpass"`);
+      res.set('Content-Disposition', `attachment; filename=xvault-${deviceId}.pkpass`);
       res.send(passBuffer);
       
       console.log(`[Device] Sent pass response. Content-Type: application/vnd.apple.pkpass, Length: ${passBuffer.length}`);

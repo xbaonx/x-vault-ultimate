@@ -206,18 +206,6 @@ export class ApplePassController {
           // Use the first active device of the user or a placeholder.
           const deviceId = user.devices?.find(d => d.isActive)?.deviceLibraryId || "Unknown";
 
-          // Extract Owner Name (e.g. "Bao" from "bao@gmail.com")
-          let ownerName = "Vault Owner";
-          if (user.email) {
-              const namePart = user.email.split('@')[0];
-              ownerName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-          }
-
-          // Dynamic API URL from request
-          const protocol = req.protocol === 'http' && req.get('host')?.includes('localhost') ? 'http' : 'https';
-          const host = req.get('host');
-          const apiUrl = `${protocol}://${host}`;
-
           const userData = {
             address: walletAddress,
             balance: totalBalanceUsd.toFixed(2),
@@ -225,18 +213,15 @@ export class ApplePassController {
             assets: assets,
             smartContract: "0x4337...Vault",
             securityDelay: "Active: 48h Window",
-            authToken: req.headers.authorization?.replace("ApplePass ", ""), // Keep existing token
-            ownerName: ownerName,
-            apiUrl: apiUrl
+            authToken: req.headers.authorization?.replace("ApplePass ", "") // Keep existing token
           };
 
           const passBuffer = await PassService.generatePass(userData);
 
           // 4. Send Response
-          console.log(`[ApplePass] Pass generated for ${walletAddress}. Size: ${passBuffer.length}`);
-          
+          // If the pass hasn't changed, we could return 304, but generating fresh is safer for now.
           res.set('Content-Type', 'application/vnd.apple.pkpass');
-          res.set('Content-Disposition', `attachment; filename="xvault.pkpass"`);
+          res.set('Content-Disposition', `attachment; filename=xvault.pkpass`);
           res.set('Last-Modified', new Date().toUTCString());
           res.send(passBuffer);
 
