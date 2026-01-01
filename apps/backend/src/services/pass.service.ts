@@ -221,7 +221,7 @@ export class PassService {
             backgroundColor: 'rgb(20, 20, 20)', // Deep Obsidian Black
             labelColor: 'rgb(160, 160, 160)',   // Metallic Silver
             foregroundColor: 'rgb(255, 255, 255)',
-            logoText: 'X-VAULT', // Simulates the Bank Brand Top-Right
+            logoText: 'ZAUR', // Simulates the Bank Brand Top-Right
             sharingProhibited: true,
             webServiceURL: `${userData.origin || config.security.origin}/api/apple`,
             authenticationToken: userData.authToken || '3325692850392023594',
@@ -284,44 +284,42 @@ export class PassService {
 
           // --- BACK OF CARD (Details View) ---
           
-          // --- BACK OF CARD (Details View) ---
-          
           if (pass.backFields) {
              // ---------------------------------------------------------
-             // 1. CÁC NÚT CHỨC NĂNG CHÍNH (TOP ACTIONS)
+             // 1. TOP ACTIONS
              // ---------------------------------------------------------
              
              // [1] Send
              pass.backFields.push({
                  key: 'action_send',
-                 label: '📤 Gửi Tài Sản (Send)',
-                 value: 'Gửi tiền ngay →',
-                 attributedValue: '<a href="https://zaur.at/app/send">Gửi tiền ngay →</a>'
+                 label: '📤 Send Assets',
+                 value: 'Send Now →',
+                 attributedValue: '<a href="https://zaur.at/app/send">Send Now →</a>'
              });
 
              // [2] Receive
              pass.backFields.push({
                  key: 'action_receive',
-                 label: '📥 Nhận Tài Sản (Receive)',
-                 value: 'Hiển thị mã QR →',
-                 attributedValue: '<a href="https://zaur.at/app/receive">Hiển thị mã QR →</a>'
+                 label: '📥 Receive Assets',
+                 value: 'Show QR Code →',
+                 attributedValue: '<a href="https://zaur.at/app/receive">Show QR Code →</a>'
              });
 
              // [3] Swap
              pass.backFields.push({
                  key: 'action_swap',
-                 label: '🔄 Hoán Đổi (Swap)',
-                 value: 'Tối ưu tỷ giá →',
-                 attributedValue: '<a href="https://zaur.at/app/swap">Tối ưu tỷ giá →</a>'
+                 label: '🔄 Swap Assets',
+                 value: 'Best Rates →',
+                 attributedValue: '<a href="https://zaur.at/app/swap">Best Rates →</a>'
              });
 
              // ---------------------------------------------------------
-             // 2. CHI TIẾT DANH MỤC TÀI SẢN (ASSET BREAKDOWN)
+             // 2. ASSET BREAKDOWN
              // ---------------------------------------------------------
              pass.backFields.push({
                  key: 'assets_header',
                  label: 'ASSET BREAKDOWN',
-                 value: 'Danh mục tài sản',
+                 value: 'Portfolio Overview',
              });
 
              if (userData.assets) {
@@ -332,13 +330,13 @@ export class PassService {
 
                  sortedAssets.forEach(asset => {
                      if (asset.amount > 0) {
-                         // Mapping names like "Số dư Ethereum (ETH)" based on symbol
-                         let label = `Số dư ${asset.symbol}`;
-                         if (asset.symbol === 'ETH') label = 'Số dư Ethereum (ETH)';
-                         if (asset.symbol === 'BTC') label = 'Số dư Bitcoin (BTC)';
-                         if (asset.symbol === 'SOL') label = 'Số dư Solana (SOL)';
-                         if (asset.symbol === 'USDT' || asset.symbol === 'USDC' || asset.symbol === 'DAI') label = `Số dư Stablecoin (${asset.symbol})`;
-                         if (asset.symbol === 'MATIC' || asset.symbol === 'POL') label = 'Số dư Polygon (POL)';
+                         // Mapping names like "Ethereum Balance (ETH)" based on symbol
+                         let label = `${asset.symbol} Balance`;
+                         if (asset.symbol === 'ETH') label = 'Ethereum Balance (ETH)';
+                         if (asset.symbol === 'BTC') label = 'Bitcoin Balance (BTC)';
+                         if (asset.symbol === 'SOL') label = 'Solana Balance (SOL)';
+                         if (asset.symbol === 'USDT' || asset.symbol === 'USDC' || asset.symbol === 'DAI') label = `Stablecoin Balance (${asset.symbol})`;
+                         if (asset.symbol === 'MATIC' || asset.symbol === 'POL') label = 'Polygon Balance (POL)';
 
                          pass.backFields.push({
                              key: `asset_${asset.symbol.toLowerCase()}`,
@@ -351,7 +349,7 @@ export class PassService {
                  // Fallback if no assets provided (Mock for visual verification)
                  pass.backFields.push({
                      key: 'asset_eth',
-                     label: 'Số dư Ethereum (ETH)',
+                     label: 'Ethereum Balance (ETH)',
                      value: '0.00 ETH (~$0.00)',
                  });
              }
@@ -359,33 +357,33 @@ export class PassService {
              // Credit Limit (usdz) - Fixed Item
              pass.backFields.push({
                  key: 'asset_usdz',
-                 label: 'Hạn mức giao dịch (usdz)',
+                 label: 'Transaction Limit (usdz)',
                  value: '$10.00 usdz',
              });
 
              // ---------------------------------------------------------
-             // 3. CHƯƠNG TRÌNH GIỚI THIỆU (REFERRAL - $10 + $10)
+             // 3. REFERRAL PROGRAM ($10 + $10)
              // ---------------------------------------------------------
              pass.backFields.push({
                  key: 'referral_code',
-                 label: 'Mã giới thiệu của bạn',
+                 label: 'Your Referral Code',
                  value: 'ZAUR-PRO-10',
              });
 
              pass.backFields.push({
                  key: 'referral_offer',
-                 label: 'Ưu đãi bạn bè',
-                 value: 'Chia sẻ mã này để bạn và người đó đều nhận được $10 usdz khi họ nạp tài sản đầu tiên.',
+                 label: 'Friend Offer',
+                 value: 'Share this code so both you and your friend get $10 usdz on their first deposit.',
              });
 
              pass.backFields.push({
                  key: 'referral_earnings',
-                 label: 'Tổng thưởng đã nhận',
+                 label: 'Total Rewards Earned',
                  value: '$150.00 usdz',
              });
 
              // ---------------------------------------------------------
-             // 4. THÔNG SỐ BẢO MẬT PHẦN CỨNG (HARDWARE SPECS)
+             // 4. HARDWARE SPECS
              // ---------------------------------------------------------
              const hwId = userData.deviceId 
                 ? `DID-${userData.deviceId.substring(0, 4).toUpperCase()}-${userData.deviceId.substring(4, 8).toUpperCase()}-XXXX`
@@ -393,42 +391,42 @@ export class PassService {
 
              pass.backFields.push({
                  key: 'hw_id',
-                 label: 'ID Thiết bị (Hardware ID)',
-                 value: `${hwId} (Dấu vân tay vật lý)`,
+                 label: 'Device ID (Hardware ID)',
+                 value: `${hwId} (Physical Fingerprint)`,
              });
 
              pass.backFields.push({
                  key: 'secure_enclave',
-                 label: 'Trạng thái Chip Secure Enclave',
-                 value: '● Đã khóa phần cứng (Locked)',
+                 label: 'Secure Enclave Status',
+                 value: '● Hardware Locked',
              });
 
              pass.backFields.push({
                  key: 'security_delay',
-                 label: 'Cơ chế Trì hoãn (Security Delay)',
-                 value: userData.securityDelay ? `${userData.securityDelay} (Custom)` : '48 Giờ (Áp dụng cho mọi lệnh rút trên $2,000)',
+                 label: 'Security Delay Mechanism',
+                 value: userData.securityDelay ? `${userData.securityDelay} (Custom)` : '48 Hours (Applied to withdrawals over $2,000)',
              });
 
              pass.backFields.push({
                  key: 'vault_address',
-                 label: 'Địa chỉ Két sắt (Vault)',
+                 label: 'Vault Address',
                  value: userData.address,
                  // attributedValue: `<a href="https://etherscan.io/address/${userData.address}">${userData.address.substring(0, 6)}...${userData.address.slice(-4)}</a>`
              });
 
              // ---------------------------------------------------------
-             // 5. HỖ TRỢ & PHÁP LÝ
+             // 5. SUPPORT & LEGAL
              // ---------------------------------------------------------
              pass.backFields.push({
                  key: 'emergency_freeze',
-                 label: 'Khóa két khẩn cấp',
-                 value: 'Đóng băng ví ngay lập tức →',
-                 attributedValue: '<a href="https://zaur.at/freeze">Đóng băng ví ngay lập tức →</a>'
+                 label: 'Emergency Vault Freeze',
+                 value: 'Freeze Vault Immediately →',
+                 attributedValue: '<a href="https://zaur.at/freeze">Freeze Vault Immediately →</a>'
              });
              
              pass.backFields.push({
                  key: 'legal_terms',
-                 label: 'Điều khoản sử dụng',
+                 label: 'Terms of Service',
                  value: 'zaur.at/terms',
                  attributedValue: '<a href="https://zaur.at/terms">zaur.at/terms</a>'
              });
@@ -436,8 +434,8 @@ export class PassService {
              // Timestamp
              pass.backFields.push({
                  key: 'last_updated',
-                 label: 'CẬP NHẬT LẦN CUỐI',
-                 value: new Date().toLocaleString(),
+                 label: 'LAST UPDATED',
+                 value: new Date().toLocaleString('en-US'),
                  dateStyle: 'PKDateStyleMedium',
                  timeStyle: 'PKDateStyleShort',
              });
