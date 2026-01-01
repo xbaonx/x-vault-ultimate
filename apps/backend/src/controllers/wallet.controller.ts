@@ -251,9 +251,11 @@ export class WalletController {
             expectedChallenge: device.currentChallenge,
             expectedOrigin: config.security.origin,
             expectedRPID: config.security.rpId,
-            credentialPublicKey: device.credentialPublicKey,
-            credentialID: device.credentialID,
-            counter: device.counter,
+            authenticator: {
+                credentialPublicKey: device.credentialPublicKey,
+                credentialID: device.credentialID,
+                counter: device.counter,
+            },
           } as any);
       } catch (err) {
           console.error('Verification failed:', err);

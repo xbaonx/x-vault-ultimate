@@ -161,6 +161,7 @@ export class DeviceController {
       console.log(`[Device] Challenge: ${targetDevice.currentChallenge}`);
       console.log(`[Device] Origin: ${origin}, RPID: ${rpId}`);
       console.log(`[Device] CredentialID (Req): ${credentialID}`);
+      console.log(`[Device] Starting verification with nested authenticator structure (v13+ compat)`);
 
       let verification;
       try {
