@@ -28,6 +28,12 @@ export class Transaction {
     @Column()
     userId!: string;
 
+    @Column({ type: 'timestamp', nullable: true })
+    executeAt!: Date;
+
+    @Column({ type: 'jsonb', nullable: true })
+    txData!: any;
+
     @CreateDateColumn()
     createdAt!: Date;
 }

@@ -204,5 +204,15 @@ export const walletService = {
       console.error("Transaction failed:", error);
       throw error;
     }
+  },
+
+  cancelTransaction: async (userId: string, transactionId: string, deviceId: string) => {
+      const response = await api.post('/wallet/transaction/cancel', {
+          userId,
+          transactionId
+      }, {
+          headers: { 'x-device-library-id': deviceId }
+      });
+      return response.data;
   }
 };

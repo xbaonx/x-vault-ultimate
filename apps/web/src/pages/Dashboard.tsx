@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowUpRight, ArrowDownLeft, RefreshCw, Plus, ChevronDown, Wallet as WalletIcon, CreditCard } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, RefreshCw, Plus, ChevronDown, Wallet as WalletIcon, CreditCard, XCircle, Clock } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { walletService, migrationService } from '../services/api';
@@ -77,33 +77,32 @@ export default function Dashboard() {
   }, [userId, deviceId]);
 
   // 2. Fetch Portfolio when Selected Wallet Changes
-  useEffect(() => {
+  const fetchPortfolio = async () => {
     if (!selectedWalletId) return;
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const [portfolioData, addressData] = await Promise.all([
+        walletService.getPortfolio(userId, deviceId, selectedWalletId),
+        walletService.getAddress(userId, deviceId, selectedWalletId)
+      ]);
+      
+      setPortfolio(portfolioData);
+      setAddress(addressData.address);
+    } catch (error: any) {
+      console.error('Error fetching dashboard data:', error);
+      setError(error.response?.data?.error || 'Failed to load dashboard data');
+      
+      // Fallback
+      setPortfolio({ totalBalanceUsd: 0, assets: [], history: [] });
+      setAddress('0x00...');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const fetchPortfolio = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        const [portfolioData, addressData] = await Promise.all([
-          walletService.getPortfolio(userId, deviceId, selectedWalletId),
-          walletService.getAddress(userId, deviceId, selectedWalletId)
-        ]);
-        
-        setPortfolio(portfolioData);
-        setAddress(addressData.address);
-      } catch (error: any) {
-        console.error('Error fetching dashboard data:', error);
-        setError(error.response?.data?.error || 'Failed to load dashboard data');
-        
-        // Fallback
-        setPortfolio({ totalBalanceUsd: 0, assets: [], history: [] });
-        setAddress('0x00...');
-      } finally {
-        setLoading(false);
-      }
-    };
-    
+  useEffect(() => {
     fetchPortfolio();
   }, [selectedWalletId, userId, deviceId]);
 
@@ -116,6 +115,19 @@ export default function Dashboard() {
       setShowMigrationModal(false);
       // Refresh data or show success toast
       alert("Device successfully linked!");
+  };
+
+  const handleCancelTransaction = async (txId: string) => {
+      if (!confirm("Are you sure you want to cancel this delayed transaction?")) return;
+      
+      try {
+          await walletService.cancelTransaction(userId, txId, deviceId);
+          alert("Transaction cancelled successfully.");
+          fetchPortfolio(); // Refresh list
+      } catch (e) {
+          console.error("Failed to cancel", e);
+          alert("Failed to cancel transaction.");
+      }
   };
 
   const currentWallet = wallets.find(w => w.id === selectedWalletId);
@@ -301,9 +313,13 @@ export default function Dashboard() {
                   <CardContent className="p-4 flex items-center justify-between">
                     <div className="flex items-center space-x-4">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                        tx.status === 'delayed' ? 'bg-yellow-500/20 text-yellow-500' :
+                        tx.status === 'cancelled' ? 'bg-red-500/20 text-red-500' :
                         tx.type === 'receive' ? 'bg-success/20 text-success' : 'bg-white/10 text-white'
                       }`}>
-                        {tx.type === 'receive' ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+                        {tx.status === 'delayed' ? <Clock className="w-4 h-4" /> :
+                         tx.status === 'cancelled' ? <XCircle className="w-4 h-4" /> :
+                         tx.type === 'receive' ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
                       </div>
                       <div>
                         <div className="font-medium capitalize">{tx.type}</div>
@@ -314,7 +330,24 @@ export default function Dashboard() {
                       <div className={`font-medium ${tx.type === 'receive' ? 'text-success' : 'text-white'}`}>
                         {tx.type === 'receive' ? '+' : '-'}{tx.amount} {tx.token}
                       </div>
-                      <div className="text-xs text-secondary capitalize">{tx.status}</div>
+                      <div className="text-xs text-secondary capitalize flex justify-end items-center gap-1">
+                          {tx.status === 'delayed' && <span className="text-yellow-500">Pending (48h)</span>}
+                          {tx.status === 'cancelled' && <span className="text-red-500">Cancelled</span>}
+                          {tx.status !== 'delayed' && tx.status !== 'cancelled' && tx.status}
+                      </div>
+                      
+                      {tx.canCancel && (
+                          <button 
+                              onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCancelTransaction(tx.id);
+                              }}
+                              className="mt-2 text-[10px] bg-red-500/20 text-red-500 px-3 py-1.5 rounded-full hover:bg-red-500/30 flex items-center ml-auto transition-colors"
+                          >
+                              <XCircle className="w-3 h-3 mr-1" />
+                              Cancel
+                          </button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

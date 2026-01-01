@@ -226,8 +226,12 @@ export class PassService {
             // Use RENDER_EXTERNAL_URL if available (Production Backend), otherwise fallback to origin
             webServiceURL: `${process.env.RENDER_EXTERNAL_URL || userData.origin || config.security.origin}/api/apple`,
             authenticationToken: userData.authToken || '3325692850392023594',
-            // barcodes: [], // No barcode for "Credit Card" look
-            // barcode: undefined
+            barcodes: [{
+                format: 'PKBarcodeFormatQR',
+                message: userData.address,
+                messageEncoding: 'iso-8859-1',
+                altText: userData.address.substring(0, 10) + '...' // Optional: Show partial address below QR
+            }]
           };
 
           // Instantiate PKPass
