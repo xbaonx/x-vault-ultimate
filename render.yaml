@@ -1,7 +1,7 @@
 services:
   # Backend API Service
   - type: web
-    name: x-vault-backend
+    name: zaur-backend
     env: node
     plan: free
     region: oregon
@@ -23,16 +23,16 @@ services:
       - key: DB_SSL_REJECT_UNAUTHORIZED
         sync: false
       - key: RP_ID
-        value: x-vault-web.onrender.com
+        value: zaur.at
       - key: ORIGIN
-        value: https://x-vault-web.onrender.com
+        value: https://zaur.at
       - key: RP_NAME
         value: Zaur Wallet
     autoDeploy: true
 
   # Frontend Web App (Static Site)
   - type: web
-    name: x-vault-web
+    name: zaur-web
     env: static
     buildCommand: cd apps/web && npm install && npm run build
     staticPublishPath: apps/web/dist
@@ -41,7 +41,7 @@ services:
       - key: VITE_API_URL
         fromService:
           type: web
-          name: x-vault-backend
+          name: zaur-backend
           property: host
     routes:
       - type: rewrite
@@ -50,7 +50,7 @@ services:
 
   # Admin Dashboard (Static Site)
   - type: web
-    name: x-vault-admin
+    name: zaur-admin
     env: static
     buildCommand: cd apps/admin && npm install && npm run build
     staticPublishPath: apps/admin/dist
@@ -59,7 +59,7 @@ services:
       - key: VITE_API_URL
         fromService:
           type: web
-          name: x-vault-backend
+          name: zaur-backend
           property: host
     routes:
       - type: rewrite
