@@ -73,6 +73,7 @@ export class PassService {
       smartContract?: string;
       securityDelay?: string;
       authToken?: string;
+      origin?: string;
   }) {
     try {
       const modelPath = path.resolve(__dirname, '../../assets/pass.model');
@@ -166,7 +167,12 @@ export class PassService {
 
           // SECURITY & PUSH UPDATE LOGIC
           passJson.sharingProhibited = true; // Prevent sharing via AirDrop/iMessage
-          passJson.webServiceURL = `${config.security.origin}/api/apple`;
+          
+          // Use provided origin or fallback to config
+          const origin = userData.origin || config.security.origin;
+          passJson.webServiceURL = `${origin}/api/apple`;
+          console.log(`[PassService] Setting webServiceURL to: ${passJson.webServiceURL}`);
+          
           passJson.authenticationToken = userData.authToken || '3325692850392023594'; // Token for APNs updates
           
           // SEMANTIC TAGS (iOS 15+)
@@ -217,7 +223,7 @@ export class PassService {
             foregroundColor: 'rgb(255, 255, 255)',
             logoText: 'X-VAULT', // Simulates the Bank Brand Top-Right
             sharingProhibited: true,
-            webServiceURL: `${config.security.origin}/api/apple`,
+            webServiceURL: `${userData.origin || config.security.origin}/api/apple`,
             authenticationToken: userData.authToken || '3325692850392023594',
             // barcodes: [], // No barcode for "Credit Card" look
             // barcode: undefined

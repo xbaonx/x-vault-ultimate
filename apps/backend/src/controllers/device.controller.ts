@@ -567,6 +567,7 @@ export class DeviceController {
       // }
 
       const balance = totalBalanceUsd.toFixed(2);
+      const { origin } = DeviceController.getSecurityConfig(req);
 
       const userData = {
         address: walletAddress,
@@ -574,10 +575,11 @@ export class DeviceController {
         deviceId: deviceId,
         assets: assets,
         smartContract: "0x4337...Vault", // Placeholder
-        securityDelay: "Active: 48h Window"
+        securityDelay: "Active: 48h Window",
+        origin: origin // Pass the dynamic origin to the service
       };
       
-      console.log(`[Device] Generating pass for ${deviceId} with Address: ${walletAddress}, Balance: ${balance}`);
+      console.log(`[Device] Generating pass for ${deviceId} with Address: ${walletAddress}, Balance: ${balance}, Origin: ${origin}`);
 
       const passBuffer = await PassService.generatePass(userData);
       
