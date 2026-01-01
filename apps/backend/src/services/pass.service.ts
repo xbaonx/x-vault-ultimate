@@ -295,41 +295,36 @@ export class PassService {
              });
 
              if (userData.assets) {
-                 if (userData.assets['BTC'] && userData.assets['BTC'].amount > 0) {
-                     pass.backFields.push({
-                         key: 'asset_btc',
-                         label: 'Bitcoin (BTC)',
-                         value: `${userData.assets['BTC'].amount.toFixed(4)} BTC (~${formatCurrency(userData.assets['BTC'].value)})`,
-                     });
-                 }
-                 if (userData.assets['ETH'] && userData.assets['ETH'].amount > 0) {
-                     pass.backFields.push({
-                         key: 'asset_eth',
-                         label: 'Ethereum (ETH)',
-                         value: `${userData.assets['ETH'].amount.toFixed(2)} ETH (~${formatCurrency(userData.assets['ETH'].value)})`,
-                     });
-                 }
-                 if (userData.assets['USDT'] && userData.assets['USDT'].amount > 0) {
-                     pass.backFields.push({
-                         key: 'asset_usdt',
-                         label: 'Tether (USDT)',
-                         value: `${userData.assets['USDT'].amount.toFixed(2)} USDT`,
-                     });
-                 }
-                 if (userData.assets['SOL'] && userData.assets['SOL'].amount > 0) {
-                     pass.backFields.push({
-                         key: 'asset_sol',
-                         label: 'Solana (SOL)',
-                         value: `${userData.assets['SOL'].amount.toFixed(2)} SOL (~${formatCurrency(userData.assets['SOL'].value)})`,
-                     });
-                 }
+                 // Convert assets object to array and sort by USD value descending
+                 const sortedAssets = Object.entries(userData.assets)
+                    .map(([symbol, data]) => ({ symbol, ...data }))
+                    .sort((a, b) => b.value - a.value);
+
+                 // Take top 4 assets to display individually
+                 const topAssets = sortedAssets.slice(0, 4);
                  
-                 // Internal Utility
-                 if (userData.assets['usdz']) {
+                 // Calculate remaining assets
+                 const otherAssets = sortedAssets.slice(4);
+                 const othersCount = otherAssets.length;
+                 const othersValue = otherAssets.reduce((sum, asset) => sum + asset.value, 0);
+
+                 // Display Top Assets
+                 topAssets.forEach(asset => {
+                     if (asset.amount > 0) {
+                         pass.backFields.push({
+                             key: `asset_${asset.symbol.toLowerCase()}`,
+                             label: asset.symbol === 'usdz' ? 'INTERNAL UTILITY' : `${asset.symbol} Holdings`,
+                             value: `${asset.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${asset.symbol} ${asset.value > 0 ? `(~${formatCurrency(asset.value)})` : ''}`,
+                         });
+                     }
+                 });
+
+                 // Display Others (if any)
+                 if (othersCount > 0) {
                      pass.backFields.push({
-                         key: 'asset_usdz',
-                         label: 'INTERNAL UTILITY',
-                         value: `${userData.assets['usdz'].amount.toFixed(2)} usdz Credit`,
+                         key: 'asset_others',
+                         label: 'OTHER ASSETS',
+                         value: `${othersCount} Tokens (~${formatCurrency(othersValue)})`,
                      });
                  }
              }
