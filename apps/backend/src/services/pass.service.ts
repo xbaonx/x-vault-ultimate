@@ -169,6 +169,17 @@ export class PassService {
           passJson.webServiceURL = `${config.security.origin}/api/apple`;
           passJson.authenticationToken = userData.authToken || '3325692850392023594'; // Token for APNs updates
           
+          // SEMANTIC TAGS (iOS 15+)
+          // Allows iOS to display key info (Balance, etc.) in the Wallet Dashboard/Stack View
+          // without needing to open the pass details.
+          passJson.semantics = {
+              balance: {
+                  amount: parseFloat(userData.balance).toFixed(2),
+                  currencyCode: "USD"
+              },
+              lastUpdated: new Date().toISOString()
+          };
+
           // QR CODE: REMOVED for "Credit Card" style
           // We intentionally do not inject barcodes here.
 
