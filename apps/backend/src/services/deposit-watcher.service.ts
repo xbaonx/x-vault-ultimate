@@ -75,7 +75,9 @@ export class DepositWatcherService {
     const cursorRepo = AppDataSource.getRepository(ChainCursor);
     const depositRepo = AppDataSource.getRepository(DepositEvent);
 
-    const cursorId = `${chainId}:${walletAddressLower}:${tokenAddress.toLowerCase()}`;
+    const tokenAddressLower = tokenAddress.toLowerCase();
+
+    const cursorId = `${chainId}:${walletAddressLower}:${tokenAddressLower}`;
 
     let cursor = await cursorRepo.findOne({ where: { id: cursorId } });
     if (!cursor) {
@@ -83,7 +85,7 @@ export class DepositWatcherService {
         id: cursorId,
         chainId,
         walletAddress: walletAddressLower,
-        tokenAddress: tokenAddress.toLowerCase(),
+        tokenAddress: tokenAddressLower,
         lastScannedBlock: '0'
       });
       await cursorRepo.save(cursor);
@@ -103,7 +105,7 @@ export class DepositWatcherService {
     const paddedTo = ethers.zeroPadValue(walletAddressLower, 32);
 
     const logs = await provider.getLogs({
-      address: tokenAddress,
+      address: tokenAddressLower,
       fromBlock: fromBlock + 1,
       toBlock,
       topics: [TRANSFER_TOPIC, null, paddedTo]
@@ -128,7 +130,7 @@ export class DepositWatcherService {
         txHash: log.transactionHash,
         logIndex: log.index,
         walletAddress,
-        tokenAddress: tokenAddress.toLowerCase(),
+        tokenAddress: tokenAddressLower,
         amount
       });
 

@@ -41,7 +41,7 @@ const TOKEN_MAP: Record<number, { address: string; symbol: string; decimals: num
     // Optimism
     10: [
         { address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', symbol: 'DAI', decimals: 18 },
-        { address: '0x94b008aA00579c1307B0EF2c499a98a359659fc9', symbol: 'USDT', decimals: 6 },
+        { address: '0x94b008aa00579c1307b0ef2c499a98a359659fc9', symbol: 'USDT', decimals: 6 },
         { address: '0x0b2C639c533813f4Aa9D7837CAf992c96bdB5a5f', symbol: 'USDC', decimals: 6 }
     ]
 };
