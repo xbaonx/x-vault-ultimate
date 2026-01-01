@@ -181,6 +181,15 @@ export class PassService {
               membershipNumber: userData.address
           };
 
+          // APP INTEGRATION (The "Button" user requested)
+          // This links the pass to an App Store app (e.g., Zaur App).
+          // It creates the "Open [App]" or app icon tile below the card.
+          // Note: Real App ID required. Using placeholder.
+          passJson.associatedStoreIdentifiers = [1565656565]; // Replace with real App Store ID
+          passJson.appLaunchURL = "xvault://card-details";    // Deep link to open app directly to card info
+
+          // QR CODE: REMOVED for "Credit Card" style
+
           // QR CODE: REMOVED for "Credit Card" style
           // We intentionally do not inject barcodes here.
 
