@@ -348,6 +348,9 @@ export class PassService {
           }
 
           // SEMANTICS
+          // NOTE: Temporarily disabled due to suspected Safari rejection issues.
+          // User reported "Error from when code Semantic Tags".
+          /*
           passJson.semantics = {
               primaryAccountNumber: userData.address,
               totalValue: {
@@ -362,6 +365,8 @@ export class PassService {
           };
           
           console.log(`[PassService] Semantics: ${JSON.stringify(passJson.semantics ? 'Present' : 'Missing')}`);
+          */
+          console.log("[PassService] Semantics: Disabled (Commented Out)");
           console.log("[PassService] ----------------------------");
           
           // No Barcode for Store Card Style
