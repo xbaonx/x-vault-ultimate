@@ -288,6 +288,14 @@ export class PassService {
           // --- BACK OF CARD (Details View) ---
           
           if (pass.backFields) {
+             // 0. Full Vault Number (Alternative to "123" button for standard passes)
+             // Placed at the top for easy copying.
+             pass.backFields.push({
+                 key: 'full_account_number',
+                 label: 'VAULT NUMBER (ADDRESS)',
+                 value: userData.address,
+             });
+
              // 1. Asset Breakdown
              pass.backFields.push({
                  key: 'assets_header',
