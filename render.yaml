@@ -12,17 +12,19 @@ services:
       - key: PORT
         value: 10000
       - key: RPC_URL
-        value: https://mainnet.base.org
+        sync: false
       - key: BASE_RPC_URL
-        value: https://mainnet.base.org
+        sync: false
       - key: ETH_RPC_URL
-        value: https://ethereum-rpc.publicnode.com
+        sync: false
       - key: POLYGON_RPC_URL
-        value: https://polygon-bor.publicnode.com
+        sync: false
       - key: ARBITRUM_RPC_URL
-        value: https://arbitrum-one-rpc.publicnode.com
+        sync: false
       - key: OPTIMISM_RPC_URL
-        value: https://optimism-rpc.publicnode.com
+        sync: false
+      - key: ALCHEMY_API_KEY
+        sync: false
       - key: ADMIN_KEY
         sync: false
       - key: DATABASE_URL

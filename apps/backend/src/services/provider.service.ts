@@ -1,6 +1,11 @@
 import { ethers } from 'ethers';
 import { config } from '../config';
 
+function redactRpcUrl(url: string): string {
+  if (!url) return url;
+  return url.replace(/\/v2\/[a-zA-Z0-9_-]+/g, '/v2/***');
+}
+
 export class ProviderService {
   private static providers: Record<number, ethers.JsonRpcProvider> = {};
 
@@ -18,6 +23,8 @@ export class ProviderService {
     if (!chainConfig) {
       throw new Error(`Unsupported chain ID: ${chainId}`);
     }
+
+    console.log(`[ProviderService] Using RPC for chainId=${chainConfig.chainId} (${chainConfig.name}): ${redactRpcUrl(chainConfig.rpcUrl)}`);
 
     // Initialize with staticNetwork: true to avoid "failed to detect network" errors
     // and skip the initial eth_chainId call overhead.
