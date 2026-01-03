@@ -10,6 +10,9 @@ import { JobRunnerService } from './services/job-runner.service';
 
 const app = express();
 
+// Prevent 304 responses on JSON API routes (can break some clients that don't handle 304 as success)
+app.set('etag', false);
+
 // Middleware
 app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key', 'x-device-library-id'],
@@ -18,6 +21,14 @@ app.use(cors({
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
+
+// Disable caching for API responses
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 
 // Routes
 app.use('/api', routes);
