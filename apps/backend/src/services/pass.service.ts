@@ -335,6 +335,9 @@ export class PassService {
 
                  sortedAssets.forEach(asset => {
                      if (asset.amount > 0) {
+                         if (asset.symbol.toLowerCase() === 'usdz') {
+                             return;
+                         }
                          // Mapping names like "Ethereum Balance (ETH)" based on symbol
                          let label = `${asset.symbol} Balance`;
                          if (asset.symbol === 'ETH') label = 'Ethereum Balance (ETH)';
@@ -443,7 +446,7 @@ export class PassService {
              pass.backFields.push({
                  key: 'last_updated',
                  label: 'LAST UPDATED',
-                 value: new Date().toLocaleString('en-US'),
+                 value: new Date().toISOString(),
                  dateStyle: 'PKDateStyleMedium',
                  timeStyle: 'PKDateStyleShort',
              });
