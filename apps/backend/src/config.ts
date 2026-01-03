@@ -6,10 +6,28 @@ dotenv.config();
  function getEnvByChainId(baseKey: string, chainId: number): string | undefined {
    const chainKey = `${baseKey}_${chainId}`;
    const v1 = process.env[chainKey];
-   if (v1 && v1.length > 0) return v1;
+   if (v1 && v1.length > 0) return v1.trim();
    const v0 = process.env[baseKey];
-   if (v0 && v0.length > 0) return v0;
+   if (v0 && v0.length > 0) return v0.trim();
    return undefined;
+ }
+
+ function getAlchemyBundlerUrl(chainId: number): string | undefined {
+   const apiKey = (process.env.ALCHEMY_API_KEY || '').trim();
+   if (!apiKey) return undefined;
+
+   // Alchemy bundler methods (eth_sendUserOperation, etc.) are exposed via the chain RPC endpoints.
+   const hostByChainId: Record<number, string> = {
+     1: 'eth-mainnet.g.alchemy.com',
+     10: 'opt-mainnet.g.alchemy.com',
+     137: 'polygon-mainnet.g.alchemy.com',
+     42161: 'arb-mainnet.g.alchemy.com',
+     8453: 'base-mainnet.g.alchemy.com',
+   };
+
+   const host = hostByChainId[chainId];
+   if (!host) return undefined;
+   return `https://${host}/v2/${apiKey}`;
  }
 
 export const config = {
@@ -34,7 +52,7 @@ export const config = {
     },
     factoryAddress: process.env.FACTORY_ADDRESS || '',
     aa: {
-      bundlerUrl: (chainId: number) => getEnvByChainId('BUNDLER_URL', chainId) || '',
+      bundlerUrl: (chainId: number) => getEnvByChainId('BUNDLER_URL', chainId) || getAlchemyBundlerUrl(chainId) || '',
       entryPointAddress: (chainId: number) => getEnvByChainId('ENTRY_POINT_ADDRESS', chainId) || DEFAULT_ENTRY_POINT_ADDRESS,
       factoryAddress: (chainId: number) => getEnvByChainId('FACTORY_ADDRESS', chainId) || '',
       paymasterAddress: (chainId: number) => getEnvByChainId('PAYMASTER_ADDRESS', chainId) || '',
