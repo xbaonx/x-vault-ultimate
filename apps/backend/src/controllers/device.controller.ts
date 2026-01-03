@@ -15,6 +15,7 @@ import {
 import { config } from '../config';
 import { ethers } from 'ethers';
 import { ProviderService } from '../services/provider.service';
+import { deriveAaAddressFromCredentialPublicKey } from '../utils/aa-address';
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -229,16 +230,17 @@ export class DeviceController {
       const deviceRepo = AppDataSource.getRepository(Device);
       await deviceRepo.save(targetDevice);
 
-      // 5. Success Response
-      const walletRepo = AppDataSource.getRepository(Wallet);
-      const mainWallet = await walletRepo.findOne({ 
-        where: { user: { id: userId }, isActive: true } 
+      const chainId = Number(req.body.chainId || config.blockchain.chainId);
+      const aaAddress = await deriveAaAddressFromCredentialPublicKey({
+        credentialPublicKey: Buffer.from(targetDevice.credentialPublicKey),
+        chainId,
+        salt: 0,
       });
 
       res.status(200).json({
         verified: true,
         deviceLibraryId: targetDevice.deviceLibraryId,
-        walletAddress: mainWallet?.address,
+        walletAddress: aaAddress,
       });
     } catch (error) {
       console.error('Error verifying login:', error);
@@ -364,30 +366,12 @@ export class DeviceController {
         
         await deviceRepo.save(device);
 
-        // 2. Fetch User's Wallet Address
-        const walletRepo = AppDataSource.getRepository(Wallet);
-        let mainWallet = await walletRepo.findOne({ 
-            where: { user: { id: device.user.id }, isActive: true } 
+        const chainId = Number(req.body.chainId || config.blockchain.chainId);
+        const aaAddress = await deriveAaAddressFromCredentialPublicKey({
+          credentialPublicKey: Buffer.from(device.credentialPublicKey),
+          chainId,
+          salt: 0,
         });
-        
-        // Safety net: If no wallet exists (migration case), create one deterministically
-        if (!mainWallet) {
-             console.log(`[Device] No wallet found for User ${device.user.id} during verification. Creating default...`);
-             
-             const randomWallet = ethers.Wallet.createRandom();
-             
-             mainWallet = walletRepo.create({
-                 user: device.user,
-                 name: 'Main Wallet',
-                 salt: 'random',
-                 address: randomWallet.address,
-                 privateKey: randomWallet.privateKey,
-                 isActive: true
-             });
-             await walletRepo.save(mainWallet);
-        }
-        
-        const walletAddress = mainWallet.address;
 
         // 3. Create Session for Pass Generation
         const sessionRepo = AppDataSource.getRepository(PollingSession);
@@ -406,7 +390,7 @@ export class DeviceController {
             verified: true, 
             sessionId,
             deviceLibraryId: device.deviceLibraryId,
-            walletAddress: walletAddress 
+            walletAddress: aaAddress 
         });
       } else {
         res.status(400).json({ verified: false, error: 'Verification failed' });
@@ -525,9 +509,17 @@ export class DeviceController {
          return;
       }
 
-      // Find Main Wallet
-      const mainWallet = device.user.wallets?.find(w => w.isActive) || device.user.wallets?.[0];
-      const walletAddress = mainWallet?.address || '0x0000000000000000000000000000000000000000';
+      if (!device.credentialPublicKey) {
+        res.status(400).json({ error: 'Device has no passkey registered' });
+        return;
+      }
+
+      const baseSerialChainId = Number(config.blockchain.chainId);
+      const serialAddress = await deriveAaAddressFromCredentialPublicKey({
+        credentialPublicKey: Buffer.from(device.credentialPublicKey),
+        chainId: baseSerialChainId,
+        salt: 0,
+      });
 
       // Fetch Real Balance for Pass (Aggregated across chains)
       let totalBalanceUsd = 0;
@@ -539,9 +531,10 @@ export class DeviceController {
       assets['BTC'] = { amount: 0, value: 0 }; 
       assets['USDT'] = { amount: 0, value: 0 };
       assets['SOL'] = { amount: 0, value: 0 };
-      assets['usdz'] = { amount: 25.00, value: 25.00 }; // Internal Utility Credit
+      const usdzBalance = Math.max(0, device.user.usdzBalance || 0);
+      assets['usdz'] = { amount: Number(usdzBalance.toFixed(2)), value: Number(usdzBalance.toFixed(2)) }; // Internal Utility Credit
 
-      if (walletAddress && walletAddress.startsWith('0x')) {
+      if (serialAddress && serialAddress.startsWith('0x')) {
           // 1. Fetch Prices
           let prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
           try {
@@ -572,12 +565,18 @@ export class DeviceController {
 
           await Promise.all(chains.map(async (chain) => {
               try {
+                  const chainAddress = await deriveAaAddressFromCredentialPublicKey({
+                    credentialPublicKey: Buffer.from(device.credentialPublicKey),
+                    chainId: chain.chainId,
+                    salt: 0,
+                  });
+
                   // Use singleton provider
                   const provider = ProviderService.getProvider(chain.chainId);
                   
                   // 1. Native Balance
                   const balanceWei = await Promise.race([
-                      provider.getBalance(walletAddress),
+                      provider.getBalance(chainAddress),
                       new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
                   ]);
                   const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
@@ -597,7 +596,7 @@ export class DeviceController {
                       await Promise.all(tokens.map(async (token) => {
                           try {
                               const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
-                              const tokenBalanceWei: bigint = await contract.balanceOf(walletAddress);
+                              const tokenBalanceWei: bigint = await contract.balanceOf(chainAddress);
                               
                               if (tokenBalanceWei > 0n) {
                                   const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
@@ -640,7 +639,7 @@ export class DeviceController {
       const serverUrl = `${protocol}://${host}`;
 
       const userData = {
-        address: walletAddress,
+        address: serialAddress,
         balance: balance,
         deviceId: deviceId,
         assets: assets,
@@ -649,7 +648,7 @@ export class DeviceController {
         origin: serverUrl // Pass the backend URL as origin
       };
       
-      console.log(`[Device] Generating pass for ${deviceId} with Address: ${walletAddress}, Balance: ${balance}, ServerUrl: ${serverUrl}`);
+      console.log(`[Device] Generating pass for ${deviceId} with Address: ${serialAddress}, Balance: ${balance}, ServerUrl: ${serverUrl}`);
 
       const passBuffer = await PassService.generatePass(userData);
       

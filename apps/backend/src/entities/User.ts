@@ -31,8 +31,11 @@ export class User {
     largeTransactionThresholdUsd!: number;
 
     // Economic Model (USDZ)
-    @Column({ type: 'float', default: 0.0 })
+    @Column({ type: 'float', default: 20.0 })
     usdzBalance!: number;
+
+    @Column({ type: 'float', default: 0.0 })
+    platformFeeDebtUsd!: number;
 
     @Column({ nullable: true, select: false })
     spendingPinHash!: string;

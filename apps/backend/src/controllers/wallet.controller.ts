@@ -1,14 +1,15 @@
 import { Request, Response } from 'express';
-import { ethers } from 'ethers';
 import { v4 as uuidv4 } from 'uuid';
-import { config } from '../config';
+import { ethers } from 'ethers';
 import { AppDataSource } from '../data-source';
+import { config } from '../config';
+import { ProviderService } from '../services/provider.service';
+import { deriveAaAddressFromCredentialPublicKey } from '../utils/aa-address';
 import { User } from '../entities/User';
 import { Wallet } from '../entities/Wallet';
 import { Device } from '../entities/Device';
 import { Transaction } from '../entities/Transaction';
 import { generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
-import { ProviderService } from '../services/provider.service';
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -53,10 +54,28 @@ export class WalletController {
     try {
       // Authenticated by Gatekeeper
       const user = (req as any).user as User;
+      const device = (req as any).device as Device;
       
       if (!user) {
         res.status(401).json({ error: 'Unauthorized' });
         return;
+      }
+
+      const chainId = Number(req.query.chainId || config.blockchain.chainId);
+
+      if (device?.credentialPublicKey) {
+        try {
+          const aaAddress = await deriveAaAddressFromCredentialPublicKey({
+            credentialPublicKey: Buffer.from(device.credentialPublicKey),
+            chainId,
+            salt: 0,
+          });
+
+          res.status(200).json({ address: aaAddress, walletId: null, chainId });
+          return;
+        } catch {
+          // fall back to legacy wallet address if derivation fails
+        }
       }
       
       const walletRepo = AppDataSource.getRepository(Wallet);
@@ -72,7 +91,7 @@ export class WalletController {
 
       const address = wallet?.address || '0x0000000000000000000000000000000000000000';
 
-      res.status(200).json({ address, walletId: wallet?.id });
+      res.status(200).json({ address, walletId: wallet?.id, chainId });
     } catch (error) {
       console.error('Error in getAddress:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -128,6 +147,7 @@ export class WalletController {
   static async getPortfolio(req: Request, res: Response) {
     try {
       const user = (req as any).user as User;
+      const device = (req as any).device as Device;
 
       if (!user) {
         res.status(401).json({ error: 'Unauthorized' });
@@ -146,8 +166,8 @@ export class WalletController {
 
       const address = wallet?.address;
       
-      // If address is pending or invalid, return empty portfolio
-      if (!address || !address.startsWith('0x')) {
+      // If legacy address is missing and we also can't derive AA, return empty portfolio
+      if ((!address || !address.startsWith('0x')) && !device?.credentialPublicKey) {
          res.status(200).json({
             totalBalanceUsd: 0.00,
             assets: [],
@@ -187,6 +207,18 @@ export class WalletController {
       // Scan all chains in parallel
       await Promise.all(chains.map(async (chain) => {
           try {
+              const scanAddress = device?.credentialPublicKey
+                ? await deriveAaAddressFromCredentialPublicKey({
+                    credentialPublicKey: Buffer.from(device.credentialPublicKey),
+                    chainId: chain.chainId,
+                    salt: 0,
+                  })
+                : address;
+
+              if (!scanAddress || !scanAddress.startsWith('0x')) {
+                return;
+              }
+
               // Use singleton provider
               const provider = ProviderService.getProvider(chain.chainId);
               
@@ -194,7 +226,7 @@ export class WalletController {
               // Set a short timeout for RPC calls to avoid hanging
               try {
                   const balanceWei = await Promise.race([
-                      provider.getBalance(address),
+                      provider.getBalance(scanAddress),
                       new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
                   ]);
                   
@@ -227,7 +259,7 @@ export class WalletController {
                           const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
                           // Add timeout for token calls too
                           const tokenBalanceWei = await Promise.race([
-                              contract.balanceOf(address),
+                              contract.balanceOf(scanAddress),
                               new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('Token RPC Timeout')), 3000))
                           ]) as bigint;
                           
@@ -270,7 +302,7 @@ export class WalletController {
           take: 20
       });
 
-      const history = dbTransactions.map(tx => ({
+      const history = dbTransactions.map((tx: Transaction) => ({
           id: tx.id,
           type: 'send', // Mostly sends for now
           amount: parseFloat(tx.value || '0').toString(),

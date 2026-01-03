@@ -198,7 +198,7 @@ export const walletService = {
         headers: { 'x-device-library-id': deviceId }
       });
 
-      return response.data;
+      return { ...response.data, fee: options.fee };
     } catch (error) {
       console.error("Transaction failed:", error);
       throw error;

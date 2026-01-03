@@ -3,7 +3,6 @@ services:
   - type: web
     name: x-vault-backend
     env: node
-    plan: free
     region: oregon
     buildCommand: cd apps/backend && npm install && npm run build
     startCommand: cd apps/backend && npm start
@@ -40,6 +39,66 @@ services:
         value: https://zaur.at
       - key: RP_NAME
         value: Zaur Wallet
+      - key: ENTRY_POINT_ADDRESS_8453
+        value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
+      - key: ENTRY_POINT_ADDRESS_1
+        value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
+      - key: ENTRY_POINT_ADDRESS_137
+        value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
+      - key: ENTRY_POINT_ADDRESS_42161
+        value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
+      - key: ENTRY_POINT_ADDRESS_10
+        value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
+      - key: FACTORY_ADDRESS_8453
+        value: 0x3225274a8bD80d878F124055767203e4B062B6f7
+      - key: FACTORY_ADDRESS_1
+        value: 0x46bE9F47BdAD5cdA33808FC24F7FC303f94e33Ba
+      - key: FACTORY_ADDRESS_137
+        value: 0x3225274a8bD80d878F124055767203e4B062B6f7
+      - key: FACTORY_ADDRESS_42161
+        value: 0x3225274a8bD80d878F124055767203e4B062B6f7
+      - key: FACTORY_ADDRESS_10
+        value: 0x3225274a8bD80d878F124055767203e4B062B6f7
+      - key: BUNDLER_URL_8453
+        sync: false
+      - key: BUNDLER_URL_1
+        sync: false
+      - key: BUNDLER_URL_137
+        sync: false
+      - key: BUNDLER_URL_42161
+        sync: false
+      - key: BUNDLER_URL_10
+        sync: false
+      - key: PAYMASTER_ADDRESS_8453
+        value: 0x407AC220c0B82AD76654647d78224d5EFA7606e4
+      - key: PAYMASTER_ADDRESS_1
+        value: 0x3a286fE264d3769e64c3146EF70ae6d656E23bd7
+      - key: PAYMASTER_ADDRESS_137
+        value: 0x407AC220c0B82AD76654647d78224d5EFA7606e4
+      - key: PAYMASTER_ADDRESS_42161
+        value: 0x407AC220c0B82AD76654647d78224d5EFA7606e4
+      - key: PAYMASTER_ADDRESS_10
+        value: 0x407AC220c0B82AD76654647d78224d5EFA7606e4
+      - key: PAYMASTER_SIGNING_KEY_8453
+        sync: false
+      - key: PAYMASTER_SIGNING_KEY_1
+        sync: false
+      - key: PAYMASTER_SIGNING_KEY_137
+        sync: false
+      - key: PAYMASTER_SIGNING_KEY_42161
+        sync: false
+      - key: PAYMASTER_SIGNING_KEY_10
+        sync: false
+      - key: TREASURY_ADDRESS_8453
+        sync: false
+      - key: TREASURY_ADDRESS_1
+        sync: false
+      - key: TREASURY_ADDRESS_137
+        sync: false
+      - key: TREASURY_ADDRESS_42161
+        sync: false
+      - key: TREASURY_ADDRESS_10
+        sync: false
     autoDeploy: true
 
   # Frontend Web App (Static Site)

@@ -7,6 +7,7 @@ import { PassService } from "../services/pass.service";
 import { ethers } from "ethers";
 import { config } from "../config";
 import { ProviderService } from "../services/provider.service";
+import { deriveAaAddressFromCredentialPublicKey } from "../utils/aa-address";
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -168,20 +169,39 @@ export class ApplePassController {
               return res.status(401).json({ error: "Unauthorized" });
           }
 
-          // serialNumber is the wallet address in our case
-          const walletAddress = serialNumber;
-          
-          // 1. Fetch User Data based on Wallet Address
-          const userRepo = AppDataSource.getRepository(User);
-          const users = await userRepo.find({ relations: ['wallets', 'devices'] });
-          const user = users.find(u => u.wallets?.some(w => w.address.toLowerCase() === walletAddress.toLowerCase()));
+          // serialNumber is the AA address (Base chain) in our model
+          const serialAddress = serialNumber;
 
-          if (!user) {
-              console.warn(`[ApplePass] No user found for wallet: ${walletAddress}`);
-              return res.sendStatus(401);
+          const deviceRepo = AppDataSource.getRepository(Device);
+          const devices = await deviceRepo.find({ where: { isActive: true }, relations: ['user', 'user.devices'] });
+
+          const baseSerialChainId = Number(config.blockchain.chainId);
+
+          let matchedDevice: Device | null = null;
+          for (const d of devices) {
+            if (!d.credentialPublicKey) continue;
+            try {
+              const derived = await deriveAaAddressFromCredentialPublicKey({
+                credentialPublicKey: Buffer.from(d.credentialPublicKey),
+                chainId: baseSerialChainId,
+                salt: 0,
+              });
+              if (String(derived).toLowerCase() === String(serialAddress).toLowerCase()) {
+                matchedDevice = d;
+                break;
+              }
+            } catch {
+              // ignore devices that can't derive address
+            }
           }
 
-          console.log(`[ApplePass] Found user ${user.id} for wallet ${walletAddress}`);
+          if (!matchedDevice || !matchedDevice.user) {
+            console.warn(`[ApplePass] No device/user found for serial: ${serialAddress}`);
+            return res.sendStatus(401);
+          }
+
+          const user = matchedDevice.user;
+          console.log(`[ApplePass] Found user ${user.id} for serial ${serialAddress}`);
 
           // 2. Aggregate Assets
           let totalBalanceUsd = 0;
@@ -191,7 +211,8 @@ export class ApplePassController {
           assets['BTC'] = { amount: 0, value: 0 }; 
           assets['USDT'] = { amount: 0, value: 0 };
           assets['SOL'] = { amount: 0, value: 0 };
-          assets['usdz'] = { amount: 25.00, value: 25.00 };
+          const usdzBalance = Math.max(0, user.usdzBalance || 0);
+          assets['usdz'] = { amount: Number(usdzBalance.toFixed(2)), value: Number(usdzBalance.toFixed(2)) };
 
           // 1. Fetch Prices
           let prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
@@ -223,12 +244,18 @@ export class ApplePassController {
           // Scan chains for this wallet address
           await Promise.all(chains.map(async (chain) => {
               try {
+                  const chainAddress = await deriveAaAddressFromCredentialPublicKey({
+                    credentialPublicKey: Buffer.from(matchedDevice!.credentialPublicKey),
+                    chainId: chain.chainId,
+                    salt: 0,
+                  });
+
                   // Use singleton provider
                   const provider = ProviderService.getProvider(chain.chainId);
                   
                   // 1. Native Balance
                   const balanceWei = await Promise.race([
-                      provider.getBalance(walletAddress),
+                      provider.getBalance(chainAddress),
                       new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
                   ]);
                   const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
@@ -248,7 +275,7 @@ export class ApplePassController {
                       await Promise.all(tokens.map(async (token) => {
                           try {
                               const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
-                              const tokenBalanceWei: bigint = await contract.balanceOf(walletAddress);
+                              const tokenBalanceWei: bigint = await contract.balanceOf(chainAddress);
                               
                               if (tokenBalanceWei > 0n) {
                                   const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
@@ -280,7 +307,7 @@ export class ApplePassController {
            // If balance is 0, it stays 0.
 
           // 3. Generate Pass
-          const deviceId = user.devices?.find(d => d.isActive)?.deviceLibraryId || "Unknown";
+          const deviceId = matchedDevice.deviceLibraryId || "Unknown";
 
           // FIX: Use HOST header for webServiceURL to ensure it points to the BACKEND
           const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol;
@@ -288,7 +315,7 @@ export class ApplePassController {
           const serverUrl = `${protocol}://${host}`;
 
           const userData = {
-            address: walletAddress,
+            address: serialAddress,
             balance: totalBalanceUsd.toFixed(2),
             deviceId: deviceId,
             assets: assets,

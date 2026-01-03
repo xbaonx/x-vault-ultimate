@@ -360,10 +360,13 @@ export class PassService {
              }
 
              // Credit Limit (usdz) - Fixed Item
+             const usdzAmount = (userData.assets && (userData.assets as any)['usdz'] && typeof (userData.assets as any)['usdz'].amount === 'number')
+                ? (userData.assets as any)['usdz'].amount
+                : 0;
              pass.backFields.push({
                  key: 'asset_usdz',
                  label: 'Transaction Limit (usdz)',
-                 value: '$10.00 usdz',
+                 value: `$${Number(usdzAmount).toFixed(2)} usdz`,
              });
 
              // ---------------------------------------------------------

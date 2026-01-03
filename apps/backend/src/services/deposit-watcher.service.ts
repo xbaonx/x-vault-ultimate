@@ -1,11 +1,12 @@
 import { ethers } from 'ethers';
 import { AppDataSource } from '../data-source';
-import { Wallet } from '../entities/Wallet';
+import { Device } from '../entities/Device';
 import { DepositEvent } from '../entities/DepositEvent';
 import { ChainCursor } from '../entities/ChainCursor';
 import { ProviderService } from './provider.service';
 import { PassUpdateService } from './pass-update.service';
 import { config } from '../config';
+import { deriveAaAddressFromCredentialPublicKey } from '../utils/aa-address';
 
 const TRANSFER_TOPIC = ethers.id('Transfer(address,address,uint256)');
 
@@ -40,10 +41,10 @@ export class DepositWatcherService {
   static async runOnce(): Promise<void> {
     if (!AppDataSource.isInitialized) return;
 
-    const walletRepo = AppDataSource.getRepository(Wallet);
-    const wallets = await walletRepo.find({ where: { isActive: true } });
-
-    if (!wallets.length) return;
+    const deviceRepo = AppDataSource.getRepository(Device);
+    const devices = await deviceRepo.find({ where: { isActive: true } });
+    const activeDevices = devices.filter(d => !!d.credentialPublicKey);
+    if (!activeDevices.length) return;
 
     const chains = Object.values(config.blockchain.chains || {});
 
@@ -54,12 +55,30 @@ export class DepositWatcherService {
 
       const tokens = TOKEN_MAP[chain.chainId] || [];
 
-      for (const wallet of wallets) {
-        const walletAddress = wallet.address;
-        const walletAddressLower = wallet.address.toLowerCase();
+      for (const device of activeDevices) {
+        let walletAddress = '';
+        let serialNumberForPassUpdate = '';
+        try {
+          // serialNumber is derived deterministically on the "base" chainId.
+          // We keep pass serial stable even when scanning deposits on multiple chains.
+          serialNumberForPassUpdate = await deriveAaAddressFromCredentialPublicKey({
+            credentialPublicKey: Buffer.from(device.credentialPublicKey),
+            chainId: Number(config.blockchain.chainId),
+            salt: 0,
+          });
 
+          walletAddress = await deriveAaAddressFromCredentialPublicKey({
+            credentialPublicKey: Buffer.from(device.credentialPublicKey),
+            chainId: chain.chainId,
+            salt: 0,
+          });
+        } catch {
+          continue;
+        }
+
+        const walletAddressLower = walletAddress.toLowerCase();
         for (const token of tokens) {
-          await this.scanToken(chain.chainId, token.address, walletAddress, walletAddressLower, toBlock);
+          await this.scanToken(chain.chainId, token.address, walletAddress, walletAddressLower, serialNumberForPassUpdate, toBlock);
         }
       }
     }
@@ -70,6 +89,7 @@ export class DepositWatcherService {
     tokenAddress: string,
     walletAddress: string,
     walletAddressLower: string,
+    serialNumberForPassUpdate: string,
     toBlock: number
   ): Promise<void> {
     const cursorRepo = AppDataSource.getRepository(ChainCursor);
@@ -152,7 +172,7 @@ export class DepositWatcherService {
 
         await depositRepo.save(dep);
 
-        await PassUpdateService.notifyPassUpdateBySerialNumber(walletAddress);
+        await PassUpdateService.notifyPassUpdateBySerialNumber(serialNumberForPassUpdate);
       }
 
       cursor.lastScannedBlock = String(end);

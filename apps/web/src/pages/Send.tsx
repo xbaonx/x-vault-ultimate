@@ -15,6 +15,7 @@ export default function Send() {
   const [amount, setAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [fee, setFee] = useState<any>(null);
 
   const userId = localStorage.getItem('x_user_id') || '';
   const deviceId = localStorage.getItem('x_device_id') || '';
@@ -41,6 +42,7 @@ export default function Send() {
   const handleSend = async () => {
     setError(null);
     setSuccess(null);
+    setFee(null);
 
     // Validation
     if (!recipient || !ethers.isAddress(recipient)) {
@@ -71,7 +73,10 @@ export default function Send() {
                 to: recipient,
                 value: ethers.parseEther(amount).toString(),
                 data: '0x',
-                chainId: selectedAsset.chainId
+                chainId: selectedAsset.chainId,
+                isNative: true,
+                assetSymbol: selectedAsset.symbol,
+                decimals: 18
             };
         } else {
             // ERC-20 Transfer
@@ -87,7 +92,10 @@ export default function Send() {
                 to: selectedAsset.tokenAddress, // Contract Address
                 value: '0', // 0 Native Value
                 data: data,
-                chainId: selectedAsset.chainId
+                chainId: selectedAsset.chainId,
+                isNative: false,
+                assetSymbol: selectedAsset.symbol,
+                decimals
             };
         }
 
@@ -95,6 +103,10 @@ export default function Send() {
 
         // Call API (Triggers Passkey)
         const result = await walletService.sendTransaction(userId, transaction, deviceId);
+
+        if (result.fee) {
+            setFee(result.fee);
+        }
 
         console.log("Transaction Result:", result);
         
@@ -212,6 +224,42 @@ export default function Send() {
                     Transactions are secured by Passkey (FaceID / TouchID). Ensure you are on the correct network ({selectedAsset?.network}) before sending.
                 </div>
             </div>
+
+            {fee && (
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
+                    <div className="text-sm font-semibold">Fee Breakdown</div>
+                    <div className="text-xs text-secondary flex justify-between">
+                        <span>Gas fee (0.3%)</span>
+                        <span className="font-mono">
+                            {fee.assetSymbol === selectedAsset?.symbol
+                                ? ethers.formatUnits(fee.gasFee, selectedAsset?.decimals || 18)
+                                : fee.gasFee}
+                            {' '}{fee.assetSymbol}
+                        </span>
+                    </div>
+                    <div className="text-xs text-secondary flex justify-between">
+                        <span>Platform fee (0.5%)</span>
+                        <span className="font-mono">
+                            {fee.assetSymbol === selectedAsset?.symbol
+                                ? ethers.formatUnits(fee.platformFee, selectedAsset?.decimals || 18)
+                                : fee.platformFee}
+                            {' '}{fee.assetSymbol}
+                        </span>
+                    </div>
+                    <div className="text-xs text-secondary flex justify-between">
+                        <span>Recipient receives (net)</span>
+                        <span className="font-mono">
+                            {fee.assetSymbol === selectedAsset?.symbol
+                                ? ethers.formatUnits(fee.netAmount, selectedAsset?.decimals || 18)
+                                : fee.netAmount}
+                            {' '}{fee.assetSymbol}
+                        </span>
+                    </div>
+                    <div className="text-xs text-secondary">
+                        Platform fee mode: {fee.platformFeeChargedOnChain ? 'on-chain' : fee.platformFeeChargedUsdZ ? 'USDZ' : 'n/a'}
+                    </div>
+                </div>
+            )}
 
             {/* Status Messages */}
             {error && (

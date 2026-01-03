@@ -1,6 +1,17 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+ const DEFAULT_ENTRY_POINT_ADDRESS = '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789';
+
+ function getEnvByChainId(baseKey: string, chainId: number): string | undefined {
+   const chainKey = `${baseKey}_${chainId}`;
+   const v1 = process.env[chainKey];
+   if (v1 && v1.length > 0) return v1;
+   const v0 = process.env[baseKey];
+   if (v0 && v0.length > 0) return v0;
+   return undefined;
+ }
+
 export const config = {
   port: process.env.PORT || 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -16,12 +27,20 @@ export const config = {
     rpcUrl: process.env.RPC_URL || 'https://mainnet.base.org',
     chainId: parseInt(process.env.CHAIN_ID || '8453'),
     bundlerUrl: process.env.BUNDLER_URL || 'https://api.stackup.sh/v1/node/your-api-key',
-    entryPointAddress: process.env.ENTRY_POINT_ADDRESS || '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789',
+    entryPointAddress: process.env.ENTRY_POINT_ADDRESS || DEFAULT_ENTRY_POINT_ADDRESS,
     paymaster: {
       address: process.env.PAYMASTER_ADDRESS || '',
       signingKey: process.env.PAYMASTER_SIGNING_KEY || '', // Private key for signing gas sponsorship
     },
     factoryAddress: process.env.FACTORY_ADDRESS || '',
+    aa: {
+      bundlerUrl: (chainId: number) => getEnvByChainId('BUNDLER_URL', chainId) || '',
+      entryPointAddress: (chainId: number) => getEnvByChainId('ENTRY_POINT_ADDRESS', chainId) || DEFAULT_ENTRY_POINT_ADDRESS,
+      factoryAddress: (chainId: number) => getEnvByChainId('FACTORY_ADDRESS', chainId) || '',
+      paymasterAddress: (chainId: number) => getEnvByChainId('PAYMASTER_ADDRESS', chainId) || '',
+      paymasterSigningKey: (chainId: number) => getEnvByChainId('PAYMASTER_SIGNING_KEY', chainId) || '',
+      treasuryAddress: (chainId: number) => getEnvByChainId('TREASURY_ADDRESS', chainId) || '',
+    },
     // Multi-chain Configuration
     chains: {
         base: {

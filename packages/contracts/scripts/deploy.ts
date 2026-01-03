@@ -2,7 +2,19 @@ import { ethers } from "hardhat";
 
 async function main() {
   const [deployer] = await ethers.getSigners();
+  if (!deployer) {
+    throw new Error(
+      'No deployer signer available. Set DEPLOYER_PRIVATE_KEY in your environment (used by hardhat.config.ts) before running this script.'
+    );
+  }
+  if (!deployer.provider) {
+    throw new Error('Deployer signer has no provider. Check your hardhat network RPC URL configuration.');
+  }
+
   console.log("Deploying contracts with the account:", deployer.address);
+
+  const network = await deployer.provider.getNetwork();
+  const chainId = Number(network.chainId);
 
   // Deploy EntryPoint (simulated or real, usually we use the singleton, but for local dev we might need one)
   // For now, let's assume we use the singleton address or deploy a mock if needed.
@@ -13,7 +25,6 @@ async function main() {
   // Let's deploy a mock EntryPoint for now if we don't have one, or just use a placeholder.
   // Actually, @account-abstraction/contracts usually provides an EntryPoint contract.
   
-  const EntryPointFactory = await ethers.getContractFactory("EntryPoint");
   // Note: EntryPoint might not be directly available if not imported in solidity or artifacts not generated for it?
   // It comes from @account-abstraction/contracts. 
   // Let's check if we can deploy it. If not, we might need to use an existing address.
@@ -38,12 +49,78 @@ async function main() {
   // Let's try to deploy XFactory
   const XFactory = await ethers.getContractFactory("XFactory");
   // using a dummy address for EntryPoint for now: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789 (Standard EntryPoint v0.6.0)
-  const ENTRY_POINT_ADDRESS = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
-  
-  const factory = await XFactory.deploy(ENTRY_POINT_ADDRESS);
-  await factory.waitForDeployment();
+  const DEFAULT_ENTRY_POINT_ADDRESS = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
 
-  console.log("XFactory deployed to:", await factory.getAddress());
+  const getEnvByChainId = (baseKey: string): string | undefined => {
+    const v1 = process.env[`${baseKey}_${chainId}`];
+    if (v1 && v1.length > 0) return v1.trim();
+    const v0 = process.env[baseKey];
+    if (v0 && v0.length > 0) return v0.trim();
+    return undefined;
+  };
+
+  const normalizePrivateKey = (k: string | undefined): string | undefined => {
+    if (!k) return undefined;
+    const key = k.trim();
+    if (key.length === 0) return undefined;
+    // allow both "0x"-prefixed and raw 64-hex keys
+    if (/^[0-9a-fA-F]{64}$/.test(key)) return `0x${key}`;
+    return key;
+  };
+
+  const ENTRY_POINT_ADDRESS = getEnvByChainId('ENTRY_POINT_ADDRESS') || DEFAULT_ENTRY_POINT_ADDRESS;
+
+  const existingFactoryAddress = getEnvByChainId('FACTORY_ADDRESS');
+  let factoryAddress: string;
+  if (
+    existingFactoryAddress &&
+    ethers.isAddress(existingFactoryAddress) &&
+    existingFactoryAddress !== ethers.ZeroAddress
+  ) {
+    factoryAddress = ethers.getAddress(existingFactoryAddress);
+    console.log('Using existing XFactory:', factoryAddress);
+  } else {
+    const factory = await XFactory.deploy(ENTRY_POINT_ADDRESS);
+    await factory.waitForDeployment();
+    factoryAddress = await factory.getAddress();
+    console.log("XFactory deployed to:", factoryAddress);
+  }
+
+  const paymasterSigningKey = normalizePrivateKey(getEnvByChainId('PAYMASTER_SIGNING_KEY'));
+  const paymasterVerifyingSigner = getEnvByChainId('PAYMASTER_VERIFYING_SIGNER')
+    || (paymasterSigningKey ? ethers.computeAddress(paymasterSigningKey) : undefined);
+
+  const existingPaymasterAddress = getEnvByChainId('PAYMASTER_ADDRESS');
+  let paymasterAddress: string | undefined;
+  if (
+    existingPaymasterAddress &&
+    ethers.isAddress(existingPaymasterAddress) &&
+    existingPaymasterAddress !== ethers.ZeroAddress
+  ) {
+    paymasterAddress = ethers.getAddress(existingPaymasterAddress);
+    console.log('Using existing XPaymaster:', paymasterAddress);
+  } else if (paymasterVerifyingSigner) {
+    const XPaymaster = await ethers.getContractFactory('XPaymaster');
+    const paymaster = await XPaymaster.deploy(ENTRY_POINT_ADDRESS, paymasterVerifyingSigner);
+    await paymaster.waitForDeployment();
+    paymasterAddress = await paymaster.getAddress();
+    console.log('XPaymaster deployed to:', paymasterAddress);
+    console.log('XPaymaster verifyingSigner:', paymasterVerifyingSigner);
+  } else {
+    console.log(
+      'Skipping XPaymaster deploy: set PAYMASTER_SIGNING_KEY (or PAYMASTER_VERIFYING_SIGNER) in your environment.'
+    );
+  }
+
+  console.log('\n--- Render env mapping ---');
+  console.log(`ENTRY_POINT_ADDRESS_${chainId}=${ENTRY_POINT_ADDRESS}`);
+  console.log(`FACTORY_ADDRESS_${chainId}=${factoryAddress}`);
+  if (paymasterAddress) {
+    console.log(`PAYMASTER_ADDRESS_${chainId}=${paymasterAddress}`);
+    if (paymasterVerifyingSigner) {
+      console.log(`PAYMASTER_VERIFYING_SIGNER_${chainId}=${paymasterVerifyingSigner}`);
+    }
+  }
 }
 
 main().catch((error) => {

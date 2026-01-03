@@ -64,10 +64,10 @@ export class AuthController {
         user = userRepo.create({
             appleUserId,
             email,
-            usdzBalance: 25.0 // Welcome Bonus
+            usdzBalance: 20.0 // Welcome Bonus
         });
         await userRepo.save(user);
-        console.log(`[Auth] New user created: ${user.id}. Welcome Bonus: 25 USDZ credited.`);
+        console.log(`[Auth] New user created: ${user.id}. Welcome Bonus: 20 USDZ credited.`);
         
         // Re-fetch to get all default fields if needed, but for new user pin is null.
         const refetchedUser = await userRepo.findOne({ 

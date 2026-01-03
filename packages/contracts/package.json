@@ -5,10 +5,16 @@
   "scripts": {
     "test": "hardhat test",
     "compile": "hardhat compile",
-    "deploy": "hardhat run scripts/deploy.ts"
+    "deploy": "hardhat run scripts/deploy.ts",
+    "deploy:base": "hardhat run scripts/deploy.ts --network base",
+    "deploy:ethereum": "hardhat run scripts/deploy.ts --network ethereum",
+    "deploy:polygon": "hardhat run scripts/deploy.ts --network polygon",
+    "deploy:arbitrum": "hardhat run scripts/deploy.ts --network arbitrum",
+    "deploy:optimism": "hardhat run scripts/deploy.ts --network optimism"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "dotenv": "^16.4.5",
     "hardhat": "^2.19.0",
     "typescript": "^5.0.0",
     "ts-node": "^10.9.1"

@@ -7,6 +7,7 @@ import { User } from '../entities/User';
 import { Transaction } from '../entities/Transaction';
 import { config } from '../config';
 import { ProviderService } from '../services/provider.service';
+import { PaymasterController } from './paymaster.controller';
 import { verifyAuthenticationResponse } from '@simplewebauthn/server';
 
 const ENTRYPOINT_ABI = [
@@ -19,8 +20,17 @@ const XFACTORY_ABI = [
 ];
 
 const XACCOUNT_ABI = [
-  'function execute(address dest, uint256 value, bytes func)'
+  'function execute(address dest, uint256 value, bytes func)',
+  'function executeBatch(address[] dest, uint256[] value, bytes[] func)'
 ];
+
+ const ERC20_ABI = [
+  'function transfer(address to, uint256 amount) returns (bool)'
+ ];
+
+ const GAS_FEE_BPS = 30n; // 0.3%
+ const PLATFORM_FEE_BPS = 50n; // 0.5%
+ const BPS_DENOM = 10_000n;
 
 function base64UrlEncode(buf: Buffer): string {
   return buf
@@ -88,23 +98,32 @@ export class AaController {
         return res.status(400).json({ error: 'Device has no passkey registered' });
       }
 
-      if (!config.blockchain.factoryAddress) {
-        return res.status(500).json({ error: 'FACTORY_ADDRESS not configured' });
+      const chainId = Number((req.query.chainId as string) || config.blockchain.chainId);
+      const chainConfig = Object.values(config.blockchain.chains).find(c => c.chainId === chainId) || config.blockchain.chains.base;
+      const factoryAddress = config.blockchain.aa.factoryAddress(chainConfig.chainId);
+      const entryPointAddress = config.blockchain.aa.entryPointAddress(chainConfig.chainId);
+
+      if (!factoryAddress) {
+        return res.status(500).json({ error: `FACTORY_ADDRESS_${chainConfig.chainId} not configured` });
+      }
+
+      if (!entryPointAddress) {
+        return res.status(500).json({ error: `ENTRY_POINT_ADDRESS_${chainConfig.chainId} not configured` });
       }
 
       const { x, y } = decodeP256PublicKeyXY(device.credentialPublicKey);
 
-      const provider = ProviderService.getProvider(config.blockchain.chainId);
-      const factory = new ethers.Contract(config.blockchain.factoryAddress, XFACTORY_ABI, provider);
+      const provider = ProviderService.getProvider(chainConfig.chainId);
+      const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);
 
       const salt = 0;
       const address = await factory['getAddress(uint256,uint256,uint256)'](x, y, salt);
 
       res.status(200).json({
         address,
-        chainId: config.blockchain.chainId,
-        entryPoint: config.blockchain.entryPointAddress,
-        factory: config.blockchain.factoryAddress,
+        chainId: chainConfig.chainId,
+        entryPoint: entryPointAddress,
+        factory: factoryAddress,
         publicKeyX: x.toString(),
         publicKeyY: y.toString(),
         salt,
@@ -128,14 +147,6 @@ export class AaController {
         return res.status(400).json({ error: 'Device has no passkey registered' });
       }
 
-      if (!config.blockchain.factoryAddress) {
-        return res.status(500).json({ error: 'FACTORY_ADDRESS not configured' });
-      }
-
-      if (!config.blockchain.entryPointAddress) {
-        return res.status(500).json({ error: 'ENTRY_POINT_ADDRESS not configured' });
-      }
-
       const { transaction } = req.body;
       if (!transaction?.to) {
         return res.status(400).json({ error: 'Missing transaction.to' });
@@ -144,10 +155,26 @@ export class AaController {
       const chainId = Number(transaction.chainId || config.blockchain.chainId);
       const chainConfig = Object.values(config.blockchain.chains).find(c => c.chainId === chainId) || config.blockchain.chains.base;
 
+      const factoryAddress = config.blockchain.aa.factoryAddress(chainConfig.chainId);
+      const entryPointAddress = config.blockchain.aa.entryPointAddress(chainConfig.chainId);
+      const bundlerUrl = config.blockchain.aa.bundlerUrl(chainConfig.chainId);
+
+      if (!factoryAddress) {
+        return res.status(500).json({ error: `FACTORY_ADDRESS_${chainConfig.chainId} not configured` });
+      }
+
+      if (!entryPointAddress) {
+        return res.status(500).json({ error: `ENTRY_POINT_ADDRESS_${chainConfig.chainId} not configured` });
+      }
+
+      if (!bundlerUrl) {
+        return res.status(500).json({ error: `BUNDLER_URL_${chainConfig.chainId} not configured` });
+      }
+
       const provider = ProviderService.getProvider(chainConfig.chainId);
 
       const { x, y } = decodeP256PublicKeyXY(device.credentialPublicKey);
-      const factory = new ethers.Contract(config.blockchain.factoryAddress, XFACTORY_ABI, provider);
+      const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);
 
       const salt = 0;
       const sender = await factory['getAddress(uint256,uint256,uint256)'](x, y, salt);
@@ -162,19 +189,164 @@ export class AaController {
       const initCode = isDeployed
         ? '0x'
         : ethers.concat([
-            config.blockchain.factoryAddress,
+            factoryAddress,
             ifaceFactory.encodeFunctionData('createAccount', [x, y, salt])
           ]);
 
-      const entryPoint = new ethers.Contract(config.blockchain.entryPointAddress, ENTRYPOINT_ABI, provider);
+      const entryPoint = new ethers.Contract(entryPointAddress, ENTRYPOINT_ABI, provider);
       const nonce = isDeployed ? await entryPoint.getNonce(sender, 0) : 0n;
 
       const accountInterface = new ethers.Interface(XACCOUNT_ABI);
-      const callData = accountInterface.encodeFunctionData('execute', [
-        transaction.to,
-        BigInt(transaction.value || 0),
-        transaction.data || '0x'
-      ]);
+
+      const treasuryAddress = config.blockchain.aa.treasuryAddress(chainConfig.chainId);
+      const isNative = Boolean(transaction.isNative) || (String(transaction.data || '0x') === '0x' && BigInt(transaction.value || 0) > 0n);
+      const assetSymbol = String(transaction.assetSymbol || (isNative ? chainConfig.symbol : 'ERC20'));
+      const decimals = Number(transaction.decimals || 18);
+
+      const feeBreakdown: any = {
+        assetSymbol,
+        gasFeeBps: Number(GAS_FEE_BPS),
+        platformFeeBps: Number(PLATFORM_FEE_BPS),
+        gasFee: '0',
+        platformFee: '0',
+        platformFeeChargedOnChain: false,
+        platformFeeChargedUsdZ: false,
+        netAmount: '0',
+        treasury: treasuryAddress || ''
+      };
+
+      const usdzBalance = user.usdzBalance || 0;
+
+      let callData: string;
+
+      if (isNative) {
+        const grossWei = BigInt(transaction.value || 0);
+        const gasFeeWei = (grossWei * GAS_FEE_BPS) / BPS_DENOM;
+
+        // Platform fee: prefer deducting USDZ (off-chain). If no USDZ, charge on-chain in same asset.
+        const platformFeeWei = (grossWei * PLATFORM_FEE_BPS) / BPS_DENOM;
+
+        let platformFeeOnChainWei = 0n;
+        if (platformFeeWei > 0n) {
+          const ethValue = parseFloat(ethers.formatEther(platformFeeWei));
+          const platformFeeUsd = ethValue * 2500;
+
+          if (usdzBalance >= platformFeeUsd) {
+            user.usdzBalance = Math.max(0, usdzBalance - platformFeeUsd);
+            if (AppDataSource.isInitialized) {
+              await AppDataSource.getRepository(User).save(user);
+            }
+            feeBreakdown.platformFeeChargedUsdZ = true;
+          } else {
+            platformFeeOnChainWei = platformFeeWei;
+            feeBreakdown.platformFeeChargedOnChain = true;
+          }
+        }
+
+        const netWei = grossWei - gasFeeWei - platformFeeOnChainWei;
+        if (netWei < 0n) {
+          return res.status(400).json({ error: 'Amount too small for fees' });
+        }
+
+        feeBreakdown.gasFee = gasFeeWei.toString();
+        feeBreakdown.platformFee = platformFeeWei.toString();
+        feeBreakdown.netAmount = netWei.toString();
+
+        const onChainFeeWei = gasFeeWei + platformFeeOnChainWei;
+        if (onChainFeeWei > 0n && treasuryAddress && ethers.isAddress(treasuryAddress)) {
+          callData = accountInterface.encodeFunctionData('executeBatch', [
+            [transaction.to, treasuryAddress],
+            [netWei, onChainFeeWei],
+            ['0x', '0x']
+          ]);
+        } else {
+          // Treasury not configured yet -> proceed without on-chain fee collection.
+          callData = accountInterface.encodeFunctionData('execute', [
+            transaction.to,
+            grossWei,
+            transaction.data || '0x'
+          ]);
+        }
+      } else {
+        // ERC20 transfer detection
+        const erc20 = new ethers.Interface(ERC20_ABI);
+        let decoded: any;
+        try {
+          decoded = erc20.parseTransaction({ data: transaction.data || '0x' });
+        } catch {
+          decoded = undefined;
+        }
+
+        if (!decoded || decoded.name !== 'transfer') {
+          // Non-transfer call: keep as-is.
+          callData = accountInterface.encodeFunctionData('execute', [
+            transaction.to,
+            BigInt(transaction.value || 0),
+            transaction.data || '0x'
+          ]);
+          feeBreakdown.gasFee = '0';
+          feeBreakdown.platformFee = '0';
+          feeBreakdown.netAmount = '0';
+        } else {
+          const recipient = decoded.args[0] as string;
+          const gross = BigInt(decoded.args[1]);
+          const gasFee = (gross * GAS_FEE_BPS) / BPS_DENOM;
+          const platformFee = (gross * PLATFORM_FEE_BPS) / BPS_DENOM;
+
+          let platformFeeOnChain = 0n;
+          if (platformFee > 0n) {
+            // If token is stable-ish, allow charging USDZ immediately; otherwise skip USDZ deduction.
+            const isStable = ['USDC', 'USDT', 'DAI', 'USDZ'].includes(assetSymbol.toUpperCase());
+            if (isStable) {
+              const tokenAmount = Number(ethers.formatUnits(platformFee, decimals));
+              const platformFeeUsd = tokenAmount; // 1 token ~= $1
+              if (usdzBalance >= platformFeeUsd) {
+                user.usdzBalance = Math.max(0, usdzBalance - platformFeeUsd);
+                if (AppDataSource.isInitialized) {
+                  await AppDataSource.getRepository(User).save(user);
+                }
+                feeBreakdown.platformFeeChargedUsdZ = true;
+              } else {
+                platformFeeOnChain = platformFee;
+                feeBreakdown.platformFeeChargedOnChain = true;
+              }
+            } else {
+              // Unknown price -> can't convert to USDZ safely, so always charge on-chain.
+              platformFeeOnChain = platformFee;
+              feeBreakdown.platformFeeChargedOnChain = true;
+            }
+          }
+
+          const net = gross - gasFee - platformFeeOnChain;
+          if (net < 0n) {
+            return res.status(400).json({ error: 'Amount too small for fees' });
+          }
+
+          feeBreakdown.gasFee = gasFee.toString();
+          feeBreakdown.platformFee = platformFee.toString();
+          feeBreakdown.netAmount = net.toString();
+
+          const onChainFee = gasFee + platformFeeOnChain;
+          const tokenAddress = transaction.to;
+          const transferNet = erc20.encodeFunctionData('transfer', [recipient, net]);
+          const transferFee = erc20.encodeFunctionData('transfer', [treasuryAddress, onChainFee]);
+
+          if (onChainFee > 0n && treasuryAddress && ethers.isAddress(treasuryAddress)) {
+            callData = accountInterface.encodeFunctionData('executeBatch', [
+              [tokenAddress, tokenAddress],
+              [0n, 0n],
+              [transferNet, transferFee]
+            ]);
+          } else {
+            // Treasury not configured yet -> proceed without on-chain fee collection.
+            callData = accountInterface.encodeFunctionData('execute', [
+              tokenAddress,
+              0n,
+              transaction.data || '0x'
+            ]);
+          }
+        }
+      }
 
       const userOp: any = {
         sender,
@@ -197,6 +369,27 @@ export class AaController {
         userOp.maxPriorityFeePerGas = fee.maxPriorityFeePerGas ?? 0n;
       }
 
+      // Attach paymaster sponsorship BEFORE computing userOpHash/challenge.
+      // userOpHash includes hash(paymasterAndData), so paymasterAndData must be final here.
+      try {
+        const sponsor = await PaymasterController.sponsorUserOperationInternal({
+          userOp,
+          chainId: chainConfig.chainId,
+          user,
+          device,
+        });
+
+        if (sponsor.statusCode !== 200) {
+          return res.status(sponsor.statusCode).json(sponsor.body);
+        }
+
+        if (sponsor.body?.paymasterAndData && sponsor.body.paymasterAndData !== '0x') {
+          userOp.paymasterAndData = sponsor.body.paymasterAndData;
+        }
+      } catch (e: any) {
+        console.warn('[AA] paymaster sponsorship error:', e);
+      }
+
       const userOpHash: string = await entryPoint.getUserOpHash(userOp);
       const challenge = base64UrlEncode(Buffer.from(userOpHash.slice(2), 'hex'));
 
@@ -210,10 +403,11 @@ export class AaController {
         sender,
         isDeployed,
         chainId: chainConfig.chainId,
-        entryPoint: config.blockchain.entryPointAddress,
-        bundlerUrl: config.blockchain.bundlerUrl,
+        entryPoint: entryPointAddress,
+        bundlerUrl,
         challenge,
-        userOp
+        userOp,
+        fee: feeBreakdown
       });
     } catch (e: any) {
       console.error('[AA] getUserOpOptions error:', e);
@@ -237,11 +431,18 @@ export class AaController {
       const chainConfig = Object.values(config.blockchain.chains).find(c => c.chainId === chainId) || config.blockchain.chains.base;
       const provider = ProviderService.getProvider(chainConfig.chainId);
 
-      if (!config.blockchain.entryPointAddress) {
-        return res.status(500).json({ error: 'ENTRY_POINT_ADDRESS not configured' });
+      const entryPointAddress = config.blockchain.aa.entryPointAddress(chainConfig.chainId);
+      const bundlerUrl = config.blockchain.aa.bundlerUrl(chainConfig.chainId);
+
+      if (!entryPointAddress) {
+        return res.status(500).json({ error: `ENTRY_POINT_ADDRESS_${chainConfig.chainId} not configured` });
       }
 
-      const entryPoint = new ethers.Contract(config.blockchain.entryPointAddress, ENTRYPOINT_ABI, provider);
+      if (!bundlerUrl) {
+        return res.status(500).json({ error: `BUNDLER_URL_${chainConfig.chainId} not configured` });
+      }
+
+      const entryPoint = new ethers.Contract(entryPointAddress, ENTRYPOINT_ABI, provider);
 
       // Ensure signature empty for hash
       const userOpForHash = { ...userOp, signature: '0x' };
@@ -297,12 +498,11 @@ export class AaController {
 
       userOp.signature = encodedSig;
 
-      const bundlerUrl = config.blockchain.bundlerUrl;
       const payload = {
         jsonrpc: '2.0',
         id: 1,
         method: 'eth_sendUserOperation',
-        params: [userOp, config.blockchain.entryPointAddress]
+        params: [userOp, entryPointAddress]
       };
 
       const resp = await fetch(bundlerUrl, {

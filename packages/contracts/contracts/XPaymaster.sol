@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@account-abstraction/contracts/core/BasePaymaster.sol";
+import "@account-abstraction/contracts/interfaces/UserOperation.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -14,9 +15,12 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 contract XPaymaster is BasePaymaster {
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
+    using UserOperationLib for UserOperation;
 
     address public verifyingSigner;
     uint256 public constant COST_OF_POST = 15000;
+
+    mapping(address => uint256) public senderNonce;
 
     constructor(IEntryPoint _entryPoint, address _verifyingSigner) 
         BasePaymaster(_entryPoint) 
@@ -39,8 +43,9 @@ contract XPaymaster is BasePaymaster {
         UserOperation calldata userOp,
         bytes32 userOpHash,
         uint256 requiredPreFund
-    ) internal view override returns (bytes memory context, uint256 validationData) {
+    ) internal override returns (bytes memory context, uint256 validationData) {
         (requiredPreFund); // unused
+        (userOpHash); // unused
         
         // verificationGasLimit is at least COST_OF_POST.
         // The paymasterAndData: [paymasterAddress (20 bytes)] [validUntil (6 bytes)] [validAfter (6 bytes)] [signature (dynamic)]
@@ -58,7 +63,7 @@ contract XPaymaster is BasePaymaster {
         // Then we define our custom encoding.
         // Let's say: [validUntil (uint48)] [validAfter (uint48)] [signature]
         
-        if (userOp.paymasterAndData.length < 20 + 48 + 65) {
+        if (userOp.paymasterAndData.length < 20 + 6 + 6 + 64) {
              // If no signature or time provided, reject.
              // Or we could have a mode where we accept everything if the sender is whitelisted?
              // For X-Vault, we want strict control.
@@ -69,14 +74,16 @@ contract XPaymaster is BasePaymaster {
         uint48 validAfter = uint48(bytes6(userOp.paymasterAndData[26:32]));
         bytes memory signature = userOp.paymasterAndData[32:];
 
+        require(signature.length == 64 || signature.length == 65, "XPaymaster: invalid signature length");
+
         // Verify signature
         // Hash: keccak256(userOpHash, validUntil, validAfter) (This is a simplified scheme)
         // Standard VerifyingPaymaster uses EIP-712 or specific packing.
         // We will use a simple hash for this implementation.
         
-        bytes32 hash = keccak256(abi.encodePacked(userOpHash, validUntil, validAfter));
-        bytes32 ethSignedHash = hash.toEthSignedMessageHash();
-        
+        bytes32 ethSignedHash = getHash(userOp, validUntil, validAfter).toEthSignedMessageHash();
+        senderNonce[userOp.getSender()]++;
+
         if (ethSignedHash.recover(signature) != verifyingSigner) {
             // Signature mismatch
             return ("", _packValidationData(true, 0, 0));
@@ -84,5 +91,30 @@ contract XPaymaster is BasePaymaster {
 
         // Return validation data with time range
         return ("", _packValidationData(false, validUntil, validAfter));
+    }
+
+    function pack(UserOperation calldata userOp) internal pure returns (bytes memory ret) {
+        bytes calldata pnd = userOp.paymasterAndData;
+        assembly {
+            let ofs := userOp
+            let len := sub(sub(pnd.offset, ofs), 32)
+            ret := mload(0x40)
+            mstore(0x40, add(ret, add(len, 32)))
+            mstore(ret, len)
+            calldatacopy(add(ret, 32), ofs, len)
+        }
+    }
+
+    function getHash(UserOperation calldata userOp, uint48 validUntil, uint48 validAfter) public view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                pack(userOp),
+                block.chainid,
+                address(this),
+                senderNonce[userOp.getSender()],
+                validUntil,
+                validAfter
+            )
+        );
     }
 }

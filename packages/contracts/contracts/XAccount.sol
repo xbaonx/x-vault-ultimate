@@ -41,8 +41,20 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
         bool executed;
     }
 
+    struct PendingBatchTx {
+        address[] dest;
+        uint256[] value;
+        bytes[] func;
+        uint48 executeAfter;
+        bool canceled;
+        bool executed;
+    }
+
     mapping(bytes32 => PendingTx) public pendingTxs;
     uint256 public pendingTxNonce;
+
+    mapping(bytes32 => PendingBatchTx) private pendingBatchTxs;
+    uint256 public pendingBatchTxNonce;
 
     event DeviceAdded(bytes32 indexed deviceIdHash);
     event DeviceRemoved(bytes32 indexed deviceIdHash);
@@ -52,6 +64,9 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     event LargeTxThresholdChanged(uint256 newThresholdWei);
     event TokenDelayThresholdChanged(address indexed token, uint256 newThreshold);
     event TransactionDelayed(bytes32 indexed txId, uint48 executeAfter, address indexed dest, uint256 value);
+    event BatchTransactionDelayed(bytes32 indexed txId, uint48 executeAfter, uint256 count, uint256 totalValue);
+    event BatchTransactionExecuted(bytes32 indexed txId);
+    event BatchTransactionCancelled(bytes32 indexed txId);
     event TransactionExecuted(bytes32 indexed txId);
     event TransactionCancelled(bytes32 indexed txId);
 
@@ -159,13 +174,26 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     function executeBatch(address[] calldata dest, uint256[] calldata value, bytes[] calldata func) external notFrozen {
         _requireFromEntryPoint();
         require(dest.length == value.length && value.length == func.length, "XAccount: length mismatch");
-        
+
         uint256 totalValue = 0;
+        bool shouldDelay = false;
         for (uint256 i = 0; i < dest.length; i++) {
             totalValue += value[i];
+            if (_shouldDelay(dest[i], value[i], func[i])) {
+                shouldDelay = true;
+            }
+        }
+
+        if (shouldDelay) {
+            bytes32 txId = _enqueueDelayedBatch(dest, value, func);
+            emit BatchTransactionDelayed(txId, pendingBatchTxs[txId].executeAfter, dest.length, totalValue);
+            return;
+        }
+
+        _checkSpendingLimit(totalValue);
+        for (uint256 i = 0; i < dest.length; i++) {
             _call(dest[i], value[i], func[i]);
         }
-        _checkSpendingLimit(totalValue);
     }
 
     function executeDelayed(bytes32 txId) external notFrozen {
@@ -205,6 +233,74 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
 
         p.canceled = true;
         emit TransactionCancelled(txId);
+    }
+
+    function executeDelayedBatch(bytes32 txId) external notFrozen {
+        _requireFromEntryPoint();
+        PendingBatchTx storage p = pendingBatchTxs[txId];
+        require(p.executeAfter != 0, "XAccount: Unknown tx");
+        require(!p.canceled, "XAccount: Cancelled");
+        require(!p.executed, "XAccount: Executed");
+        require(block.timestamp >= p.executeAfter, "XAccount: Security Delay active");
+
+        p.executed = true;
+
+        uint256 totalValue = 0;
+        for (uint256 i = 0; i < p.value.length; i++) {
+            totalValue += p.value[i];
+        }
+        _checkSpendingLimit(totalValue);
+
+        for (uint256 i = 0; i < p.dest.length; i++) {
+            _call(p.dest[i], p.value[i], p.func[i]);
+        }
+
+        emit BatchTransactionExecuted(txId);
+    }
+
+    function executeDelayedBatchDirect(bytes32 txId) external notFrozen {
+        PendingBatchTx storage p = pendingBatchTxs[txId];
+        require(p.executeAfter != 0, "XAccount: Unknown tx");
+        require(!p.canceled, "XAccount: Cancelled");
+        require(!p.executed, "XAccount: Executed");
+        require(block.timestamp >= p.executeAfter, "XAccount: Security Delay active");
+
+        p.executed = true;
+
+        uint256 totalValue = 0;
+        for (uint256 i = 0; i < p.value.length; i++) {
+            totalValue += p.value[i];
+        }
+        _checkSpendingLimit(totalValue);
+
+        for (uint256 i = 0; i < p.dest.length; i++) {
+            _call(p.dest[i], p.value[i], p.func[i]);
+        }
+
+        emit BatchTransactionExecuted(txId);
+    }
+
+    function cancelDelayedBatch(bytes32 txId) external {
+        PendingBatchTx storage p = pendingBatchTxs[txId];
+        require(p.executeAfter != 0, "XAccount: Unknown tx");
+        require(!p.canceled, "XAccount: Cancelled");
+        require(!p.executed, "XAccount: Executed");
+
+        require(msg.sender == address(_entryPoint) || msg.sender == address(this), "XAccount: caller is not EntryPoint or self");
+
+        p.canceled = true;
+        emit BatchTransactionCancelled(txId);
+    }
+
+    function getPendingBatchTxMeta(bytes32 txId) external view returns (uint48 executeAfter, bool canceled, bool executed, uint256 length) {
+        PendingBatchTx storage p = pendingBatchTxs[txId];
+        return (p.executeAfter, p.canceled, p.executed, p.dest.length);
+    }
+
+    function getPendingBatchTxItem(bytes32 txId, uint256 index) external view returns (address dest, uint256 value, bytes memory func) {
+        PendingBatchTx storage p = pendingBatchTxs[txId];
+        require(index < p.dest.length, "XAccount: index out of bounds");
+        return (p.dest[index], p.value[index], p.func[index]);
     }
 
     function _checkSpendingLimit(uint256 value) internal {
@@ -298,6 +394,25 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
         p.dest = dest;
         p.value = value;
         p.func = func;
+        p.executeAfter = uint48(block.timestamp + SECURITY_DELAY);
+        p.canceled = false;
+        p.executed = false;
+    }
+
+    function _enqueueDelayedBatch(address[] calldata dest, uint256[] calldata value, bytes[] calldata func) internal returns (bytes32 txId) {
+        pendingBatchTxNonce += 1;
+        txId = keccak256(abi.encodePacked(address(this), pendingBatchTxNonce, dest.length, keccak256(abi.encode(dest, value, func))));
+
+        PendingBatchTx storage p = pendingBatchTxs[txId];
+        delete p.dest;
+        delete p.value;
+        delete p.func;
+
+        for (uint256 i = 0; i < dest.length; i++) {
+            p.dest.push(dest[i]);
+            p.value.push(value[i]);
+            p.func.push(func[i]);
+        }
         p.executeAfter = uint48(block.timestamp + SECURITY_DELAY);
         p.canceled = false;
         p.executed = false;
