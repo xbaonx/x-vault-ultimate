@@ -17,6 +17,19 @@ const ERC20_ABI = [
   "function symbol() view returns (string)"
 ];
 
+let portfolioPriceCache: { updatedAt: number; prices: Record<string, number> } | null = null;
+
+async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<any> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    return await res.json();
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 const TOKEN_MAP: Record<number, { address: string; symbol: string; decimals: number }[]> = {
     // Base
     8453: [
@@ -182,19 +195,31 @@ export class WalletController {
       let maticPrice = 1.0;
       
       try {
-          const symbols = ['ETH', 'MATIC', 'DAI', 'USDT', 'USDC'];
-          const requests = symbols.map(sym => fetch(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`).then(r => r.json()).catch(() => null));
-          
-          const results = await Promise.all(requests);
-          
-          results.forEach((data, index) => {
-              if (data && data.data && data.data.amount) {
-                  const price = parseFloat(data.data.amount);
-                  prices[symbols[index]] = price;
-                  if (symbols[index] === 'ETH') ethPrice = price;
-                  if (symbols[index] === 'MATIC') maticPrice = price;
-              }
-          });
+          const now = Date.now();
+          if (portfolioPriceCache && now - portfolioPriceCache.updatedAt < 60_000) {
+              Object.assign(prices, portfolioPriceCache.prices);
+              ethPrice = prices.ETH;
+              maticPrice = prices.MATIC;
+          } else {
+              const symbols = ['ETH', 'MATIC'];
+              const requests = symbols.map(sym =>
+                  fetchJsonWithTimeout(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`, 1500)
+                    .catch(() => null)
+              );
+
+              const results = await Promise.all(requests);
+
+              results.forEach((data, index) => {
+                  if (data && data.data && data.data.amount) {
+                      const price = parseFloat(data.data.amount);
+                      prices[symbols[index]] = price;
+                      if (symbols[index] === 'ETH') ethPrice = price;
+                      if (symbols[index] === 'MATIC') maticPrice = price;
+                  }
+              });
+
+              portfolioPriceCache = { updatedAt: now, prices: { ...prices } };
+          }
       } catch (e) {
           console.warn("Failed to fetch prices, using fallbacks");
       }
