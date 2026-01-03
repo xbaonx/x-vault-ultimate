@@ -104,27 +104,17 @@ export class DeviceController {
         return res.status(400).json({ error: "User ID required" });
       }
 
-      const userRepo = AppDataSource.getRepository(User);
-      const user = await userRepo.findOne({ 
-        where: { id: userId },
-        relations: ['devices']
-      });
+      const deviceRepo = AppDataSource.getRepository(Device);
 
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      console.log(`[Device] Checking login options for User ${userId}. Total Devices: ${user.devices?.length || 0}`);
-
-      // Filter active devices with credentials
-      const devices = user.devices.filter(d => {
-        const hasCred = !!d.credentialID;
-        console.log(`[Device] Device ${d.id} (${d.deviceLibraryId}): isActive=${d.isActive}, hasCred=${hasCred}`);
-        return d.isActive && hasCred;
-      });
+      const devices = await deviceRepo
+        .createQueryBuilder('d')
+        .select(['d.id', 'd.credentialID', 'd.transports'])
+        .where('d.userId = :userId', { userId })
+        .andWhere('d.isActive = :isActive', { isActive: true })
+        .andWhere('d.credentialID IS NOT NULL')
+        .getMany();
 
       if (devices.length === 0) {
-        console.log("[Device] No active devices with credentials found.");
         // No credentials found -> Must register
         return res.status(200).json({ canLogin: false, message: "No credentials found" });
       }
@@ -141,10 +131,14 @@ export class DeviceController {
 
       // Save challenge to ALL candidate devices (since we don't know which one will sign yet)
       // In a stricter model, we might use a temporary auth session, but updating devices is OK for MVP.
-      const deviceRepo = AppDataSource.getRepository(Device);
-      for (const device of devices) {
-        device.currentChallenge = options.challenge;
-        await deviceRepo.save(device);
+      const deviceIds = devices.map(d => d.id).filter(Boolean);
+      if (deviceIds.length > 0) {
+        await deviceRepo
+          .createQueryBuilder()
+          .update(Device)
+          .set({ currentChallenge: options.challenge })
+          .where('id IN (:...ids)', { ids: deviceIds })
+          .execute();
       }
 
       res.status(200).json({ canLogin: true, options });
@@ -165,19 +159,16 @@ export class DeviceController {
 
       const credentialID = response.id; // Base64URL from client
 
-      // 1. Load User and Devices
-      const userRepo = AppDataSource.getRepository(User);
-      const user = await userRepo.findOne({ where: { id: userId }, relations: ['devices'] });
-
-      if (!user) return res.status(404).json({ error: "User not found" });
-
-      // 2. Find Device with Flexible Matching (Base64URL or Base64)
+      // 1. Find Device with Flexible Matching (Base64URL or Base64)
       const credentialIDBase64 = DeviceController.toBase64(credentialID);
 
-      const targetDevice = user.devices.find(d => {
-        // Match exact (Base64URL) OR Legacy (Base64)
-        return d.credentialID === credentialID || d.credentialID === credentialIDBase64;
-      });
+      const deviceRepo = AppDataSource.getRepository(Device);
+      const targetDevice = await deviceRepo
+        .createQueryBuilder('d')
+        .where('d.userId = :userId', { userId })
+        .andWhere('d.isActive = :isActive', { isActive: true })
+        .andWhere('(d.credentialID = :cid OR d.credentialID = :cidLegacy)', { cid: credentialID, cidLegacy: credentialIDBase64 })
+        .getOne();
 
       if (!targetDevice) {
         console.warn(`[Device] VerifyLogin Failed: No device found for CredentialID ${credentialID} (or legacy equivalent)`);
@@ -227,7 +218,6 @@ export class DeviceController {
         targetDevice.credentialID = credentialID;
       }
 
-      const deviceRepo = AppDataSource.getRepository(Device);
       await deviceRepo.save(targetDevice);
 
       const chainId = Number(req.body.chainId || config.blockchain.chainId);
