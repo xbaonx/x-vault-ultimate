@@ -202,4 +202,20 @@ export const adminApi = {
       throw new Error(text || 'Failed to unfreeze user');
     }
   },
+
+  deleteUser: async (adminKey: string, userId: string): Promise<void> => {
+    const res = await fetch(`${API_URL}/admin/users/${userId}`, {
+      method: 'DELETE',
+      headers: buildHeaders(adminKey),
+    });
+
+    if (res.status === 401) {
+      throw new Error('Invalid Admin Key. Please check your key.');
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || 'Failed to delete user');
+    }
+  },
 };

@@ -5,9 +5,6 @@ export function adminAuth(req: Request, res: Response, next: NextFunction) {
   const receivedKey = (req.headers["x-admin-key"] as string || "").trim();
   const expectedKey = (config.security.adminKey || "").trim();
 
-  // Debug logging
-  console.log(`[AdminAuth] Received key: '${receivedKey}', Expected: '${expectedKey}'`);
-
   if (!receivedKey || receivedKey !== expectedKey) {
     console.log('[AdminAuth] Unauthorized access attempt');
     res.status(401).json({ error: "Unauthorized" });

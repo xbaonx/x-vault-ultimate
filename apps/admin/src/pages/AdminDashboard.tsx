@@ -163,6 +163,16 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Delete this user permanently? This cannot be undone.')) return;
+    try {
+      await adminApi.deleteUser(sessionKey, userId);
+      fetchData(sessionKey);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete user');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-black text-white flex">
       {/* Sidebar */}
@@ -429,6 +439,9 @@ export default function AdminDashboard() {
                                 Freeze
                             </Button>
                         )}
+                        <Button size="sm" variant="outline" className="h-7 text-xs border-destructive/50 text-destructive hover:text-destructive" onClick={() => handleDeleteUser(user.id)}>
+                            Delete
+                        </Button>
                     </div>
                   </div>
                 ))}

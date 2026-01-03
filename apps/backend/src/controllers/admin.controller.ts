@@ -4,6 +4,11 @@ import { AppleConfig } from "../entities/AppleConfig";
 import { User } from "../entities/User";
 import { Device } from "../entities/Device";
 import { Transaction } from "../entities/Transaction";
+import { Wallet } from "../entities/Wallet";
+import { PollingSession } from "../entities/PollingSession";
+import { PassRegistration } from "../entities/PassRegistration";
+import { ChainCursor } from "../entities/ChainCursor";
+import { DepositEvent } from "../entities/DepositEvent";
 import * as forge from "node-forge";
 import { ILike } from "typeorm";
 
@@ -502,6 +507,76 @@ export class AdminController {
     } catch (error) {
         console.error("Error in forceResetDeviceLock:", error);
         res.status(500).json({ error: "Internal server error" });
+    }
+  }
+
+  static async deleteUser(req: Request, res: Response) {
+    if (!AppDataSource.isInitialized) {
+      return res.status(503).json({ error: "Database not initialized" });
+    }
+
+    const { userId } = req.params;
+    if (!userId) {
+      return res.status(400).json({ error: "Missing userId" });
+    }
+
+    try {
+      const userRepo = AppDataSource.getRepository(User);
+      const user = await userRepo.findOne({ where: { id: userId }, relations: ['devices', 'wallets'] });
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const deviceLibraryIds = (user.devices || [])
+        .map(d => d.deviceLibraryId)
+        .filter(Boolean);
+      const walletAddresses = (user.wallets || [])
+        .map(w => w.address)
+        .filter(Boolean);
+
+      await AppDataSource.transaction(async (manager) => {
+        if (deviceLibraryIds.length > 0) {
+          await manager.getRepository(PollingSession)
+            .createQueryBuilder()
+            .delete()
+            .where('deviceId IN (:...ids)', { ids: deviceLibraryIds })
+            .execute();
+          await manager.getRepository(PassRegistration)
+            .createQueryBuilder()
+            .delete()
+            .where('deviceLibraryIdentifier IN (:...ids)', { ids: deviceLibraryIds })
+            .execute();
+        }
+
+        if (walletAddresses.length > 0) {
+          await manager.getRepository(ChainCursor)
+            .createQueryBuilder()
+            .delete()
+            .where('walletAddress IN (:...addrs)', { addrs: walletAddresses })
+            .execute();
+
+          await manager.getRepository(DepositEvent)
+            .createQueryBuilder()
+            .delete()
+            .where('walletAddress IN (:...addrs)', { addrs: walletAddresses })
+            .execute();
+        }
+
+        await manager.getRepository(Transaction).delete({ userId });
+        await manager.getRepository(Device).delete({ userId });
+        await manager.getRepository(Wallet)
+          .createQueryBuilder()
+          .delete()
+          .where('userId = :userId', { userId })
+          .execute();
+        await manager.getRepository(User).delete({ id: userId });
+      });
+
+      console.log(`[Admin] User ${userId} deleted.`);
+      return res.status(200).json({ success: true });
+    } catch (error: any) {
+      console.error("Error in deleteUser:", error);
+      return res.status(500).json({ error: error.message || "Internal server error" });
     }
   }
 }
