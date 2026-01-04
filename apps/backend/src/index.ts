@@ -42,22 +42,38 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', version: '0.1.0' });
 });
 
-async function start() {
-  try {
-    await AppDataSource.initialize();
-    console.log('Data Source has been initialized!');
-    JobRunnerService.start();
-  } catch (err) {
-    console.error('Error during Data Source initialization.', err);
-    if (config.nodeEnv === 'production') {
-      process.exit(1);
+async function initializeDataSourceWithRetry() {
+  const isProd = config.nodeEnv === 'production';
+  const maxAttempts = isProd ? 10 : 1;
+  const delayMs = 3000;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await AppDataSource.initialize();
+      console.log('Data Source has been initialized!');
+      return;
+    } catch (err) {
+      console.error(`Error during Data Source initialization (attempt ${attempt}/${maxAttempts}).`, err);
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
     }
   }
+
+  if (isProd) {
+    process.exit(1);
+  }
+}
+
+async function start() {
+  await initializeDataSourceWithRetry();
 
   if (!AppDataSource.isInitialized) {
     console.warn('Data Source is not initialized. Server will not start.');
     return;
   }
+
+  JobRunnerService.start();
 
   app.listen(config.port, () => {
     console.log(`Server running on port ${config.port}`);
