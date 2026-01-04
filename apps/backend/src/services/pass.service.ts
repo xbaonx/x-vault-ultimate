@@ -321,12 +321,6 @@ export class PassService {
              // ---------------------------------------------------------
              // 2. ASSET BREAKDOWN
              // ---------------------------------------------------------
-             pass.backFields.push({
-                 key: 'assets_header',
-                 label: 'ASSET BREAKDOWN',
-                 value: 'Portfolio Overview',
-             });
-
              if (userData.assets) {
                  // Sort assets by value (descending)
                  const sortedAssets = Object.entries(userData.assets)
@@ -338,28 +332,15 @@ export class PassService {
                          if (asset.symbol.toLowerCase() === 'usdz') {
                              return;
                          }
-                         // Mapping names like "Ethereum Balance (ETH)" based on symbol
-                         let label = `${asset.symbol} Balance`;
-                         if (asset.symbol === 'ETH') label = 'Ethereum Balance (ETH)';
-                         if (asset.symbol === 'BTC') label = 'Bitcoin Balance (BTC)';
-                         if (asset.symbol === 'SOL') label = 'Solana Balance (SOL)';
-                         if (asset.symbol === 'USDT' || asset.symbol === 'USDC' || asset.symbol === 'DAI') label = `Stablecoin Balance (${asset.symbol})`;
-                         if (asset.symbol === 'MATIC' || asset.symbol === 'POL') label = 'Polygon Balance (POL)';
-
                          pass.backFields.push({
                              key: `asset_${asset.symbol.toLowerCase()}`,
-                             label: label,
-                             value: `${asset.amount.toLocaleString('en-US', { maximumFractionDigits: 4 })} ${asset.symbol} ${asset.value > 0 ? `(~${formatCurrency(asset.value)})` : ''}`,
+                             label: `${asset.symbol}`,
+                             value: `${asset.amount.toLocaleString('en-US', { maximumFractionDigits: 6 })} ${asset.symbol}${asset.value > 0 ? ` (~${formatCurrency(asset.value)})` : ''}`,
                          });
                      }
                  });
              } else {
-                 // Fallback if no assets provided (Mock for visual verification)
-                 pass.backFields.push({
-                     key: 'asset_eth',
-                     label: 'Ethereum Balance (ETH)',
-                     value: '0.00 ETH (~$0.00)',
-                 });
+                 // No assets
              }
 
              // Credit Limit (usdz) - Fixed Item
