@@ -391,9 +391,30 @@ export class ApplePassController {
             await snapshotRepo.save(snapshot);
           }
 
-          totalBalanceUsd = Object.entries(assets)
+          const computedTotalBalanceUsd = Object.entries(assets)
             .filter(([symbol]) => symbol !== 'usdz')
             .reduce((sum, [, a]) => sum + (typeof a?.value === 'number' ? a.value : 0), 0);
+
+          totalBalanceUsd = computedTotalBalanceUsd;
+
+          if (!shouldRefresh) {
+            const previousUsdzAmount = (existingSnapshot?.assets as any)?.usdz?.amount;
+            const normalizedUsdzAmount = Number(usdzBalance.toFixed(2));
+            const usdzChanged = Number(previousUsdzAmount || 0) !== normalizedUsdzAmount;
+            const balanceChanged = Math.abs(Number(existingSnapshot?.totalBalanceUsd || 0) - computedTotalBalanceUsd) > 0.0001;
+
+            if (!existingSnapshot || usdzChanged || balanceChanged) {
+              const snapshot = existingSnapshot || snapshotRepo.create({
+                serialNumber: serialAddress,
+                totalBalanceUsd: 0,
+                assets: null,
+              });
+
+              snapshot.totalBalanceUsd = computedTotalBalanceUsd;
+              snapshot.assets = assets;
+              await snapshotRepo.save(snapshot);
+            }
+          }
 
           console.log(`[ApplePass] Calculated Total Balance: ${totalBalanceUsd}`);
 
