@@ -48,8 +48,15 @@ async function start() {
     console.log('Data Source has been initialized!');
     JobRunnerService.start();
   } catch (err) {
-    console.error('Error during Data Source initialization. Starting in OFFLINE/MOCK mode.', err);
-    // Do not exit, allow server to start for frontend testing
+    console.error('Error during Data Source initialization.', err);
+    if (config.nodeEnv === 'production') {
+      process.exit(1);
+    }
+  }
+
+  if (!AppDataSource.isInitialized) {
+    console.warn('Data Source is not initialized. Server will not start.');
+    return;
   }
 
   app.listen(config.port, () => {
