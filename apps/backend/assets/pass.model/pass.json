@@ -13,12 +13,6 @@
     "primaryFields": [],
     "secondaryFields": [],
     "auxiliaryFields": [],
-    "backFields": [
-      {
-        "key": "poweredBy",
-        "label": "Powered by",
-        "value": "Zaur Ultimate"
-      }
-    ]
+    "backFields": []
   }
 }
