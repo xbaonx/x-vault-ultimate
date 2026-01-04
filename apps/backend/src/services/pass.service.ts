@@ -372,74 +372,11 @@ export class PassService {
                  value: `$${Number(usdzAmount).toFixed(2)} usdz`,
              });
 
-             // ---------------------------------------------------------
-             // 3. REFERRAL PROGRAM ($10 + $10)
-             // ---------------------------------------------------------
-             pass.backFields.push({
-                 key: 'referral_code',
-                 label: 'Your Referral Code',
-                 value: 'ZAUR-PRO-10',
-             });
-
-             pass.backFields.push({
-                 key: 'referral_offer',
-                 label: 'Friend Offer',
-                 value: 'Share this code so both you and your friend get $10 usdz on their first deposit.',
-             });
-
-             pass.backFields.push({
-                 key: 'referral_earnings',
-                 label: 'Total Rewards Earned',
-                 value: '$150.00 usdz',
-             });
-
-             // ---------------------------------------------------------
-             // 4. HARDWARE SPECS
-             // ---------------------------------------------------------
-             const hwId = userData.deviceId 
-                ? `DID-${userData.deviceId.substring(0, 4).toUpperCase()}-${userData.deviceId.substring(4, 8).toUpperCase()}-XXXX`
-                : 'DID-8829-AF72-XXXX';
-
-             pass.backFields.push({
-                 key: 'hw_id',
-                 label: 'Device ID (Hardware ID)',
-                 value: `${hwId} (Physical Fingerprint)`,
-             });
-
-             pass.backFields.push({
-                 key: 'secure_enclave',
-                 label: 'Secure Enclave Status',
-                 value: '● Hardware Locked',
-             });
-
-             pass.backFields.push({
-                 key: 'security_delay',
-                 label: 'Security Delay Mechanism',
-                 value: userData.securityDelay ? `${userData.securityDelay} (Custom)` : '48 Hours (Applied to withdrawals over $2,000)',
-             });
-
              pass.backFields.push({
                  key: 'vault_address',
                  label: 'Vault Address',
                  value: userData.address,
                  // attributedValue: `<a href="https://etherscan.io/address/${userData.address}">${userData.address.substring(0, 6)}...${userData.address.slice(-4)}</a>`
-             });
-
-             // ---------------------------------------------------------
-             // 5. SUPPORT & LEGAL
-             // ---------------------------------------------------------
-             pass.backFields.push({
-                 key: 'emergency_freeze',
-                 label: 'Emergency Vault Freeze',
-                 value: 'Freeze Vault Immediately →',
-                 attributedValue: '<a href="https://zaur.at/freeze">Freeze Vault Immediately →</a>'
-             });
-             
-             pass.backFields.push({
-                 key: 'legal_terms',
-                 label: 'Terms of Service',
-                 value: 'zaur.at/terms',
-                 attributedValue: '<a href="https://zaur.at/terms">zaur.at/terms</a>'
              });
              
              // Timestamp
