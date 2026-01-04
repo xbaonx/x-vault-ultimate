@@ -147,7 +147,7 @@ export class AaController {
         return res.status(400).json({ error: 'Device has no passkey registered' });
       }
 
-      const { transaction } = req.body;
+      const { transaction, spendingPin } = req.body;
       if (!transaction?.to) {
         return res.status(400).json({ error: 'Missing transaction.to' });
       }
@@ -377,6 +377,7 @@ export class AaController {
           chainId: chainConfig.chainId,
           user,
           device,
+          spendingPin,
         });
 
         if (sponsor.statusCode !== 200) {
@@ -532,7 +533,7 @@ export class AaController {
             asset: chainConfig.symbol,
             user: userEntity,
             userId: userEntity.id,
-            txData: { type: 'aa', sender: userOp.sender, callData: userOp.callData }
+            txData: { type: 'aa', chainId: chainConfig.chainId, sender: userOp.sender, callData: userOp.callData }
           });
           await txRepo.save(newTx);
         } catch (e) {

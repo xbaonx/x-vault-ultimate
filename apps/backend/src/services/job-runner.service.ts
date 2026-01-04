@@ -1,4 +1,5 @@
 import { DelayedTxExecutorService } from './delayed-tx-executor.service';
+import { AaReceiptPollerService } from './aa-receipt-poller.service';
 
 export class JobRunnerService {
   private static started = false;
@@ -12,6 +13,12 @@ export class JobRunnerService {
         await DelayedTxExecutorService.runOnce();
       } catch (e) {
         console.warn('[JobRunner] delayed executor error:', e);
+      }
+
+      try {
+        await AaReceiptPollerService.runOnce();
+      } catch (e) {
+        console.warn('[JobRunner] aa receipt poller error:', e);
       }
     };
 

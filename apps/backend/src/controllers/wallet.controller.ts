@@ -334,7 +334,9 @@ export class WalletController {
           token: tx.asset || 'ETH',
           date: tx.createdAt,
           status: tx.status,
-          hash: tx.userOpHash,
+          hash: tx.txHash || tx.userOpHash,
+          txHash: tx.txHash || null,
+          explorerUrl: tx.explorerUrl || null,
           network: tx.network,
           canCancel: tx.status === 'delayed'
       }));

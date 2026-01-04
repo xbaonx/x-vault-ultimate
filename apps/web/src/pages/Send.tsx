@@ -116,7 +116,23 @@ export default function Send() {
         console.log("Sending Transaction:", transaction);
 
         // Call API (Triggers Passkey)
-        const result = await walletService.sendTransaction(userId, transaction, deviceId);
+        let result;
+        try {
+          result = await walletService.sendTransaction(userId, transaction, deviceId);
+        } catch (e: any) {
+          const errMsg = e?.response?.data?.error || e?.message || '';
+          const status = e?.response?.status;
+
+          if (status === 401 && String(errMsg).toLowerCase().includes('spending pin required')) {
+            const pin = window.prompt('Enter your Spending PIN');
+            if (!pin) {
+              throw e;
+            }
+            result = await walletService.sendTransaction(userId, transaction, deviceId, pin);
+          } else {
+            throw e;
+          }
+        }
 
         if (result.fee) {
             setFee(result.fee);

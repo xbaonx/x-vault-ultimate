@@ -179,10 +179,10 @@ export const walletService = {
   /**
    * Send a secure transaction with Passkey signing
    */
-  sendTransaction: async (_userId: string, transaction: any, deviceId: string) => {
+  sendTransaction: async (_userId: string, transaction: any, deviceId: string, spendingPin?: string) => {
     try {
       // 1. Get AA UserOp + Challenge from Backend
-      const optionsRes = await api.post('/aa/userop/options', { transaction }, {
+      const optionsRes = await api.post('/aa/userop/options', { transaction, spendingPin }, {
         headers: { 'x-device-library-id': deviceId }
       });
       const options = optionsRes.data;

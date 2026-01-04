@@ -9,6 +9,12 @@ export class Transaction {
     @Column({ unique: true })
     userOpHash!: string;
 
+    @Column({ nullable: true })
+    txHash!: string;
+
+    @Column({ nullable: true })
+    explorerUrl!: string;
+
     @Column()
     network!: string; // base, polygon, etc.
 
