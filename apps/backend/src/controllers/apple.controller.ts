@@ -384,7 +384,7 @@ export class ApplePassController {
                   const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
                   if (nativeBalance > 0) {
                     const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? prices['MATIC'] : prices['ETH'];
-                    const key = (chain.symbol === 'MATIC' || chain.symbol === 'POL') ? 'ETH' : chain.symbol;
+                    const key = chain.symbol;
                     if (!assets[key]) assets[key] = { amount: 0, value: 0 };
                     assets[key].amount += nativeBalance;
                     assets[key].value += nativeBalance * price;

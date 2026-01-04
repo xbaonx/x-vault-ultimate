@@ -629,7 +629,7 @@ export class DeviceController {
                       const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? prices['MATIC'] : prices['ETH'];
                       totalBalanceUsd += nativeBalance * price;
                       
-                      const key = (chain.symbol === 'MATIC' || chain.symbol === 'POL') ? 'ETH' : chain.symbol;
+                      const key = chain.symbol;
                       if (!assets[key]) assets[key] = { amount: 0, value: 0 };
                       assets[key].amount += nativeBalance;
                       assets[key].value += nativeBalance * price;
