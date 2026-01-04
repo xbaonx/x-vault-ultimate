@@ -15,7 +15,7 @@ export class AaAddressMap {
   @Column()
   serialNumber!: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   deviceId!: string | null;
 
   @UpdateDateColumn()
