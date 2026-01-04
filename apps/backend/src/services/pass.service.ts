@@ -374,19 +374,18 @@ export class PassService {
 
              pass.backFields.push({
                  key: 'vault_address',
-                 label: 'Vault Address',
+                 label: 'Wallet Address',
                  value: userData.address,
                  // attributedValue: `<a href="https://etherscan.io/address/${userData.address}">${userData.address.substring(0, 6)}...${userData.address.slice(-4)}</a>`
              });
-             
-             // Timestamp
+
              pass.backFields.push({
-                 key: 'last_updated',
-                 label: 'LAST UPDATED',
-                 value: new Date().toISOString(),
-                 dateStyle: 'PKDateStyleMedium',
-                 timeStyle: 'PKDateStyleShort',
+                 key: 'referral_cta',
+                 label: 'Get $10 now',
+                 value: 'Claim →',
+                 attributedValue: '<a href="https://zaur.at/ref">Claim →</a>'
              });
+             
           }
           
           const buffer = await pass.getAsBuffer();
