@@ -127,6 +127,18 @@ export class DepositWatcherService {
     let start = fromBlock + 1;
     let chunkSize = 1000;
 
+    const isAlchemyFreeTierRangeLimit = (e: unknown): boolean => {
+      const anyErr = e as any;
+      const msg = String(anyErr?.shortMessage || anyErr?.message || anyErr?.info?.responseBody || '');
+      const code = anyErr?.info?.error?.code ?? anyErr?.code;
+      return (
+        code === -32600 ||
+        msg.toLowerCase().includes('free tier') ||
+        msg.toLowerCase().includes('eth_getlogs') && msg.toLowerCase().includes('10 block') ||
+        msg.toLowerCase().includes('up to a 10 block range')
+      );
+    };
+
     while (start <= toBlock) {
       const end = Math.min(toBlock, start + chunkSize - 1);
 
@@ -139,11 +151,18 @@ export class DepositWatcherService {
           topics: [TRANSFER_TOPIC, null, paddedTo]
         });
       } catch (e) {
-        // Reduce chunk size and retry same range on flaky public RPCs
-        if (chunkSize > 200) {
-          chunkSize = Math.floor(chunkSize / 2);
+        // Alchemy Free tier: eth_getLogs supports only <= 10 blocks per request.
+        if (isAlchemyFreeTierRangeLimit(e) && chunkSize > 10) {
+          chunkSize = 10;
           continue;
         }
+
+        // Generic fallback: reduce chunk size and retry same range on flaky RPCs
+        if (chunkSize > 10) {
+          chunkSize = Math.max(10, Math.floor(chunkSize / 2));
+          continue;
+        }
+
         throw e;
       }
 
