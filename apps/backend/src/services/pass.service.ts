@@ -261,7 +261,7 @@ export class PassService {
           if (pass.secondaryFields) {
              pass.secondaryFields.push({
                 key: 'balance',
-                label: 'VAULT BALANCE',
+                label: 'BALANCE',
                 value: parseFloat(userData.balance), 
                 currencyCode: 'USD',
                 textAlignment: 'PKTextAlignmentLeft'

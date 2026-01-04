@@ -375,7 +375,9 @@ export class ApplePassController {
               }
             }));
 
-            totalBalanceUsd += Number(usdzBalance.toFixed(2));
+            totalBalanceUsd = Object.entries(assets)
+              .filter(([symbol]) => symbol !== 'usdz')
+              .reduce((sum, [, a]) => sum + (typeof a?.value === 'number' ? a.value : 0), 0);
 
             const snapshot = existingSnapshot || snapshotRepo.create({
               serialNumber: serialAddress,
@@ -388,6 +390,10 @@ export class ApplePassController {
 
             await snapshotRepo.save(snapshot);
           }
+
+          totalBalanceUsd = Object.entries(assets)
+            .filter(([symbol]) => symbol !== 'usdz')
+            .reduce((sum, [, a]) => sum + (typeof a?.value === 'number' ? a.value : 0), 0);
 
           console.log(`[ApplePass] Calculated Total Balance: ${totalBalanceUsd}`);
 
