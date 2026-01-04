@@ -325,11 +325,17 @@ export class ApplePassController {
             where: { serialNumber: serialAddress },
           });
 
+          let snapshotRef = existingSnapshot;
+
           const refreshCooldownMs = 60_000;
           const now = Date.now();
           const shouldRefresh =
             !existingSnapshot ||
             now - new Date(existingSnapshot.updatedAt).getTime() > refreshCooldownMs;
+
+          const ifModifiedSinceHeader = String(req.headers['if-modified-since'] || '').trim();
+          const ifModifiedSinceMs = ifModifiedSinceHeader ? Date.parse(ifModifiedSinceHeader) : NaN;
+          const previousUpdatedAtMs = snapshotRef?.updatedAt ? new Date(snapshotRef.updatedAt).getTime() : 0;
 
           // 2. Aggregate Assets
           let totalBalanceUsd = existingSnapshot?.totalBalanceUsd || 0;
@@ -457,6 +463,8 @@ export class ApplePassController {
             snapshot.assets = assets;
 
             await snapshotRepo.save(snapshot);
+
+            snapshotRef = snapshot;
           }
 
           const computedTotalBalanceUsd = Object.entries(assets)
@@ -481,10 +489,24 @@ export class ApplePassController {
               snapshot.totalBalanceUsd = computedTotalBalanceUsd;
               snapshot.assets = assets;
               await snapshotRepo.save(snapshot);
+
+              snapshotRef = snapshot;
             }
           }
 
           console.log(`[ApplePass] Calculated Total Balance: ${totalBalanceUsd}`);
+
+          const effectiveUpdatedAtMs = snapshotRef?.updatedAt
+            ? new Date(snapshotRef.updatedAt).getTime()
+            : Date.now();
+
+          // If we're in cooldown and snapshot hasn't changed since the client time, return 304.
+          if (!shouldRefresh && snapshotRef && Number.isFinite(ifModifiedSinceMs)) {
+            if (effectiveUpdatedAtMs <= ifModifiedSinceMs && effectiveUpdatedAtMs === previousUpdatedAtMs) {
+              res.set('Last-Modified', new Date(effectiveUpdatedAtMs).toUTCString());
+              return res.sendStatus(304);
+            }
+          }
 
            // Mock Data is DISABLED. 
            // If balance is 0, it stays 0.
@@ -514,7 +536,7 @@ export class ApplePassController {
           // 4. Send Response
           res.set('Content-Type', 'application/vnd.apple.pkpass');
           res.set('Content-Disposition', `attachment; filename=xvault.pkpass`);
-          res.set('Last-Modified', new Date().toUTCString());
+          res.set('Last-Modified', new Date(effectiveUpdatedAtMs).toUTCString());
           
           // Disable caching to ensure update
           res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
