@@ -28,6 +28,7 @@ export default function Dashboard() {
   // Mock user ID for MVP
   const userId = localStorage.getItem('x_user_id') || 'user-123';
   const deviceId = localStorage.getItem('x_device_id') || 'device-123';
+  const storedWalletId = localStorage.getItem('x_wallet_id');
 
   // 1. Initial Load: Fetch Wallets & Device Status
   useEffect(() => {
@@ -57,8 +58,11 @@ export default function Dashboard() {
               setWallets(walletList);
               
               if (walletList.length > 0) {
-                  // Default to first wallet if none selected
-                  setSelectedWalletId(walletList[0].id);
+                  const initial = (storedWalletId && walletList.some((w: any) => w.id === storedWalletId))
+                    ? storedWalletId
+                    : walletList[0].id;
+                  setSelectedWalletId(initial);
+                  localStorage.setItem('x_wallet_id', initial);
               }
 
           } catch (e: any) {
@@ -108,6 +112,7 @@ export default function Dashboard() {
 
   const handleWalletSelect = (walletId: string) => {
       setSelectedWalletId(walletId);
+      localStorage.setItem('x_wallet_id', walletId);
       setShowWalletMenu(false);
   };
 
@@ -193,14 +198,14 @@ export default function Dashboard() {
                                 </div>
                                 <div>
                                     <div className="font-medium text-sm">{w.name}</div>
-                                    <div className="text-[10px] text-secondary">{shortenAddress(w.address)}</div>
+                                    <div className="text-[10px] text-secondary">{shortenAddress((w as any).aaAddress || w.address)}</div>
                                 </div>
                             </button>
                         ))}
                         <div className="h-px bg-white/10 my-1" />
                         
                         <a 
-                            href={`${getNormalizedApiUrl()}/api/device/pass/${deviceId}`}
+                            href={`${getNormalizedApiUrl()}/api/device/pass/${deviceId}${selectedWalletId ? `?walletId=${selectedWalletId}` : ''}`}
                             className="w-full flex items-center gap-3 p-3 rounded-lg text-left hover:bg-white/5 text-secondary hover:text-white transition-colors"
                         >
                             <div className="bg-white/10 p-2 rounded-full">

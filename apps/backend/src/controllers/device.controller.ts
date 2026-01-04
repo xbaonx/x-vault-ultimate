@@ -538,28 +538,32 @@ export class DeviceController {
   static async downloadPass(req: Request, res: Response) {
     try {
       const { deviceId } = req.params;
+      const walletId = String((req.query as any)?.walletId || '');
       
       const deviceRepo = AppDataSource.getRepository(Device);
-      const device = await deviceRepo.findOne({
-          where: { deviceLibraryId: deviceId },
-          relations: ['user', 'user.wallets']
-      });
 
-      if (!device) {
-         res.status(404).json({ error: 'Device not found' });
-         return;
+      const device = await deviceRepo.findOne({ where: { deviceLibraryId: deviceId }, relations: ['user'] });
+
+      if (!device || !device.user || !device.credentialPublicKey) {
+        return res.status(404).json({ error: 'Device not found' });
       }
 
-      if (!device.credentialPublicKey) {
-        res.status(400).json({ error: 'Device has no passkey registered' });
-        return;
+      let walletSalt = 0;
+      try {
+        const walletRepo = AppDataSource.getRepository(Wallet);
+        const wallet = walletId
+          ? await walletRepo.findOne({ where: { id: walletId, user: { id: device.user.id } } })
+          : await walletRepo.findOne({ where: { user: { id: device.user.id }, isActive: true } });
+        walletSalt = Number((wallet as any)?.aaSalt ?? 0);
+      } catch {
+        walletSalt = 0;
       }
 
       const baseSerialChainId = Number(config.blockchain.chainId);
       const serialAddress = await deriveAaAddressFromCredentialPublicKey({
         credentialPublicKey: Buffer.from(device.credentialPublicKey),
         chainId: baseSerialChainId,
-        salt: 0,
+        salt: walletSalt,
       });
 
       // Fetch Real Balance for Pass (Aggregated across chains)
@@ -609,7 +613,7 @@ export class DeviceController {
                   const chainAddress = await deriveAaAddressFromCredentialPublicKey({
                     credentialPublicKey: Buffer.from(device.credentialPublicKey),
                     chainId: chain.chainId,
-                    salt: 0,
+                    salt: walletSalt,
                   });
 
                   // Use singleton provider

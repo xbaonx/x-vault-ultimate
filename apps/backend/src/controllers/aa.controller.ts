@@ -5,6 +5,7 @@ import { AppDataSource } from '../data-source';
 import { Device } from '../entities/Device';
 import { User } from '../entities/User';
 import { Transaction } from '../entities/Transaction';
+import { Wallet } from '../entities/Wallet';
 import { config } from '../config';
 import { ProviderService } from '../services/provider.service';
 import { PaymasterController } from './paymaster.controller';
@@ -116,7 +117,13 @@ export class AaController {
       const provider = ProviderService.getProvider(chainConfig.chainId);
       const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);
 
-      const salt = 0;
+      const walletRepo = AppDataSource.getRepository(Wallet);
+      const walletId = (req.query.walletId as string) || '';
+      const wallet = walletId
+        ? await walletRepo.findOne({ where: { id: walletId, user: { id: user.id } } })
+        : await walletRepo.findOne({ where: { user: { id: user.id }, isActive: true } });
+
+      const salt = Number(wallet?.aaSalt ?? 0);
       const address = await factory['getAddress(uint256,uint256,uint256)'](x, y, salt);
 
       res.status(200).json({
@@ -176,7 +183,13 @@ export class AaController {
       const { x, y } = decodeP256PublicKeyXY(device.credentialPublicKey);
       const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);
 
-      const salt = 0;
+      const walletRepo = AppDataSource.getRepository(Wallet);
+      const walletId = String(transaction.walletId || '');
+      const wallet = walletId
+        ? await walletRepo.findOne({ where: { id: walletId, user: { id: user.id } } })
+        : await walletRepo.findOne({ where: { user: { id: user.id }, isActive: true } });
+
+      const salt = Number(wallet?.aaSalt ?? 0);
       const sender = await factory['getAddress(uint256,uint256,uint256)'](x, y, salt);
 
       const code = await provider.getCode(sender);
@@ -408,7 +421,9 @@ export class AaController {
         bundlerUrl,
         challenge,
         userOp,
-        fee: feeBreakdown
+        fee: feeBreakdown,
+        walletId: wallet?.id || null,
+        salt,
       });
     } catch (e: any) {
       console.error('[AA] getUserOpOptions error:', e);
@@ -533,7 +548,7 @@ export class AaController {
             asset: chainConfig.symbol,
             user: userEntity,
             userId: userEntity.id,
-            txData: { type: 'aa', chainId: chainConfig.chainId, sender: userOp.sender, callData: userOp.callData }
+            txData: { type: 'aa', chainId: chainConfig.chainId, sender: userOp.sender, callData: userOp.callData, walletId: (req.body as any)?.walletId || null }
           });
           await txRepo.save(newTx);
         } catch (e) {

@@ -195,6 +195,7 @@ export const walletService = {
         chainId: options.chainId,
         userOp: options.userOp,
         assertion,
+        walletId: transaction?.walletId || null,
       }, {
         headers: { 'x-device-library-id': deviceId }
       });

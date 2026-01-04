@@ -21,6 +21,9 @@ export class Wallet {
     @Column({ select: false, nullable: true }) 
     privateKey!: string;
 
+    @Column({ type: 'int', default: 0 })
+    aaSalt!: number;
+
     // Salt used to generate this specific address (Address = hash(User_ID + Salt))
     @Column()
     salt!: string;

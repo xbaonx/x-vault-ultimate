@@ -92,7 +92,7 @@ export class DepositWatcherService {
     }
   }
 
-  static async runOnceForDevice(device: Device, notifyPassUpdates = false): Promise<void> {
+  static async runOnceForDevice(device: Device, notifyPassUpdates = false, walletSalt = 0): Promise<void> {
     if (!AppDataSource.isInitialized) return;
     if (!device?.isActive || !device.credentialPublicKey) return;
 
@@ -101,12 +101,13 @@ export class DepositWatcherService {
 
     const baseSerialChainId = Number(config.blockchain.chainId);
 
+    const normalizedSalt = Number(walletSalt || 0);
     let serialNumberForPassUpdate = '';
     try {
       serialNumberForPassUpdate = await deriveAaAddressFromCredentialPublicKey({
         credentialPublicKey: Buffer.from(device.credentialPublicKey),
         chainId: baseSerialChainId,
-        salt: 0,
+        salt: normalizedSalt,
       });
     } catch {
       return;
@@ -122,7 +123,7 @@ export class DepositWatcherService {
         walletAddress = await deriveAaAddressFromCredentialPublicKey({
           credentialPublicKey: Buffer.from(device.credentialPublicKey),
           chainId: chain.chainId,
-          salt: 0,
+          salt: normalizedSalt,
         });
       } catch {
         continue;

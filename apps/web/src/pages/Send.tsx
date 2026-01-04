@@ -19,6 +19,7 @@ export default function Send() {
 
   const userId = localStorage.getItem('x_user_id') || '';
   const deviceId = localStorage.getItem('x_device_id') || '';
+  const walletId = localStorage.getItem('x_wallet_id') || '';
 
   // 1. Fetch Portfolio to populate asset list
   useEffect(() => {
@@ -31,7 +32,7 @@ export default function Send() {
       }
 
       try {
-        const data = await walletService.getPortfolio(userId, deviceId);
+        const data = await walletService.getPortfolio(userId, deviceId, walletId || undefined);
         setPortfolio(data);
         if (data.assets && data.assets.length > 0) {
             setSelectedAsset(data.assets[0]);
@@ -90,7 +91,8 @@ export default function Send() {
                 chainId: selectedAsset.chainId,
                 isNative: true,
                 assetSymbol: selectedAsset.symbol,
-                decimals: 18
+                decimals: 18,
+                walletId: walletId || undefined,
             };
         } else {
             // ERC-20 Transfer
@@ -109,7 +111,8 @@ export default function Send() {
                 chainId: selectedAsset.chainId,
                 isNative: false,
                 assetSymbol: selectedAsset.symbol,
-                decimals
+                decimals,
+                walletId: walletId || undefined,
             };
         }
 

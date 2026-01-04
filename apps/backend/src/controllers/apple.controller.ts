@@ -10,6 +10,7 @@ import { config } from "../config";
 import { ProviderService } from "../services/provider.service";
 import { deriveAaAddressFromCredentialPublicKey } from "../utils/aa-address";
 import { DepositWatcherService } from "../services/deposit-watcher.service";
+import { Wallet } from "../entities/Wallet";
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -299,6 +300,25 @@ export class ApplePassController {
           const user = matchedDevice.user;
           console.log(`[ApplePass] Found user ${user.id} for serial ${serialAddress}`);
 
+          const walletRepo = AppDataSource.getRepository(Wallet);
+          const wallets = await walletRepo.find({ where: { user: { id: user.id } }, order: { createdAt: 'ASC' } });
+
+          let walletSalt = 0;
+          try {
+            for (const w of wallets) {
+              const derivedSerial = await deriveAaAddressFromCredentialPublicKey({
+                credentialPublicKey: Buffer.from(matchedDevice.credentialPublicKey),
+                chainId: baseSerialChainId,
+                salt: (w as any).aaSalt ?? 0,
+              });
+              if (String(derivedSerial).toLowerCase() === String(serialAddress).toLowerCase()) {
+                walletSalt = Number((w as any).aaSalt ?? 0);
+                break;
+              }
+            }
+          } catch {
+          }
+
           const snapshotRepo = AppDataSource.getRepository(WalletSnapshot);
           const existingSnapshot = await snapshotRepo.findOne({
             where: { serialNumber: serialAddress },
@@ -327,7 +347,7 @@ export class ApplePassController {
 
             try {
               await Promise.race([
-                DepositWatcherService.runOnceForDevice(matchedDevice, false),
+                DepositWatcherService.runOnceForDevice(matchedDevice, false, walletSalt),
                 new Promise<void>((resolve) => setTimeout(() => resolve(), 1500)),
               ]);
             } catch {
@@ -350,7 +370,7 @@ export class ApplePassController {
                 const chainAddress = await deriveAaAddressFromCredentialPublicKey({
                   credentialPublicKey: Buffer.from(matchedDevice!.credentialPublicKey),
                   chainId: chain.chainId,
-                  salt: 0,
+                  salt: walletSalt,
                 });
 
                 const provider = ProviderService.getProvider(chain.chainId);

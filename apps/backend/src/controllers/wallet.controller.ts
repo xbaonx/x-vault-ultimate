@@ -75,21 +75,6 @@ export class WalletController {
       }
 
       const chainId = Number(req.query.chainId || config.blockchain.chainId);
-
-      if (device?.credentialPublicKey) {
-        try {
-          const aaAddress = await deriveAaAddressFromCredentialPublicKey({
-            credentialPublicKey: Buffer.from(device.credentialPublicKey),
-            chainId,
-            salt: 0,
-          });
-
-          res.status(200).json({ address: aaAddress, walletId: null, chainId });
-          return;
-        } catch {
-          // fall back to legacy wallet address if derivation fails
-        }
-      }
       
       const walletRepo = AppDataSource.getRepository(Wallet);
       // Get the requested wallet ID from query, or default to active/main
@@ -100,6 +85,21 @@ export class WalletController {
           wallet = await walletRepo.findOne({ where: { id: walletId, user: { id: user.id } } });
       } else {
           wallet = await walletRepo.findOne({ where: { user: { id: user.id }, isActive: true } });
+      }
+
+      if (device?.credentialPublicKey && wallet) {
+        try {
+          const aaAddress = await deriveAaAddressFromCredentialPublicKey({
+            credentialPublicKey: Buffer.from(device.credentialPublicKey),
+            chainId,
+            salt: wallet.aaSalt ?? 0,
+          });
+
+          res.status(200).json({ address: aaAddress, walletId: wallet.id, chainId });
+          return;
+        } catch {
+          // fall back to legacy wallet address if derivation fails
+        }
       }
 
       const address = wallet?.address || '0x0000000000000000000000000000000000000000';
@@ -114,6 +114,7 @@ export class WalletController {
   static async listWallets(req: Request, res: Response) {
     try {
         const user = (req as any).user as User;
+        const device = (req as any).device as Device;
         if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
         const walletRepo = AppDataSource.getRepository(Wallet);
@@ -122,7 +123,47 @@ export class WalletController {
             order: { createdAt: 'ASC' }
         });
 
-        res.status(200).json(wallets);
+        const used = new Set<number>();
+        let nextSalt = 0;
+        let changed = false;
+        for (const w of wallets) {
+          const current = typeof (w as any).aaSalt === 'number' ? (w as any).aaSalt : 0;
+          if (used.has(current)) {
+            while (used.has(nextSalt)) nextSalt++;
+            (w as any).aaSalt = nextSalt;
+            used.add(nextSalt);
+            nextSalt++;
+            changed = true;
+          } else {
+            used.add(current);
+            if (current >= nextSalt) nextSalt = current + 1;
+            (w as any).aaSalt = current;
+          }
+        }
+
+        if (changed) {
+          await walletRepo.save(wallets);
+        }
+
+        const chainId = Number(config.blockchain.chainId);
+        const withAa = await Promise.all(wallets.map(async (w) => {
+          let aaAddress: string | null = null;
+          if (device?.credentialPublicKey) {
+            try {
+              aaAddress = await deriveAaAddressFromCredentialPublicKey({
+                credentialPublicKey: Buffer.from(device.credentialPublicKey),
+                chainId,
+                salt: (w as any).aaSalt ?? 0,
+              });
+            } catch {
+              aaAddress = null;
+            }
+          }
+
+          return { ...w, aaAddress };
+        }));
+
+        res.status(200).json(withAa);
     } catch (error) {
         console.error('Error in listWallets:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -140,13 +181,19 @@ export class WalletController {
           // Generate REAL random wallet for signing capability
           const randomWallet = ethers.Wallet.createRandom();
 
+          const existing = await walletRepo.find({ where: { user: { id: user.id } }, order: { createdAt: 'ASC' } });
+          const used = new Set<number>(existing.map(w => (w as any).aaSalt ?? 0));
+          let aaSalt = 0;
+          while (used.has(aaSalt)) aaSalt++;
+
           const newWallet = walletRepo.create({
               user,
               name: name || `Wallet ${new Date().toLocaleDateString()}`,
               salt: 'random',
               address: randomWallet.address,
               privateKey: randomWallet.privateKey,
-              isActive: true 
+              aaSalt,
+              isActive: existing.length === 0
           });
 
           await walletRepo.save(newWallet);
@@ -236,7 +283,7 @@ export class WalletController {
                 ? await deriveAaAddressFromCredentialPublicKey({
                     credentialPublicKey: Buffer.from(device.credentialPublicKey),
                     chainId: chain.chainId,
-                    salt: 0,
+                    salt: wallet?.aaSalt ?? 0,
                   })
                 : address;
 
