@@ -127,16 +127,53 @@ export class DepositWatcherService {
     let start = fromBlock + 1;
     let chunkSize = 1000;
 
+    const parseRpcErrorFromResponseBody = (e: unknown): { code?: number; message?: string } | null => {
+      const anyErr = e as any;
+      const body = anyErr?.info?.responseBody;
+      if (!body || typeof body !== 'string') return null;
+      try {
+        const parsed = JSON.parse(body);
+        if (parsed?.error && (typeof parsed.error === 'object')) {
+          return { code: parsed.error.code, message: parsed.error.message };
+        }
+      } catch {
+        return null;
+      }
+      return null;
+    };
+
     const isAlchemyFreeTierRangeLimit = (e: unknown): boolean => {
       const anyErr = e as any;
-      const msg = String(anyErr?.shortMessage || anyErr?.message || anyErr?.info?.responseBody || '');
-      const code = anyErr?.info?.error?.code ?? anyErr?.code;
+      const rpcError = parseRpcErrorFromResponseBody(e);
+      const code = rpcError?.code ?? anyErr?.info?.error?.code ?? anyErr?.code;
+      const msg = [
+        rpcError?.message,
+        anyErr?.shortMessage,
+        anyErr?.message,
+        anyErr?.info?.responseBody,
+      ].filter(Boolean).join(' ');
+
+      const normalized = msg.toLowerCase();
       return (
         code === -32600 ||
-        msg.toLowerCase().includes('free tier') ||
-        msg.toLowerCase().includes('eth_getlogs') && msg.toLowerCase().includes('10 block') ||
-        msg.toLowerCase().includes('up to a 10 block range')
+        normalized.includes('free tier') ||
+        (normalized.includes('eth_getlogs') && normalized.includes('10 block')) ||
+        normalized.includes('up to a 10 block range')
       );
+    };
+
+    const isAlchemyThroughputLimit = (e: unknown): boolean => {
+      const anyErr = e as any;
+      const code = anyErr?.error?.code ?? anyErr?.info?.error?.code;
+      const msg = [
+        anyErr?.error?.message,
+        anyErr?.shortMessage,
+        anyErr?.message,
+        anyErr?.info?.responseBody,
+      ].filter(Boolean).join(' ');
+
+      const normalized = msg.toLowerCase();
+      return code === 429 || normalized.includes('compute units per second') || normalized.includes('throughput');
     };
 
     while (start <= toBlock) {
@@ -155,6 +192,11 @@ export class DepositWatcherService {
         if (isAlchemyFreeTierRangeLimit(e) && chunkSize > 10) {
           chunkSize = 10;
           continue;
+        }
+
+        // Alchemy throughput: avoid spamming errors; let the next run retry.
+        if (isAlchemyThroughputLimit(e)) {
+          return;
         }
 
         // Generic fallback: reduce chunk size and retry same range on flaky RPCs
