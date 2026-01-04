@@ -17,6 +17,7 @@ import { ethers } from 'ethers';
 import { ProviderService } from '../services/provider.service';
 import { deriveAaAddressFromCredentialPublicKey } from '../utils/aa-address';
 import { AaAddressMapService } from '../services/aa-address-map.service';
+import { TokenDiscoveryService } from '../services/token-discovery.service';
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -569,7 +570,7 @@ export class DeviceController {
       // Fetch Real Balance for Pass (Aggregated across chains)
       let totalBalanceUsd = 0;
       // Aggregate assets for the pass
-      const assets: Record<string, { amount: number, value: number }> = {};
+      const assets: Record<string, { amount: number; value: number; name?: string }> = {};
       
       // Initialize with some default tracked assets
       assets['ETH'] = { amount: 0, value: 0 };
@@ -630,36 +631,55 @@ export class DeviceController {
                       totalBalanceUsd += nativeBalance * price;
                       
                       const key = chain.symbol;
-                      if (!assets[key]) assets[key] = { amount: 0, value: 0 };
+                      if (!assets[key]) assets[key] = { amount: 0, value: 0, name: key };
                       assets[key].amount += nativeBalance;
                       assets[key].value += nativeBalance * price;
                   }
 
                   // 2. ERC-20 Token Balances
-                  const tokens = TOKEN_MAP[chain.chainId];
-                  if (tokens) {
-                      await Promise.all(tokens.map(async (token) => {
-                          try {
-                              const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
-                              const tokenBalanceWei: bigint = await contract.balanceOf(chainAddress);
-                              
-                              if (tokenBalanceWei > 0n) {
-                                  const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
-                                  const price = prices[token.symbol] || 0;
-                                  const value = formattedBalance * price;
+                  const discovered = await TokenDiscoveryService.getErc20Assets({
+                      chainId: chain.chainId,
+                      address: chainAddress,
+                      timeoutMs: 2500,
+                      maxTokens: 40,
+                      prices,
+                  });
+
+                  if (discovered.length) {
+                      for (const t of discovered) {
+                          const sym = String(t.symbol || '').toUpperCase();
+                          if (!sym || sym === 'USDZ') continue;
+                          if (!assets[sym]) assets[sym] = { amount: 0, value: 0, name: t.name || sym };
+                          assets[sym].amount += t.amount;
+                          assets[sym].value += t.value;
+                          totalBalanceUsd += t.value;
+                      }
+                  } else {
+                      const tokens = TOKEN_MAP[chain.chainId];
+                      if (tokens) {
+                          await Promise.all(tokens.map(async (token) => {
+                              try {
+                                  const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
+                                  const tokenBalanceWei: bigint = await contract.balanceOf(chainAddress);
                                   
-                                  totalBalanceUsd += value;
-                                  
-                                  if (!assets[token.symbol]) assets[token.symbol] = { amount: 0, value: 0 };
-                                  assets[token.symbol].amount += formattedBalance;
-                                  assets[token.symbol].value += value;
-                                  
-                                  console.log(`[Device] Found ${formattedBalance} ${token.symbol} on chain ${chain.chainId}`);
+                                  if (tokenBalanceWei > 0n) {
+                                      const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
+                                      const price = prices[token.symbol] || 0;
+                                      const value = formattedBalance * price;
+                                      
+                                      totalBalanceUsd += value;
+                                      
+                                      if (!assets[token.symbol]) assets[token.symbol] = { amount: 0, value: 0, name: token.symbol };
+                                      assets[token.symbol].amount += formattedBalance;
+                                      assets[token.symbol].value += value;
+                                      
+                                      console.log(`[Device] Found ${formattedBalance} ${token.symbol} on chain ${chain.chainId}`);
+                                  }
+                              } catch (err) {
+                                  // Ignore token fetch errors
                               }
-                          } catch (err) {
-                              // Ignore token fetch errors
-                          }
-                      }));
+                          }));
+                      }
                   }
 
               } catch (e) { }

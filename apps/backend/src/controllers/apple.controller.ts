@@ -11,6 +11,7 @@ import { ProviderService } from "../services/provider.service";
 import { deriveAaAddressFromCredentialPublicKey } from "../utils/aa-address";
 import { DepositWatcherService } from "../services/deposit-watcher.service";
 import { Wallet } from "../entities/Wallet";
+import { TokenDiscoveryService } from "../services/token-discovery.service";
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -332,10 +333,10 @@ export class ApplePassController {
 
           // 2. Aggregate Assets
           let totalBalanceUsd = existingSnapshot?.totalBalanceUsd || 0;
-          const assets: Record<string, { amount: number, value: number }> = existingSnapshot?.assets || {};
+          const assets: Record<string, { amount: number; value: number; name?: string }> = (existingSnapshot?.assets as any) || {};
 
           const usdzBalance = Math.max(0, user.usdzBalance || 0);
-          assets['usdz'] = { amount: Number(usdzBalance.toFixed(2)), value: Number(usdzBalance.toFixed(2)) };
+          assets['usdz'] = { amount: Number(usdzBalance.toFixed(2)), value: Number(usdzBalance.toFixed(2)), name: 'usdz' };
 
           if (shouldRefresh) {
             totalBalanceUsd = 0;
@@ -385,7 +386,7 @@ export class ApplePassController {
                   if (nativeBalance > 0) {
                     const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? prices['MATIC'] : prices['ETH'];
                     const key = chain.symbol;
-                    if (!assets[key]) assets[key] = { amount: 0, value: 0 };
+                    if (!assets[key]) assets[key] = { amount: 0, value: 0, name: key };
                     assets[key].amount += nativeBalance;
                     assets[key].value += nativeBalance * price;
                     totalBalanceUsd += nativeBalance * price;
@@ -393,29 +394,50 @@ export class ApplePassController {
                 } catch {
                 }
 
-                const tokens = TOKEN_MAP[chain.chainId];
-                if (tokens) {
-                  await Promise.all(tokens.map(async (token) => {
-                    try {
-                      const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
-                      const tokenBalanceWei = await Promise.race([
-                        contract.balanceOf(chainAddress),
-                        new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('Token RPC Timeout')), 3000)),
-                      ]) as bigint;
+                // Discover ALL ERC-20 token balances via Alchemy Token API if available.
+                const discovered = await TokenDiscoveryService.getErc20Assets({
+                  chainId: chain.chainId,
+                  address: chainAddress,
+                  timeoutMs: 2500,
+                  maxTokens: 40,
+                  prices,
+                });
 
-                      if (tokenBalanceWei > 0n) {
-                        const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
-                        const price = prices[token.symbol] || 0;
-                        const value = formattedBalance * price;
+                if (discovered.length) {
+                  for (const t of discovered) {
+                    const sym = String(t.symbol || '').toUpperCase();
+                    if (!sym || sym === 'USDZ') continue;
+                    if (!assets[sym]) assets[sym] = { amount: 0, value: 0, name: t.name || sym };
+                    assets[sym].amount += t.amount;
+                    assets[sym].value += t.value;
+                    totalBalanceUsd += t.value;
+                  }
+                } else {
+                  // Fallback to curated TOKEN_MAP for non-Alchemy RPCs.
+                  const tokens = TOKEN_MAP[chain.chainId];
+                  if (tokens) {
+                    await Promise.all(tokens.map(async (token) => {
+                      try {
+                        const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
+                        const tokenBalanceWei = await Promise.race([
+                          contract.balanceOf(chainAddress),
+                          new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('Token RPC Timeout')), 3000)),
+                        ]) as bigint;
 
-                        if (!assets[token.symbol]) assets[token.symbol] = { amount: 0, value: 0 };
-                        assets[token.symbol].amount += formattedBalance;
-                        assets[token.symbol].value += value;
-                        totalBalanceUsd += value;
+                        if (tokenBalanceWei > 0n) {
+                          const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
+                          const price = prices[token.symbol] || 0;
+                          const value = formattedBalance * price;
+
+                          if (!assets[token.symbol]) assets[token.symbol] = { amount: 0, value: 0, name: token.symbol };
+                          assets[token.symbol].amount += formattedBalance;
+                          assets[token.symbol].value += value;
+                          totalBalanceUsd += value;
+                        }
+                      } catch {
                       }
-                    } catch {
-                    }
-                  }));
+                    }));
+                  }
                 }
               } catch {
               }

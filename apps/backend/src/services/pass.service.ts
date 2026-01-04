@@ -334,8 +334,8 @@ export class PassService {
                          }
                          pass.backFields.push({
                              key: `asset_${asset.symbol.toLowerCase()}`,
-                             label: `${asset.symbol}`,
-                             value: `${asset.amount.toLocaleString('en-US', { maximumFractionDigits: 6 })} ${asset.symbol}${asset.value > 0 ? ` (~${formatCurrency(asset.value)})` : ''}`,
+                             label: `${(asset as any).name || asset.symbol}`,
+                             value: `${asset.amount.toLocaleString('en-US', { maximumFractionDigits: 6 })} ${asset.symbol} (~${formatCurrency(typeof asset.value === 'number' ? asset.value : 0)})`,
                          });
                      }
                  });
