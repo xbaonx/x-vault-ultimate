@@ -31,9 +31,31 @@ dotenv.config();
  }
 
  function getAlchemyRpcUrl(chainId: number): string | undefined {
-   // Same endpoint as bundler for Alchemy; kept separate for clarity.
-   return getAlchemyBundlerUrl(chainId);
- }
+  // Same endpoint as bundler for Alchemy; kept separate for clarity.
+  return getAlchemyBundlerUrl(chainId);
+}
+
+function isDefaultPublicRpc(url?: string): boolean {
+  if (!url) return false;
+  const normalized = url.trim().toLowerCase();
+  return (
+    normalized.includes('publicnode.com') ||
+    normalized.includes('mainnet.base.org') ||
+    normalized.includes('polygon-bor.publicnode.com') ||
+    normalized.includes('optimism-rpc.publicnode.com') ||
+    normalized.includes('ethereum-rpc.publicnode.com') ||
+    normalized.includes('arbitrum-one-rpc.publicnode.com')
+  );
+}
+
+function getPreferredRpcUrl(chainId: number, envUrl: string | undefined, defaultUrl: string): string {
+  const trimmed = (envUrl || '').trim();
+  if (trimmed && !isDefaultPublicRpc(trimmed)) {
+    return trimmed;
+  }
+
+  return getAlchemyRpcUrl(chainId) || (trimmed || defaultUrl);
+}
 
 export const config = {
   port: process.env.PORT || 3000,
@@ -48,7 +70,7 @@ export const config = {
   },
   blockchain: {
     chainId: parseInt(process.env.CHAIN_ID || '8453'),
-    rpcUrl: process.env.RPC_URL || getAlchemyRpcUrl(parseInt(process.env.CHAIN_ID || '8453')) || 'https://mainnet.base.org',
+    rpcUrl: getPreferredRpcUrl(parseInt(process.env.CHAIN_ID || '8453'), process.env.RPC_URL, 'https://mainnet.base.org'),
     bundlerUrl: process.env.BUNDLER_URL || 'https://api.stackup.sh/v1/node/your-api-key',
     entryPointAddress: process.env.ENTRY_POINT_ADDRESS || DEFAULT_ENTRY_POINT_ADDRESS,
     paymaster: {
@@ -67,31 +89,31 @@ export const config = {
     // Multi-chain Configuration
     chains: {
         base: {
-            rpcUrl: process.env.BASE_RPC_URL || getAlchemyRpcUrl(8453) || 'https://mainnet.base.org',
+            rpcUrl: getPreferredRpcUrl(8453, process.env.BASE_RPC_URL, 'https://mainnet.base.org'),
             chainId: 8453,
             symbol: 'ETH',
             name: 'Base'
         },
         polygon: {
-            rpcUrl: process.env.POLYGON_RPC_URL || getAlchemyRpcUrl(137) || 'https://polygon-bor.publicnode.com',
+            rpcUrl: getPreferredRpcUrl(137, process.env.POLYGON_RPC_URL, 'https://polygon-bor.publicnode.com'),
             chainId: 137,
             symbol: 'MATIC', // Now POL, but let's keep MATIC/POL symbol flexible
             name: 'Polygon'
         },
         arbitrum: {
-            rpcUrl: process.env.ARBITRUM_RPC_URL || getAlchemyRpcUrl(42161) || 'https://arbitrum-one-rpc.publicnode.com',
+            rpcUrl: getPreferredRpcUrl(42161, process.env.ARBITRUM_RPC_URL, 'https://arbitrum-one-rpc.publicnode.com'),
             chainId: 42161,
             symbol: 'ETH',
             name: 'Arbitrum'
         },
         optimism: {
-            rpcUrl: process.env.OPTIMISM_RPC_URL || getAlchemyRpcUrl(10) || 'https://optimism-rpc.publicnode.com',
+            rpcUrl: getPreferredRpcUrl(10, process.env.OPTIMISM_RPC_URL, 'https://optimism-rpc.publicnode.com'),
             chainId: 10,
             symbol: 'ETH',
             name: 'Optimism'
         },
         ethereum: {
-            rpcUrl: process.env.ETH_RPC_URL || getAlchemyRpcUrl(1) || 'https://ethereum-rpc.publicnode.com',
+            rpcUrl: getPreferredRpcUrl(1, process.env.ETH_RPC_URL, 'https://ethereum-rpc.publicnode.com'),
             chainId: 1,
             symbol: 'ETH',
             name: 'Ethereum'
