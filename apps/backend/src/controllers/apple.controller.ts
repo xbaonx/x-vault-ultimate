@@ -340,6 +340,8 @@ export class ApplePassController {
           // 2. Aggregate Assets
           let totalBalanceUsd = existingSnapshot?.totalBalanceUsd || 0;
           const assets: Record<string, { amount: number; value: number; name?: string }> = (existingSnapshot?.assets as any) || {};
+          const prevAssetsForCompare = existingSnapshot?.assets ? JSON.parse(JSON.stringify(existingSnapshot.assets)) : null;
+          const prevTotalBalanceUsd = Number(existingSnapshot?.totalBalanceUsd || 0);
 
           const usdzBalance = Math.max(0, user.usdzBalance || 0);
           assets['usdz'] = { amount: Number(usdzBalance.toFixed(2)), value: Number(usdzBalance.toFixed(2)), name: 'usdz' };
@@ -453,18 +455,47 @@ export class ApplePassController {
               .filter(([symbol]) => symbol !== 'usdz')
               .reduce((sum, [, a]) => sum + (typeof a?.value === 'number' ? a.value : 0), 0);
 
-            const snapshot = existingSnapshot || snapshotRepo.create({
-              serialNumber: serialAddress,
-              totalBalanceUsd: 0,
-              assets: null,
-            });
+            const isSameSnapshot = (() => {
+              if (!existingSnapshot) return false;
+              if (!prevAssetsForCompare) return false;
+              const a = prevAssetsForCompare as any;
+              const b = assets as any;
+              const aKeys = Object.keys(a || {}).sort();
+              const bKeys = Object.keys(b || {}).sort();
+              if (aKeys.length !== bKeys.length) return false;
+              for (let i = 0; i < aKeys.length; i++) {
+                if (aKeys[i] !== bKeys[i]) return false;
+              }
+              for (const k of aKeys) {
+                const av = a[k] || {};
+                const bv = b[k] || {};
+                const aAmt = Number(av.amount || 0);
+                const bAmt = Number(bv.amount || 0);
+                const aVal = Number(av.value || 0);
+                const bVal = Number(bv.value || 0);
+                const aName = String(av.name || k);
+                const bName = String(bv.name || k);
+                if (aName !== bName) return false;
+                if (Math.abs(aAmt - bAmt) > 0.0000001) return false;
+                if (Math.abs(aVal - bVal) > 0.0001) return false;
+              }
+              if (Math.abs(prevTotalBalanceUsd - totalBalanceUsd) > 0.0001) return false;
+              return true;
+            })();
 
-            snapshot.totalBalanceUsd = totalBalanceUsd;
-            snapshot.assets = assets;
+            if (!isSameSnapshot) {
+              const snapshot = existingSnapshot || snapshotRepo.create({
+                serialNumber: serialAddress,
+                totalBalanceUsd: 0,
+                assets: null,
+              });
 
-            await snapshotRepo.save(snapshot);
+              snapshot.totalBalanceUsd = totalBalanceUsd;
+              snapshot.assets = assets;
 
-            snapshotRef = snapshot;
+              await snapshotRepo.save(snapshot);
+              snapshotRef = snapshot;
+            }
           }
 
           const computedTotalBalanceUsd = Object.entries(assets)
@@ -500,8 +531,7 @@ export class ApplePassController {
             ? new Date(snapshotRef.updatedAt).getTime()
             : Date.now();
 
-          // If we're in cooldown and snapshot hasn't changed since the client time, return 304.
-          if (!shouldRefresh && snapshotRef && Number.isFinite(ifModifiedSinceMs)) {
+          if (snapshotRef && Number.isFinite(ifModifiedSinceMs)) {
             if (effectiveUpdatedAtMs <= ifModifiedSinceMs && effectiveUpdatedAtMs === previousUpdatedAtMs) {
               res.set('Last-Modified', new Date(effectiveUpdatedAtMs).toUTCString());
               return res.sendStatus(304);
