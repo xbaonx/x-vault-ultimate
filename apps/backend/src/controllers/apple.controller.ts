@@ -245,26 +245,49 @@ export class ApplePassController {
           // serialNumber is the AA address (Base chain) in our model
           const serialAddress = serialNumber;
 
+          const registrationRepo = AppDataSource.getRepository(PassRegistration);
+          const registrations = await registrationRepo
+            .createQueryBuilder('r')
+            .where('LOWER(r.serialNumber) = LOWER(:serialNumber)', { serialNumber: serialAddress })
+            .andWhere('r.passTypeIdentifier = :passTypeIdentifier', { passTypeIdentifier })
+            .getMany();
+
           const deviceRepo = AppDataSource.getRepository(Device);
-          const devices = await deviceRepo.find({ where: { isActive: true }, relations: ['user', 'user.devices'] });
 
           const baseSerialChainId = Number(config.blockchain.chainId);
 
           let matchedDevice: Device | null = null;
-          for (const d of devices) {
-            if (!d.credentialPublicKey) continue;
-            try {
-              const derived = await deriveAaAddressFromCredentialPublicKey({
-                credentialPublicKey: Buffer.from(d.credentialPublicKey),
-                chainId: baseSerialChainId,
-                salt: 0,
-              });
-              if (String(derived).toLowerCase() === String(serialAddress).toLowerCase()) {
-                matchedDevice = d;
-                break;
+          if (registrations.length) {
+            const deviceLibraryIds = Array.from(
+              new Set(registrations.map(r => String(r.deviceLibraryIdentifier || '').toLowerCase()).filter(Boolean))
+            );
+
+            if (deviceLibraryIds.length) {
+              matchedDevice = await deviceRepo
+                .createQueryBuilder('d')
+                .leftJoinAndSelect('d.user', 'user')
+                .where('d.isActive = :isActive', { isActive: true })
+                .andWhere('LOWER(d.deviceLibraryId) IN (:...ids)', { ids: deviceLibraryIds })
+                .getOne();
+            }
+          }
+
+          if (!matchedDevice) {
+            const devices = await deviceRepo.find({ where: { isActive: true }, relations: ['user'] });
+            for (const d of devices) {
+              if (!d.credentialPublicKey) continue;
+              try {
+                const derived = await deriveAaAddressFromCredentialPublicKey({
+                  credentialPublicKey: Buffer.from(d.credentialPublicKey),
+                  chainId: baseSerialChainId,
+                  salt: 0,
+                });
+                if (String(derived).toLowerCase() === String(serialAddress).toLowerCase()) {
+                  matchedDevice = d;
+                  break;
+                }
+              } catch {
               }
-            } catch {
-              // ignore devices that can't derive address
             }
           }
 
@@ -303,7 +326,10 @@ export class ApplePassController {
             }
 
             try {
-              await DepositWatcherService.runOnceForDevice(matchedDevice, false);
+              await Promise.race([
+                DepositWatcherService.runOnceForDevice(matchedDevice, false),
+                new Promise<void>((resolve) => setTimeout(() => resolve(), 1500)),
+              ]);
             } catch {
             }
 
