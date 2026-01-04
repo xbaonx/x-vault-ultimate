@@ -106,6 +106,29 @@ export default function Dashboard() {
     }
   };
 
+  const handleCreateWallet = async () => {
+    try {
+      const name = window.prompt('Wallet name', `Wallet ${wallets.length + 1}`) || '';
+      setLoading(true);
+      const created = await walletService.createWallet(name, deviceId);
+
+      const walletList = await walletService.listWallets(deviceId);
+      setWallets(walletList);
+
+      const newId = created?.id || walletList[walletList.length - 1]?.id;
+      if (newId) {
+        setSelectedWalletId(newId);
+        localStorage.setItem('x_wallet_id', newId);
+      }
+      setShowWalletMenu(false);
+    } catch (e: any) {
+      console.error('Failed to create wallet:', e);
+      setError(e?.response?.data?.error || 'Failed to create wallet');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchPortfolio();
   }, [selectedWalletId, userId, deviceId]);
@@ -214,7 +237,10 @@ export default function Dashboard() {
                             <span className="text-sm">Add to Apple Wallet</span>
                         </a>
 
-                        <button className="w-full flex items-center gap-3 p-3 rounded-lg text-left hover:bg-white/5 text-secondary hover:text-white transition-colors">
+                        <button
+                            onClick={handleCreateWallet}
+                            className="w-full flex items-center gap-3 p-3 rounded-lg text-left hover:bg-white/5 text-secondary hover:text-white transition-colors"
+                        >
                             <div className="bg-white/10 p-2 rounded-full">
                                 <Plus className="w-4 h-4 text-white" />
                             </div>
