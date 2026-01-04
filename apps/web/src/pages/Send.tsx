@@ -23,6 +23,13 @@ export default function Send() {
   // 1. Fetch Portfolio to populate asset list
   useEffect(() => {
     const fetchPortfolio = async () => {
+      if (!userId || !deviceId) {
+        setError('Please sign in on this device to continue.');
+        setLoading(false);
+        navigate('/onboarding', { replace: true });
+        return;
+      }
+
       try {
         const data = await walletService.getPortfolio(userId, deviceId);
         setPortfolio(data);
@@ -31,6 +38,13 @@ export default function Send() {
         }
       } catch (err) {
         console.error("Failed to fetch portfolio", err);
+        const anyErr = err as any;
+        if (anyErr?.response?.status === 401 || anyErr?.response?.status === 403) {
+          localStorage.removeItem('x_user_id');
+          localStorage.removeItem('x_device_id');
+          navigate('/onboarding', { replace: true });
+          return;
+        }
         setError("Failed to load assets.");
       } finally {
         setLoading(false);
