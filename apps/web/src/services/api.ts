@@ -199,7 +199,10 @@ export const walletService = {
         headers: { 'x-device-library-id': deviceId }
       });
 
-      return { ...response.data, fee: options.fee };
+      const data = response.data || {};
+      const txHash = data.txHash || data.userOpHash;
+
+      return { ...data, txHash, fee: options.fee };
     } catch (error) {
       console.error("Transaction failed:", error);
       throw error;
