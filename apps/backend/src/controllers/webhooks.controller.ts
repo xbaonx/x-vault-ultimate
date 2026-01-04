@@ -49,8 +49,12 @@ export class WebhooksController {
         return;
       }
 
-      const signingKey = (config.alchemy?.webhookSigningKey || '').trim();
-      if (!signingKey) {
+      const signingKeys = String(config.alchemy?.webhookSigningKey || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      if (!signingKeys.length) {
         res.status(500).json({ error: 'ALCHEMY_WEBHOOK_SIGNING_KEY not configured' });
         return;
       }
@@ -63,7 +67,8 @@ export class WebhooksController {
         return;
       }
 
-      if (!verifyAlchemySignature({ rawBody, signature, signingKey })) {
+      const ok = signingKeys.some(signingKey => verifyAlchemySignature({ rawBody, signature, signingKey }));
+      if (!ok) {
         res.status(401).json({ error: 'Invalid signature' });
         return;
       }
