@@ -20,7 +20,11 @@ app.use(cors({
 }));
 app.use(helmet());
 app.use(morgan('dev'));
-app.use(express.json());
+app.use(express.json({
+  verify: (req, _res, buf) => {
+    (req as any).rawBody = buf.toString('utf8');
+  }
+}));
 
 // Disable caching for API responses
 app.use('/api', (req, res, next) => {

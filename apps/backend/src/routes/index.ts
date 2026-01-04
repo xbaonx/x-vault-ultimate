@@ -8,6 +8,7 @@ import authRoutes from './auth.routes';
 import migrationRoutes from './migration.routes';
 import appleRoutes from './apple.routes';
 import aaRoutes from './aa.routes';
+import webhooksRoutes from './webhooks.routes';
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.use('/auth', authRoutes);
 router.use('/migration', migrationRoutes);
 router.use('/apple', appleRoutes);
 router.use('/aa', aaRoutes);
+router.use('/webhooks', webhooksRoutes);
 
 export default router;

@@ -5,6 +5,7 @@ import { DepositEvent } from '../entities/DepositEvent';
 import { ChainCursor } from '../entities/ChainCursor';
 import { ProviderService } from './provider.service';
 import { PassUpdateService } from './pass-update.service';
+import { AaAddressMapService } from './aa-address-map.service';
 import { config } from '../config';
 import { deriveAaAddressFromCredentialPublicKey } from '../utils/aa-address';
 
@@ -75,6 +76,13 @@ export class DepositWatcherService {
         } catch {
           continue;
         }
+
+        await AaAddressMapService.upsert({
+          chainId: chain.chainId,
+          aaAddress: walletAddress,
+          serialNumber: serialNumberForPassUpdate,
+          deviceId: device.deviceLibraryId,
+        });
 
         const walletAddressLower = walletAddress.toLowerCase();
         for (const token of tokens) {

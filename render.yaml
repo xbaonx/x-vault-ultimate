@@ -25,6 +25,8 @@ services:
         sync: false
       - key: ALCHEMY_API_KEY
         sync: false
+      - key: ALCHEMY_WEBHOOK_SIGNING_KEY
+        sync: false
       - key: ADMIN_KEY
         sync: false
       - key: DATABASE_URL

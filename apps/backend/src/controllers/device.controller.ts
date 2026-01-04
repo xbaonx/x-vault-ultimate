@@ -16,6 +16,7 @@ import { config } from '../config';
 import { ethers } from 'ethers';
 import { ProviderService } from '../services/provider.service';
 import { deriveAaAddressFromCredentialPublicKey } from '../utils/aa-address';
+import { AaAddressMapService } from '../services/aa-address-map.service';
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -227,6 +228,31 @@ export class DeviceController {
         salt: 0,
       });
 
+      const baseSerialChainId = Number(config.blockchain.chainId);
+      const serialAddress = await deriveAaAddressFromCredentialPublicKey({
+        credentialPublicKey: Buffer.from(targetDevice.credentialPublicKey),
+        chainId: baseSerialChainId,
+        salt: 0,
+      });
+
+      const chains = Object.values(config.blockchain.chains || {});
+      for (const c of chains) {
+        try {
+          const chainAddress = await deriveAaAddressFromCredentialPublicKey({
+            credentialPublicKey: Buffer.from(targetDevice.credentialPublicKey),
+            chainId: c.chainId,
+            salt: 0,
+          });
+          await AaAddressMapService.upsert({
+            chainId: c.chainId,
+            aaAddress: chainAddress,
+            serialNumber: serialAddress,
+            deviceId: targetDevice.deviceLibraryId,
+          });
+        } catch {
+        }
+      }
+
       res.status(200).json({
         verified: true,
         deviceLibraryId: targetDevice.deviceLibraryId,
@@ -362,6 +388,31 @@ export class DeviceController {
           chainId,
           salt: 0,
         });
+
+        const baseSerialChainId = Number(config.blockchain.chainId);
+        const serialAddress = await deriveAaAddressFromCredentialPublicKey({
+          credentialPublicKey: Buffer.from(device.credentialPublicKey),
+          chainId: baseSerialChainId,
+          salt: 0,
+        });
+
+        const chains = Object.values(config.blockchain.chains || {});
+        for (const c of chains) {
+          try {
+            const chainAddress = await deriveAaAddressFromCredentialPublicKey({
+              credentialPublicKey: Buffer.from(device.credentialPublicKey),
+              chainId: c.chainId,
+              salt: 0,
+            });
+            await AaAddressMapService.upsert({
+              chainId: c.chainId,
+              aaAddress: chainAddress,
+              serialNumber: serialAddress,
+              deviceId: device.deviceLibraryId,
+            });
+          } catch {
+          }
+        }
 
         // 3. Create Session for Pass Generation
         const sessionRepo = AppDataSource.getRepository(PollingSession);

@@ -17,6 +17,8 @@ declare global {
       files?: {
         [fieldname: string]: Multer.File[];
       };
+
+      rawBody?: string;
     }
   }
 }
