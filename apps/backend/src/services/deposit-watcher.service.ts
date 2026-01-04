@@ -92,13 +92,65 @@ export class DepositWatcherService {
     }
   }
 
+  static async runOnceForDevice(device: Device, notifyPassUpdates = false): Promise<void> {
+    if (!AppDataSource.isInitialized) return;
+    if (!device?.isActive || !device.credentialPublicKey) return;
+
+    const chains = Object.values(config.blockchain.chains || {});
+    if (!chains.length) return;
+
+    const baseSerialChainId = Number(config.blockchain.chainId);
+
+    let serialNumberForPassUpdate = '';
+    try {
+      serialNumberForPassUpdate = await deriveAaAddressFromCredentialPublicKey({
+        credentialPublicKey: Buffer.from(device.credentialPublicKey),
+        chainId: baseSerialChainId,
+        salt: 0,
+      });
+    } catch {
+      return;
+    }
+
+    for (const chain of chains) {
+      const provider = ProviderService.getProvider(chain.chainId);
+      const latest = await provider.getBlockNumber();
+      const toBlock = Math.max(0, latest - 2);
+
+      let walletAddress = '';
+      try {
+        walletAddress = await deriveAaAddressFromCredentialPublicKey({
+          credentialPublicKey: Buffer.from(device.credentialPublicKey),
+          chainId: chain.chainId,
+          salt: 0,
+        });
+      } catch {
+        continue;
+      }
+
+      await AaAddressMapService.upsert({
+        chainId: chain.chainId,
+        aaAddress: walletAddress,
+        serialNumber: serialNumberForPassUpdate,
+        deviceId: device.deviceLibraryId,
+      });
+
+      const tokens = TOKEN_MAP[chain.chainId] || [];
+      const walletAddressLower = walletAddress.toLowerCase();
+      for (const token of tokens) {
+        await this.scanToken(chain.chainId, token.address, walletAddress, walletAddressLower, serialNumberForPassUpdate, toBlock, notifyPassUpdates);
+      }
+    }
+  }
+
   private static async scanToken(
     chainId: number,
     tokenAddress: string,
     walletAddress: string,
     walletAddressLower: string,
     serialNumberForPassUpdate: string,
-    toBlock: number
+    toBlock: number,
+    notifyPassUpdates = true
   ): Promise<void> {
     const cursorRepo = AppDataSource.getRepository(ChainCursor);
     const depositRepo = AppDataSource.getRepository(DepositEvent);
@@ -109,12 +161,13 @@ export class DepositWatcherService {
 
     let cursor = await cursorRepo.findOne({ where: { id: cursorId } });
     if (!cursor) {
+      const initialLookbackBlocks = 50;
       cursor = cursorRepo.create({
         id: cursorId,
         chainId,
         walletAddress: walletAddressLower,
         tokenAddress: tokenAddressLower,
-        lastScannedBlock: '0'
+        lastScannedBlock: String(Math.max(0, toBlock - initialLookbackBlocks))
       });
       await cursorRepo.save(cursor);
     }
@@ -241,7 +294,9 @@ export class DepositWatcherService {
 
         await depositRepo.save(dep);
 
-        await PassUpdateService.notifyPassUpdateBySerialNumber(serialNumberForPassUpdate);
+        if (notifyPassUpdates) {
+          await PassUpdateService.notifyPassUpdateBySerialNumber(serialNumberForPassUpdate);
+        }
       }
 
       cursor.lastScannedBlock = String(end);

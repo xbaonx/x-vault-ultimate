@@ -3,17 +3,57 @@ import { AppDataSource } from "../data-source";
 import { PassRegistration } from "../entities/PassRegistration";
 import { Device } from "../entities/Device";
 import { User } from "../entities/User";
+import { WalletSnapshot } from "../entities/WalletSnapshot";
 import { PassService } from "../services/pass.service";
 import { ethers } from "ethers";
 import { config } from "../config";
 import { ProviderService } from "../services/provider.service";
 import { deriveAaAddressFromCredentialPublicKey } from "../utils/aa-address";
+import { DepositWatcherService } from "../services/deposit-watcher.service";
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
   "function decimals() view returns (uint8)",
   "function symbol() view returns (string)"
 ];
+
+let applePriceCache: { updatedAt: number; prices: Record<string, number> } | null = null;
+
+async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<any> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    return await res.json();
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+async function getPrices(): Promise<Record<string, number>> {
+  const now = Date.now();
+  if (applePriceCache && now - applePriceCache.updatedAt < 60_000) {
+    return applePriceCache.prices;
+  }
+
+  const prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
+  try {
+    const [ethRes, maticRes] = await Promise.all([
+      fetchJsonWithTimeout(`https://api.coinbase.com/v2/prices/ETH-USD/spot`, 1500).catch(() => null),
+      fetchJsonWithTimeout(`https://api.coinbase.com/v2/prices/MATIC-USD/spot`, 1500).catch(() => null),
+    ]);
+
+    const eth = ethRes?.data?.amount ? parseFloat(ethRes.data.amount) : undefined;
+    const matic = maticRes?.data?.amount ? parseFloat(maticRes.data.amount) : undefined;
+    if (typeof eth === 'number' && Number.isFinite(eth)) prices.ETH = eth;
+    if (typeof matic === 'number' && Number.isFinite(matic)) prices.MATIC = matic;
+  } catch {
+    // ignore
+  }
+
+  applePriceCache = { updatedAt: now, prices: { ...prices } };
+  return prices;
+}
 
 const TOKEN_MAP: Record<number, { address: string; symbol: string; decimals: number }[]> = {
     // Base
@@ -127,7 +167,7 @@ export class ApplePassController {
   static async getUpdatablePasses(req: Request, res: Response) {
       try {
           const { deviceLibraryIdentifier, passTypeIdentifier } = req.params;
-          // const passesUpdatedSince = req.query.passesUpdatedSince; 
+          const passesUpdatedSinceRaw = req.query.passesUpdatedSince as string | undefined;
 
           // For simplicity, we just return all serial numbers associated with this device
           // In a real optimized system, we would check update timestamps.
@@ -140,12 +180,45 @@ export class ApplePassController {
               return res.sendStatus(204); // No content
           }
 
-          const response = {
-              lastUpdated: new Date().toISOString(), // Current tag
-              serialNumbers: registrations.map(r => r.serialNumber)
-          };
+          const serialNumbers = registrations.map(r => r.serialNumber);
 
-          res.status(200).json(response);
+          if (!passesUpdatedSinceRaw) {
+            res.status(200).json({
+              lastUpdated: new Date().toISOString(),
+              serialNumbers,
+            });
+            return;
+          }
+
+          const since = new Date(passesUpdatedSinceRaw);
+          const sinceTime = Number.isFinite(since.getTime()) ? since.getTime() : 0;
+
+          const snapshotRepo = AppDataSource.getRepository(WalletSnapshot);
+          const snapshots = await snapshotRepo
+            .createQueryBuilder('s')
+            .where('LOWER(s.serialNumber) IN (:...serials)', { serials: serialNumbers.map(s => s.toLowerCase()) })
+            .getMany();
+
+          const snapshotBySerial = new Map(snapshots.map(s => [s.serialNumber.toLowerCase(), s] as const));
+          const updatedSerials = serialNumbers.filter((sn) => {
+            const snap = snapshotBySerial.get(sn.toLowerCase());
+            if (!snap) return true;
+            return snap.updatedAt.getTime() > sinceTime;
+          });
+
+          if (!updatedSerials.length) {
+            res.sendStatus(204);
+            return;
+          }
+
+          const newestTag = updatedSerials
+            .map(sn => snapshotBySerial.get(sn.toLowerCase())?.updatedAt.getTime() || Date.now())
+            .reduce((a, b) => Math.max(a, b), 0);
+
+          res.status(200).json({
+            lastUpdated: new Date(newestTag).toISOString(),
+            serialNumbers: updatedSerials,
+          });
       } catch (error) {
           console.error("[ApplePass] Get updatable passes error:", error);
           res.sendStatus(500);
@@ -203,103 +276,118 @@ export class ApplePassController {
           const user = matchedDevice.user;
           console.log(`[ApplePass] Found user ${user.id} for serial ${serialAddress}`);
 
+          const snapshotRepo = AppDataSource.getRepository(WalletSnapshot);
+          const existingSnapshot = await snapshotRepo.findOne({
+            where: { serialNumber: serialAddress },
+          });
+
+          const refreshCooldownMs = 60_000;
+          const now = Date.now();
+          const shouldRefresh =
+            !existingSnapshot ||
+            now - new Date(existingSnapshot.updatedAt).getTime() > refreshCooldownMs;
+
           // 2. Aggregate Assets
-          let totalBalanceUsd = 0;
-          const assets: Record<string, { amount: number, value: number }> = {};
-          
-          assets['ETH'] = { amount: 0, value: 0 };
-          assets['BTC'] = { amount: 0, value: 0 }; 
-          assets['USDT'] = { amount: 0, value: 0 };
-          assets['SOL'] = { amount: 0, value: 0 };
+          let totalBalanceUsd = existingSnapshot?.totalBalanceUsd || 0;
+          const assets: Record<string, { amount: number, value: number }> = existingSnapshot?.assets || {};
+
           const usdzBalance = Math.max(0, user.usdzBalance || 0);
           assets['usdz'] = { amount: Number(usdzBalance.toFixed(2)), value: Number(usdzBalance.toFixed(2)) };
 
-          // 1. Fetch Prices
-          let prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
-          try {
-              const symbols = ['ETH', 'MATIC', 'DAI', 'USDT', 'USDC'];
-              const requests = symbols.map(sym => fetch(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`).then(r => r.json()).catch(() => null));
-              
-              const results = await Promise.all(requests);
-              
-              results.forEach((data, index) => {
-                  if (data && data.data && data.data.amount) {
-                      prices[symbols[index]] = parseFloat(data.data.amount);
-                  }
+          if (shouldRefresh) {
+            totalBalanceUsd = 0;
+            for (const k of Object.keys(assets)) {
+              if (k !== 'usdz') {
+                delete assets[k];
+              }
+            }
+
+            try {
+              await DepositWatcherService.runOnceForDevice(matchedDevice, false);
+            } catch {
+            }
+
+            const prices = await getPrices();
+            const chains = Object.values(config.blockchain.chains || {});
+
+            if (chains.length === 0) {
+              chains.push({
+                rpcUrl: config.blockchain.rpcUrl,
+                symbol: 'ETH',
+                name: 'Default',
+                chainId: config.blockchain.chainId,
               });
-          } catch (e) {
-              console.error("[ApplePass] Failed to fetch prices:", e);
-          }
+            }
 
-          const chains = Object.values(config.blockchain.chains || {});
-           if (chains.length === 0) {
-             chains.push({ 
-                 rpcUrl: config.blockchain.rpcUrl, 
-                 symbol: 'ETH', 
-                 name: 'Default', 
-                 chainId: config.blockchain.chainId 
-             });
-          }
-
-          // Scan chains for this wallet address
-          await Promise.all(chains.map(async (chain) => {
+            await Promise.all(chains.map(async (chain) => {
               try {
-                  const chainAddress = await deriveAaAddressFromCredentialPublicKey({
-                    credentialPublicKey: Buffer.from(matchedDevice!.credentialPublicKey),
-                    chainId: chain.chainId,
-                    salt: 0,
-                  });
+                const chainAddress = await deriveAaAddressFromCredentialPublicKey({
+                  credentialPublicKey: Buffer.from(matchedDevice!.credentialPublicKey),
+                  chainId: chain.chainId,
+                  salt: 0,
+                });
 
-                  // Use singleton provider
-                  const provider = ProviderService.getProvider(chain.chainId);
-                  
-                  // 1. Native Balance
+                const provider = ProviderService.getProvider(chain.chainId);
+
+                try {
                   const balanceWei = await Promise.race([
-                      provider.getBalance(chainAddress),
-                      new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
+                    provider.getBalance(chainAddress),
+                    new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000)),
                   ]);
+
                   const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
                   if (nativeBalance > 0) {
-                      const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? prices['MATIC'] : prices['ETH'];
-                      totalBalanceUsd += nativeBalance * price;
-                      
-                      const key = (chain.symbol === 'MATIC' || chain.symbol === 'POL') ? 'ETH' : chain.symbol;
-                      if (!assets[key]) assets[key] = { amount: 0, value: 0 };
-                      assets[key].amount += nativeBalance;
-                      assets[key].value += nativeBalance * price;
+                    const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? prices['MATIC'] : prices['ETH'];
+                    const key = (chain.symbol === 'MATIC' || chain.symbol === 'POL') ? 'ETH' : chain.symbol;
+                    if (!assets[key]) assets[key] = { amount: 0, value: 0 };
+                    assets[key].amount += nativeBalance;
+                    assets[key].value += nativeBalance * price;
+                    totalBalanceUsd += nativeBalance * price;
                   }
+                } catch {
+                }
 
-                  // 2. ERC-20 Token Balances
-                  const tokens = TOKEN_MAP[chain.chainId];
-                  if (tokens) {
-                      await Promise.all(tokens.map(async (token) => {
-                          try {
-                              const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
-                              const tokenBalanceWei: bigint = await contract.balanceOf(chainAddress);
-                              
-                              if (tokenBalanceWei > 0n) {
-                                  const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
-                                  const price = prices[token.symbol] || 0;
-                                  const value = formattedBalance * price;
-                                  
-                                  totalBalanceUsd += value;
-                                  
-                                  if (!assets[token.symbol]) assets[token.symbol] = { amount: 0, value: 0 };
-                                  assets[token.symbol].amount += formattedBalance;
-                                  assets[token.symbol].value += value;
-                                  
-                                  console.log(`[ApplePass] Found ${formattedBalance} ${token.symbol} on chain ${chain.chainId}`);
-                              }
-                          } catch (err) {
-                              // Ignore token fetch errors (might be not deployed on testnet or RPC issue)
-                          }
-                      }));
-                  }
+                const tokens = TOKEN_MAP[chain.chainId];
+                if (tokens) {
+                  await Promise.all(tokens.map(async (token) => {
+                    try {
+                      const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
+                      const tokenBalanceWei = await Promise.race([
+                        contract.balanceOf(chainAddress),
+                        new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('Token RPC Timeout')), 3000)),
+                      ]) as bigint;
 
-              } catch (e) { 
-                  console.error(`[ApplePass] Failed to scan chain ${chain.name}:`, e);
+                      if (tokenBalanceWei > 0n) {
+                        const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
+                        const price = prices[token.symbol] || 0;
+                        const value = formattedBalance * price;
+
+                        if (!assets[token.symbol]) assets[token.symbol] = { amount: 0, value: 0 };
+                        assets[token.symbol].amount += formattedBalance;
+                        assets[token.symbol].value += value;
+                        totalBalanceUsd += value;
+                      }
+                    } catch {
+                    }
+                  }));
+                }
+              } catch {
               }
-          }));
+            }));
+
+            totalBalanceUsd += Number(usdzBalance.toFixed(2));
+
+            const snapshot = existingSnapshot || snapshotRepo.create({
+              serialNumber: serialAddress,
+              totalBalanceUsd: 0,
+              assets: null,
+            });
+
+            snapshot.totalBalanceUsd = totalBalanceUsd;
+            snapshot.assets = assets;
+
+            await snapshotRepo.save(snapshot);
+          }
 
           console.log(`[ApplePass] Calculated Total Balance: ${totalBalanceUsd}`);
 
