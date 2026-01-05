@@ -26,6 +26,7 @@ export async function deriveAaAddressFromCredentialPublicKey(params: {
   credentialPublicKey: Buffer;
   chainId: number;
   salt?: number | bigint;
+  timeoutMs?: number;
 }): Promise<string> {
   const { credentialPublicKey, chainId } = params;
   const salt = BigInt(params.salt ?? 0);
@@ -40,6 +41,10 @@ export async function deriveAaAddressFromCredentialPublicKey(params: {
   const provider = ProviderService.getProvider(chainId);
   const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);
 
-  const address = await factory['getAddress(uint256,uint256,uint256)'](x, y, salt);
+  const timeoutMs = Number(params.timeoutMs ?? 2000);
+  const address = await Promise.race([
+    factory['getAddress(uint256,uint256,uint256)'](x, y, salt),
+    new Promise<string>((_, reject) => setTimeout(() => reject(new Error('AA Derivation Timeout')), timeoutMs)),
+  ]);
   return String(address);
 }

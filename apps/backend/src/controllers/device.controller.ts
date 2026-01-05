@@ -18,44 +18,7 @@ import { ProviderService } from '../services/provider.service';
 import { deriveAaAddressFromCredentialPublicKey } from '../utils/aa-address';
 import { AaAddressMapService } from '../services/aa-address-map.service';
 import { TokenDiscoveryService } from '../services/token-discovery.service';
-
-const ERC20_ABI = [
-  "function balanceOf(address owner) view returns (uint256)",
-  "function decimals() view returns (uint8)",
-  "function symbol() view returns (string)"
-];
-
-const TOKEN_MAP: Record<number, { address: string; symbol: string; decimals: number }[]> = {
-    // Base
-    8453: [
-        { address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb', symbol: 'DAI', decimals: 18 },
-        { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', symbol: 'USDC', decimals: 6 }
-    ],
-    // Ethereum
-    1: [
-        { address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', symbol: 'DAI', decimals: 18 },
-        { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol: 'USDT', decimals: 6 },
-        { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol: 'USDC', decimals: 6 }
-    ],
-    // Polygon
-    137: [
-        { address: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063', symbol: 'DAI', decimals: 18 },
-        { address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', symbol: 'USDT', decimals: 6 },
-        { address: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', symbol: 'USDC', decimals: 6 }
-    ],
-    // Arbitrum One
-    42161: [
-        { address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', symbol: 'DAI', decimals: 18 },
-        { address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', symbol: 'USDT', decimals: 6 },
-        { address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', symbol: 'USDC', decimals: 6 }
-    ],
-    // Optimism
-    10: [
-        { address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', symbol: 'DAI', decimals: 18 },
-        { address: '0x94b008aa00579c1307b0ef2c499a98a359659fc9', symbol: 'USDT', decimals: 6 },
-        { address: '0x0b2C639c533813f4Aa9D7837CAf992c96bdB5a5f', symbol: 'USDC', decimals: 6 }
-    ]
-};
+import { WalletSnapshot } from '../entities/WalletSnapshot';
 
 export class DeviceController {
   
@@ -599,125 +562,115 @@ export class DeviceController {
         credentialPublicKey: Buffer.from(device.credentialPublicKey),
         chainId: baseSerialChainId,
         salt: walletSalt,
+        timeoutMs: 2000,
       });
 
-      // Fetch Real Balance for Pass (Aggregated across chains)
-      let totalBalanceUsd = 0;
-      // Aggregate assets for the pass
-      const assets: Record<string, { amount: number; value: number; name?: string }> = {};
-      
-      // Initialize with some default tracked assets
-      assets['ETH'] = { amount: 0, value: 0 };
-      assets['BTC'] = { amount: 0, value: 0 }; 
-      assets['USDT'] = { amount: 0, value: 0 };
-      assets['SOL'] = { amount: 0, value: 0 };
-      const usdzBalance = Math.max(0, device.user.usdzBalance || 0);
-      assets['usdz'] = { amount: Number(usdzBalance.toFixed(2)), value: Number(usdzBalance.toFixed(2)) }; // Internal Utility Credit
+      const snapshotRepo = AppDataSource.getRepository(WalletSnapshot);
+      const snapshotRef = serialAddress && serialAddress.startsWith('0x')
+        ? await snapshotRepo
+            .createQueryBuilder('s')
+            .where('LOWER(s.serialNumber) = LOWER(:sn)', { sn: serialAddress })
+            .getOne()
+        : null;
 
-      if (serialAddress && serialAddress.startsWith('0x')) {
-          // 1. Fetch Prices
-          let prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
+      const assets: Record<string, { amount: number; value: number; name?: string }> = {
+        ...((snapshotRef?.assets as any) || {}),
+      };
+
+      const usdzBalance = Math.max(0, device.user.usdzBalance || 0);
+      assets['usdz'] = { amount: Number(usdzBalance.toFixed(2)), value: Number(usdzBalance.toFixed(2)) };
+
+      const totalBalanceUsd = Number(Number(snapshotRef?.totalBalanceUsd || 0).toFixed(2));
+
+      const shouldRefreshSnapshot =
+        !!(serialAddress && serialAddress.startsWith('0x')) &&
+        (!snapshotRef || (snapshotRef.updatedAt && Date.now() - new Date(snapshotRef.updatedAt).getTime() > 60_000));
+
+      if (shouldRefreshSnapshot) {
+        setImmediate(async () => {
           try {
+            let refreshTotalBalanceUsd = 0;
+            const refreshAssets: Record<string, { amount: number; value: number; name?: string }> = {};
+
+            const refreshUsdzBalance = Math.max(0, device.user.usdzBalance || 0);
+            refreshAssets['usdz'] = { amount: Number(refreshUsdzBalance.toFixed(2)), value: Number(refreshUsdzBalance.toFixed(2)) };
+
+            let prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
+            try {
               const symbols = ['ETH', 'MATIC', 'DAI', 'USDT', 'USDC'];
               const requests = symbols.map(sym => fetch(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`).then(r => r.json()).catch(() => null));
-              
               const results = await Promise.all(requests);
-              
               results.forEach((data, index) => {
-                  if (data && data.data && data.data.amount) {
-                      prices[symbols[index]] = parseFloat(data.data.amount);
-                  }
+                if (data && data.data && data.data.amount) {
+                  prices[symbols[index]] = parseFloat(data.data.amount);
+                }
               });
-          } catch (e) {
-              console.warn("Failed to fetch prices for pass, using fallbacks");
-          }
+            } catch {
+            }
 
-          // 2. Scan all chains
-          const chains = Object.values(config.blockchain.chains || {});
-          if (chains.length === 0) {
-             chains.push({ 
-                 rpcUrl: config.blockchain.rpcUrl, 
-                 symbol: 'ETH', 
-                 name: 'Default', 
-                 chainId: config.blockchain.chainId 
-             });
-          }
-
-          await Promise.all(chains.map(async (chain) => {
+            const chains = Object.values(config.blockchain.chains || {});
+            await Promise.all(chains.map(async (chain) => {
               try {
-                  const chainAddress = await deriveAaAddressFromCredentialPublicKey({
-                    credentialPublicKey: Buffer.from(device.credentialPublicKey),
-                    chainId: chain.chainId,
-                    salt: walletSalt,
-                  });
+                const chainAddress = await deriveAaAddressFromCredentialPublicKey({
+                  credentialPublicKey: Buffer.from(device.credentialPublicKey),
+                  chainId: chain.chainId,
+                  salt: walletSalt,
+                  timeoutMs: 2000,
+                });
 
-                  // Use singleton provider
-                  const provider = ProviderService.getProvider(chain.chainId);
-                  
-                  // 1. Native Balance
+                const provider = ProviderService.getProvider(chain.chainId);
+
+                try {
                   const balanceWei = await Promise.race([
-                      provider.getBalance(chainAddress),
-                      new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
+                    provider.getBalance(chainAddress),
+                    new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
                   ]);
                   const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
                   if (nativeBalance > 0) {
-                      const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? prices['MATIC'] : prices['ETH'];
-                      totalBalanceUsd += nativeBalance * price;
-                      
-                      const key = chain.symbol;
-                      if (!assets[key]) assets[key] = { amount: 0, value: 0, name: key };
-                      assets[key].amount += nativeBalance;
-                      assets[key].value += nativeBalance * price;
+                    const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? prices['MATIC'] : prices['ETH'];
+                    const key = chain.symbol;
+                    if (!refreshAssets[key]) refreshAssets[key] = { amount: 0, value: 0, name: key };
+                    refreshAssets[key].amount += nativeBalance;
+                    refreshAssets[key].value += nativeBalance * price;
+                    refreshTotalBalanceUsd += nativeBalance * price;
                   }
+                } catch {
+                }
 
-                  // 2. ERC-20 Token Balances
-                  const discovered = await TokenDiscoveryService.getErc20Assets({
-                      chainId: chain.chainId,
-                      address: chainAddress,
-                      timeoutMs: 2500,
-                      maxTokens: 40,
-                      prices,
-                  });
+                const discovered = await TokenDiscoveryService.getErc20Assets({
+                  chainId: chain.chainId,
+                  address: chainAddress,
+                  timeoutMs: 2500,
+                  maxTokens: 40,
+                  prices,
+                });
 
-                  if (discovered.length) {
-                      for (const t of discovered) {
-                          const sym = String(t.symbol || '').toUpperCase();
-                          if (!sym || sym === 'USDZ') continue;
-                          if (!assets[sym]) assets[sym] = { amount: 0, value: 0, name: t.name || sym };
-                          assets[sym].amount += t.amount;
-                          assets[sym].value += t.value;
-                          totalBalanceUsd += t.value;
-                      }
-                  } else {
-                      const tokens = TOKEN_MAP[chain.chainId];
-                      if (tokens) {
-                          await Promise.all(tokens.map(async (token) => {
-                              try {
-                                  const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
-                                  const tokenBalanceWei: bigint = await contract.balanceOf(chainAddress);
-                                  
-                                  if (tokenBalanceWei > 0n) {
-                                      const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
-                                      const price = prices[token.symbol] || 0;
-                                      const value = formattedBalance * price;
-                                      
-                                      totalBalanceUsd += value;
-                                      
-                                      if (!assets[token.symbol]) assets[token.symbol] = { amount: 0, value: 0, name: token.symbol };
-                                      assets[token.symbol].amount += formattedBalance;
-                                      assets[token.symbol].value += value;
-                                      
-                                      console.log(`[Device] Found ${formattedBalance} ${token.symbol} on chain ${chain.chainId}`);
-                                  }
-                              } catch (err) {
-                                  // Ignore token fetch errors
-                              }
-                          }));
-                      }
+                if (discovered.length) {
+                  for (const t of discovered) {
+                    const sym = String(t.symbol || '').toUpperCase();
+                    if (!sym || sym === 'USDZ') continue;
+                    if (!refreshAssets[sym]) refreshAssets[sym] = { amount: 0, value: 0, name: t.name || sym };
+                    refreshAssets[sym].amount += t.amount;
+                    refreshAssets[sym].value += t.value;
+                    refreshTotalBalanceUsd += t.value;
                   }
+                }
+              } catch {
+              }
+            }));
 
-              } catch (e) { }
-          }));
+            const snapshot = snapshotRef || snapshotRepo.create({
+              serialNumber: serialAddress,
+              totalBalanceUsd: 0,
+              assets: null,
+            });
+
+            snapshot.totalBalanceUsd = Number(Number(refreshTotalBalanceUsd).toFixed(2));
+            snapshot.assets = refreshAssets as any;
+            await snapshotRepo.save(snapshot);
+          } catch {
+          }
+        });
       }
 
       // If total balance is 0, let's put some dummy data for the user to see the beautiful UI (Mock Mode)
@@ -730,8 +683,6 @@ export class DeviceController {
       //   totalBalanceUsd = 80850 + 25; // Including usdz
       // }
 
-      const balance = totalBalanceUsd.toFixed(2);
-      
       // FIX: Use HOST header for webServiceURL to ensure it points to the BACKEND, not the frontend (Origin)
       const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol;
       const host = req.get('host');
@@ -739,7 +690,7 @@ export class DeviceController {
 
       const userData = {
         address: serialAddress,
-        balance: balance,
+        balance: totalBalanceUsd.toFixed(2),
         deviceId: deviceId,
         assets: assets,
         smartContract: "0x4337...Vault", // Placeholder
@@ -747,7 +698,7 @@ export class DeviceController {
         origin: serverUrl // Pass the backend URL as origin
       };
       
-      console.log(`[Device] Generating pass for ${deviceId} with Address: ${serialAddress}, Balance: ${balance}, ServerUrl: ${serverUrl}`);
+      console.log(`[Device] Generating pass for ${deviceId} with Address: ${serialAddress}, Balance: ${totalBalanceUsd.toFixed(2)}, ServerUrl: ${serverUrl}`);
 
       const passBuffer = await PassService.generatePass(userData);
       
