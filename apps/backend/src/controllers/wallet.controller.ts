@@ -6,6 +6,7 @@ import { config } from '../config';
 import { ProviderService } from '../services/provider.service';
 import { deriveAaAddressFromCredentialPublicKey } from '../utils/aa-address';
 import { AaAddressMapService } from '../services/aa-address-map.service';
+import { TokenDiscoveryService } from '../services/token-discovery.service';
 import { User } from '../entities/User';
 import { Wallet } from '../entities/Wallet';
 import { Device } from '../entities/Device';
@@ -379,38 +380,73 @@ export class WalletController {
               }
 
               // 2. ERC-20 Token Balances
-              const tokens = TOKEN_MAP[chain.chainId];
-              if (tokens) {
+              let discovered: Array<{ symbol: string; name: string; amount: number; value: number }> = [];
+              try {
+                discovered = await TokenDiscoveryService.getErc20Assets({
+                  chainId: chain.chainId,
+                  address: scanAddress,
+                  timeoutMs: 2500,
+                  maxTokens: 40,
+                  prices,
+                });
+              } catch {
+                discovered = [];
+              }
+
+              if (discovered.length) {
+                for (const t of discovered) {
+                  const sym = String(t.symbol || '').toUpperCase();
+                  if (!sym || sym === 'USDZ') continue;
+
+                  const valueUsd = Number(Number(t.value || 0).toFixed(2));
+                  totalBalanceUsd += valueUsd;
+                  assets.push({
+                    symbol: sym,
+                    balance: t.amount,
+                    network: chain.name.toLowerCase(),
+                    valueUsd,
+                    tokenAddress: null,
+                    decimals: null,
+                    chainId: chain.chainId,
+                    isNative: false,
+                    name: t.name,
+                  });
+                }
+              } else {
+                // Fallback to curated list for non-Alchemy RPCs
+                const tokens = TOKEN_MAP[chain.chainId];
+                if (tokens) {
                   await Promise.all(tokens.map(async (token) => {
-                      try {
-                          const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
-                          // Add timeout for token calls too
-                          const tokenBalanceWei = await Promise.race([
-                              contract.balanceOf(scanAddress),
-                              new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('Token RPC Timeout')), 3000))
-                          ]) as bigint;
-                          
-                          if (tokenBalanceWei > 0n) {
-                              const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
-                              const price = prices[token.symbol] || 0;
-                              const value = formattedBalance * price;
-                              
-                              totalBalanceUsd += value;
-                              assets.push({
-                                  symbol: token.symbol,
-                                  balance: formattedBalance,
-                                  network: chain.name.toLowerCase(),
-                                  valueUsd: value,
-                                  tokenAddress: token.address,
-                                  decimals: token.decimals,
-                                  chainId: chain.chainId,
-                                  isNative: false
-                              });
-                          }
-                      } catch (err) {
-                          // Ignore token fetch errors
+                    try {
+                      const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
+                      // Add timeout for token calls too
+                      const tokenBalanceWei = await Promise.race([
+                        contract.balanceOf(scanAddress),
+                        new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('Token RPC Timeout')), 3000))
+                      ]) as bigint;
+
+                      if (tokenBalanceWei > 0n) {
+                        const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
+                        const price = prices[token.symbol] || 0;
+                        const value = formattedBalance * price;
+
+                        totalBalanceUsd += value;
+                        assets.push({
+                          symbol: token.symbol,
+                          balance: formattedBalance,
+                          network: chain.name.toLowerCase(),
+                          valueUsd: value,
+                          tokenAddress: token.address,
+                          decimals: token.decimals,
+                          chainId: chain.chainId,
+                          isNative: false
+                        });
                       }
+                    } catch (err) {
+                      // Ignore token fetch errors
+                    }
                   }));
+                }
               }
 
           } catch (err) {
