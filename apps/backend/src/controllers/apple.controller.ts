@@ -12,6 +12,7 @@ import { deriveAaAddressFromCredentialPublicKey } from "../utils/aa-address";
 import { DepositWatcherService } from "../services/deposit-watcher.service";
 import { Wallet } from "../entities/Wallet";
 import { TokenDiscoveryService } from "../services/token-discovery.service";
+import { AaAddressMapService } from "../services/aa-address-map.service";
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -131,6 +132,17 @@ export class ApplePassController {
 
         await repo.save(registration);
         console.log(`[ApplePass] Device registered successfully`);
+
+        try {
+          const baseSerialChainId = Number(config.blockchain.chainId);
+          await AaAddressMapService.upsert({
+            chainId: baseSerialChainId,
+            aaAddress: serialNumber,
+            serialNumber: serialNumber,
+            deviceId: deviceLibraryIdentifier,
+          });
+        } catch {
+        }
 
         res.sendStatus(201);
     } catch (error) {
@@ -275,6 +287,24 @@ export class ApplePassController {
             }
           }
 
+          // Fallback: map serialNumber -> deviceLibraryId via AaAddressMap (stable, avoids RPC derives)
+          if (!matchedDevice) {
+            try {
+              const mappedDeviceLibraryId = await AaAddressMapService.findDeviceIdByAddress({
+                chainId: baseSerialChainId,
+                aaAddress: serialAddress,
+              });
+
+              if (mappedDeviceLibraryId) {
+                matchedDevice = await deviceRepo.findOne({
+                  where: { deviceLibraryId: mappedDeviceLibraryId, isActive: true },
+                  relations: ['user'],
+                });
+              }
+            } catch {
+            }
+          }
+
           if (!matchedDevice) {
             const devices = await deviceRepo.find({ where: { isActive: true }, relations: ['user'] });
             for (const d of devices) {
@@ -284,6 +314,7 @@ export class ApplePassController {
                   credentialPublicKey: Buffer.from(d.credentialPublicKey),
                   chainId: baseSerialChainId,
                   salt: 0,
+                  timeoutMs: 1500,
                 });
                 if (String(derived).toLowerCase() === String(serialAddress).toLowerCase()) {
                   matchedDevice = d;
@@ -312,6 +343,7 @@ export class ApplePassController {
                 credentialPublicKey: Buffer.from(matchedDevice.credentialPublicKey),
                 chainId: baseSerialChainId,
                 salt: (w as any).aaSalt ?? 0,
+                timeoutMs: 2000,
               });
               if (String(derivedSerial).toLowerCase() === String(serialAddress).toLowerCase()) {
                 walletSalt = Number((w as any).aaSalt ?? 0);
@@ -427,6 +459,7 @@ export class ApplePassController {
                   credentialPublicKey: Buffer.from(matchedDevice!.credentialPublicKey),
                   chainId: chain.chainId,
                   salt: walletSalt,
+                  timeoutMs: 2000,
                 });
 
                 const provider = ProviderService.getProvider(chain.chainId);

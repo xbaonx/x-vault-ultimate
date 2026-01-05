@@ -5,6 +5,7 @@ import { AppDataSource } from '../data-source';
 import { config } from '../config';
 import { ProviderService } from '../services/provider.service';
 import { deriveAaAddressFromCredentialPublicKey } from '../utils/aa-address';
+import { AaAddressMapService } from '../services/aa-address-map.service';
 import { User } from '../entities/User';
 import { Wallet } from '../entities/Wallet';
 import { Device } from '../entities/Device';
@@ -279,16 +280,67 @@ export class WalletController {
       const assets: any[] = [];
       let totalBalanceUsd = 0;
 
+      const baseSerialChainId = Number(config.blockchain.chainId);
+      let baseSerialNumber: string | null = null;
+      if (device?.credentialPublicKey) {
+        try {
+          baseSerialNumber = await deriveAaAddressFromCredentialPublicKey({
+            credentialPublicKey: Buffer.from(device.credentialPublicKey),
+            chainId: baseSerialChainId,
+            salt: wallet?.aaSalt ?? 0,
+            timeoutMs: 1500,
+          });
+        } catch {
+          baseSerialNumber = null;
+        }
+      }
+
       // Scan all chains in parallel
       await Promise.all(chains.map(async (chain) => {
           try {
-              const scanAddress = device?.credentialPublicKey
-                ? await deriveAaAddressFromCredentialPublicKey({
-                    credentialPublicKey: Buffer.from(device.credentialPublicKey),
-                    chainId: chain.chainId,
-                    salt: wallet?.aaSalt ?? 0,
-                  })
-                : address;
+              let scanAddress = address;
+
+              if (device?.credentialPublicKey) {
+                // Prefer cached mapping (serialNumber -> chain AA address) to avoid RPC derive timeouts
+                if (baseSerialNumber) {
+                  try {
+                    const mapped = await AaAddressMapService.findAaAddressBySerialNumber({
+                      chainId: chain.chainId,
+                      serialNumber: baseSerialNumber,
+                    });
+                    if (mapped && mapped.startsWith('0x')) {
+                      scanAddress = mapped;
+                    }
+                  } catch {
+                  }
+                }
+
+                // If no mapping found, derive and then cache it
+                if (!scanAddress || !scanAddress.startsWith('0x')) {
+                  try {
+                    scanAddress = await deriveAaAddressFromCredentialPublicKey({
+                      credentialPublicKey: Buffer.from(device.credentialPublicKey),
+                      chainId: chain.chainId,
+                      salt: wallet?.aaSalt ?? 0,
+                      timeoutMs: 2000,
+                    });
+
+                    if (baseSerialNumber && scanAddress && scanAddress.startsWith('0x')) {
+                      try {
+                        await AaAddressMapService.upsert({
+                          chainId: chain.chainId,
+                          aaAddress: scanAddress,
+                          serialNumber: baseSerialNumber,
+                          deviceId: device.deviceLibraryId,
+                        });
+                      } catch {
+                      }
+                    }
+                  } catch {
+                    scanAddress = address;
+                  }
+                }
+              }
 
               if (!scanAddress || !scanAddress.startsWith('0x')) {
                 return;

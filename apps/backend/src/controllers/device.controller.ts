@@ -565,6 +565,17 @@ export class DeviceController {
         timeoutMs: 2000,
       });
 
+      // Ensure Apple pass updates can resolve serialNumber -> device quickly (no RPC fallback).
+      try {
+        await AaAddressMapService.upsert({
+          chainId: baseSerialChainId,
+          aaAddress: serialAddress,
+          serialNumber: serialAddress,
+          deviceId: device.deviceLibraryId,
+        });
+      } catch {
+      }
+
       const snapshotRepo = AppDataSource.getRepository(WalletSnapshot);
       const snapshotRef = serialAddress && serialAddress.startsWith('0x')
         ? await snapshotRepo
