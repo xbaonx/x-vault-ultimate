@@ -45,6 +45,8 @@ export class AuthController {
           }
       }
 
+      console.log(`[Auth] SIWA token parsed: appleUserId=${String(appleUserId || '').slice(0, 8)}..., email=${email ? `${String(email).slice(0, 3)}...` : ''}`);
+
       const userRepo = AppDataSource.getRepository(User);
       
       // Build query criteria
@@ -58,6 +60,8 @@ export class AuthController {
           relations: ['wallets'],
           select: ['id', 'email', 'appleUserId', 'usdzBalance', 'spendingPinHash', 'createdAt', 'updatedAt'] // Explicitly select spendingPinHash to check existence
       });
+
+      console.log(`[Auth] SIWA user lookup result: ${user ? `found userId=${user.id}` : 'not found'}`);
 
       // Create User if not exists
       if (!user) {
@@ -103,21 +107,42 @@ export class AuthController {
 
       // Ensure User has a Default Wallet
       const walletRepo = AppDataSource.getRepository(Wallet);
-      let mainWallet = user.wallets?.find(w => w.name === 'Main Wallet');
+      const wallets = await walletRepo.find({
+          where: { user: { id: user.id } },
+          order: { createdAt: 'ASC' },
+      });
 
-      if (!mainWallet) {
-          // Generate a REAL random wallet with private key
-          const randomWallet = ethers.Wallet.createRandom();
-          
-          mainWallet = walletRepo.create({
-              user: user,
-              name: 'Main Wallet',
-              salt: 'random', // No longer using salt for derivation
-              address: randomWallet.address,
-              privateKey: randomWallet.privateKey,
-              isActive: true
-          });
-          await walletRepo.save(mainWallet);
+      console.log(`[Auth] Wallets for user ${user.id}: count=${wallets.length}, active=${wallets.filter(w => w.isActive).length}`);
+
+      if (wallets.length === 0) {
+        // Generate a REAL random wallet with private key
+        const randomWallet = ethers.Wallet.createRandom();
+
+        const mainWallet = walletRepo.create({
+          user: user,
+          name: 'Main Wallet',
+          salt: 'random',
+          address: randomWallet.address,
+          privateKey: randomWallet.privateKey,
+          isActive: true,
+        });
+        await walletRepo.save(mainWallet);
+        console.log(`[Auth] Created default wallet for user ${user.id}: walletId=${mainWallet.id}, address=${mainWallet.address}`);
+      } else {
+        // Make sure we have exactly one active wallet (prefer existing active, else oldest).
+        const active = wallets.find(w => w.isActive) || wallets[0];
+        let changed = false;
+        for (const w of wallets) {
+          const shouldBeActive = w.id === active.id;
+          if (w.isActive !== shouldBeActive) {
+            w.isActive = shouldBeActive;
+            changed = true;
+          }
+        }
+        if (changed) {
+          await walletRepo.save(wallets);
+          console.log(`[Auth] Normalized active wallet for user ${user.id}: activeWalletId=${active.id}`);
+        }
       }
 
       // Determine status based on whether they have a device/pin set up

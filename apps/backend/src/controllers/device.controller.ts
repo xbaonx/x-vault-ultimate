@@ -125,7 +125,7 @@ export class DeviceController {
         rpID: rpId,
         allowCredentials: devices.map(d => ({
           // Ensure ID is Base64URL for the browser
-          id: DeviceController.toBase64URL(DeviceController.toBase64URL(d.credentialID)),
+          id: DeviceController.toBase64URL(d.credentialID),
           transports: d.transports ? (d.transports as any) : ['internal', 'hybrid'],
         })),
         userVerification: 'required',
@@ -236,28 +236,35 @@ export class DeviceController {
         salt: 0,
       });
 
-      const chains = Object.values(config.blockchain.chains || {});
-      for (const c of chains) {
-        try {
-          const chainAddress = await deriveAaAddressFromCredentialPublicKey({
-            credentialPublicKey: Buffer.from(targetDevice.credentialPublicKey),
-            chainId: c.chainId,
-            salt: 0,
-          });
-          await AaAddressMapService.upsert({
-            chainId: c.chainId,
-            aaAddress: chainAddress,
-            serialNumber: serialAddress,
-            deviceId: targetDevice.deviceLibraryId,
-          });
-        } catch {
-        }
-      }
-
+      // Respond immediately to avoid client-side timeouts; do heavier work in background.
       res.status(200).json({
         verified: true,
         deviceLibraryId: targetDevice.deviceLibraryId,
         walletAddress: aaAddress,
+      });
+
+      setImmediate(async () => {
+        try {
+          const chains = Object.values(config.blockchain.chains || {});
+          for (const c of chains) {
+            try {
+              const chainAddress = await deriveAaAddressFromCredentialPublicKey({
+                credentialPublicKey: Buffer.from(targetDevice.credentialPublicKey),
+                chainId: c.chainId,
+                salt: 0,
+              });
+              await AaAddressMapService.upsert({
+                chainId: c.chainId,
+                aaAddress: chainAddress,
+                serialNumber: serialAddress,
+                deviceId: targetDevice.deviceLibraryId,
+              });
+            } catch {
+            }
+          }
+        } catch (e) {
+          console.warn('[Device] Background AA map upsert failed', e);
+        }
       });
     } catch (error) {
       console.error('Error verifying login:', error);
@@ -278,6 +285,15 @@ export class DeviceController {
 
       if (userId) {
         user = await userRepo.findOne({ where: { id: userId } });
+      }
+
+      // In production, we should never create an anonymous/provisional user here.
+      if (!userId && config.nodeEnv !== 'development') {
+        return res.status(400).json({ error: 'User ID required' });
+      }
+
+      if (userId && !user) {
+        return res.status(404).json({ error: 'User not found' });
       }
 
       if (!user) {
