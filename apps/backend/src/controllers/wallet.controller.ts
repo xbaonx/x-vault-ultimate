@@ -341,8 +341,9 @@ export class WalletController {
       // Scan all chains in parallel
       await Promise.all(chains.map(async (chain) => {
           try {
-              let scanAddress = address;
+              let scanAddress: string | null = null;
 
+              // IMPORTANT: If device has passkey, portfolio should scan AA address (not legacy EOA).
               if (device?.credentialPublicKey) {
                 // Prefer cached mapping (serialNumber -> chain AA address) to avoid RPC derive timeouts
                 if (baseSerialNumber) {
@@ -359,7 +360,7 @@ export class WalletController {
                 }
 
                 // If no mapping found, derive and then cache it
-                if (!scanAddress || !scanAddress.startsWith('0x')) {
+                if (!scanAddress) {
                   try {
                     scanAddress = await deriveAaAddressFromCredentialPublicKey({
                       credentialPublicKey: Buffer.from(device.credentialPublicKey),
@@ -380,9 +381,14 @@ export class WalletController {
                       }
                     }
                   } catch {
-                    scanAddress = address;
+                    scanAddress = null;
                   }
                 }
+              }
+
+              // Fallback to legacy EOA address only when AA is not available.
+              if (!scanAddress) {
+                scanAddress = address || null;
               }
 
               if (!scanAddress || !scanAddress.startsWith('0x')) {
