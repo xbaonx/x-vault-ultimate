@@ -159,9 +159,10 @@ export const walletService = {
     return response.data;
   },
 
-  getPortfolio: async (userId: string, deviceId: string, walletId?: string) => {
+  getPortfolio: async (userId: string, deviceId: string, walletId?: string, refresh?: boolean) => {
     // userId param is legacy/ignored by backend now, but kept for route compatibility
-    const url = walletId ? `/wallet/portfolio/${userId}?walletId=${walletId}` : `/wallet/portfolio/${userId}`;
+    const baseUrl = walletId ? `/wallet/portfolio/${userId}?walletId=${walletId}` : `/wallet/portfolio/${userId}`;
+    const url = refresh ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}refresh=1` : baseUrl;
     const response = await api.get(url, {
       headers: { 'x-device-library-id': deviceId }
     });

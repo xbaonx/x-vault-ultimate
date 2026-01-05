@@ -14,6 +14,9 @@ export default function Dashboard() {
   const [address, setAddress] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [pulling, setPulling] = useState(false);
   
   // Wallet Management
   const [wallets, setWallets] = useState<any[]>([]);
@@ -81,14 +84,14 @@ export default function Dashboard() {
   }, [userId, deviceId]);
 
   // 2. Fetch Portfolio when Selected Wallet Changes
-  const fetchPortfolio = async () => {
+  const fetchPortfolio = async (opts?: { refresh?: boolean }) => {
     if (!selectedWalletId) return;
     try {
       setLoading(true);
       setError(null);
       
       const [portfolioData, addressData] = await Promise.all([
-        walletService.getPortfolio(userId, deviceId, selectedWalletId),
+        walletService.getPortfolio(userId, deviceId, selectedWalletId, !!opts?.refresh),
         walletService.getAddress(userId, deviceId, selectedWalletId)
       ]);
       
@@ -103,6 +106,16 @@ export default function Dashboard() {
       setAddress('0x00...');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await fetchPortfolio({ refresh: true });
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -132,6 +145,49 @@ export default function Dashboard() {
   useEffect(() => {
     fetchPortfolio();
   }, [selectedWalletId, userId, deviceId]);
+
+  useEffect(() => {
+    let startY = 0;
+    let active = false;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (window.scrollY > 0) return;
+      if (refreshing) return;
+      startY = e.touches[0]?.clientY || 0;
+      active = true;
+      setPulling(true);
+      setPullDistance(0);
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!active) return;
+      if (window.scrollY > 0) return;
+      const y = e.touches[0]?.clientY || 0;
+      const delta = Math.max(0, y - startY);
+      const capped = Math.min(120, delta);
+      setPullDistance(capped);
+    };
+
+    const onTouchEnd = async () => {
+      if (!active) return;
+      const should = pullDistance >= 70;
+      active = false;
+      setPulling(false);
+      setPullDistance(0);
+      if (should) {
+        await handleRefresh();
+      }
+    };
+
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchmove', onTouchMove, { passive: true });
+    window.addEventListener('touchend', onTouchEnd);
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [pullDistance, refreshing, selectedWalletId]);
 
   const handleWalletSelect = (walletId: string) => {
       setSelectedWalletId(walletId);
@@ -179,6 +235,14 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-black text-white p-4 pb-20">
+      <div
+        style={{ height: pulling || refreshing ? pullDistance : 0, transition: pulling ? 'none' : 'height 200ms ease' }}
+        className="w-full flex items-center justify-center"
+      >
+        <div className="text-xs text-secondary">
+          {refreshing ? 'Refreshing…' : (pulling ? (pullDistance >= 70 ? 'Release to refresh' : 'Pull to refresh') : '')}
+        </div>
+      </div>
       {/* Error Banner */}
       {error && (
         <div className="mb-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">
@@ -288,6 +352,14 @@ export default function Dashboard() {
           >
             <RefreshCw className="w-5 h-5 text-blue-500" />
             <span className="text-[10px] text-secondary">Swap</span>
+          </Button>
+          <Button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="rounded-full w-14 h-14 p-0 flex flex-col items-center justify-center gap-1 bg-surface border border-white/10 hover:bg-white/10"
+          >
+            <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin text-primary' : 'text-white'}`} />
+            <span className="text-[10px] text-secondary">Refresh</span>
           </Button>
           <Button className="rounded-full w-14 h-14 p-0 flex flex-col items-center justify-center gap-1 bg-surface border border-white/10 hover:bg-white/10">
             <Plus className="w-5 h-5 text-white" />
