@@ -337,11 +337,57 @@ export class ApplePassController {
           const ifModifiedSinceMs = ifModifiedSinceHeader ? Date.parse(ifModifiedSinceHeader) : NaN;
           const previousUpdatedAtMs = snapshotRef?.updatedAt ? new Date(snapshotRef.updatedAt).getTime() : 0;
 
+          const normalizeAssetsForPassCompare = (
+            input: Record<string, { amount: number; value: number; name?: string }> | null | undefined,
+          ) => {
+            const src = input || {};
+            const out: Record<string, { amount: number; value: number; name?: string }> = {};
+            for (const [k, v] of Object.entries(src)) {
+              const name = v?.name ? String(v.name) : k;
+              const amount = k.toLowerCase() === 'usdz'
+                ? Number(Number(v?.amount || 0).toFixed(2))
+                : Number(Number(v?.amount || 0).toFixed(6));
+              const value = Number(Number(v?.value || 0).toFixed(2));
+              out[k] = { amount, value, name };
+            }
+            return out;
+          };
+
+          const isSameSnapshotForPassCompare = (
+            prev: { assets?: any; totalBalanceUsd?: any } | null | undefined,
+            nextAssets: Record<string, { amount: number; value: number; name?: string }>,
+            nextTotalBalanceUsd: number,
+          ) => {
+            if (!prev) return false;
+
+            const prevAssets = normalizeAssetsForPassCompare(prev.assets as any);
+            const nextAssetsNorm = normalizeAssetsForPassCompare(nextAssets);
+
+            const prevKeys = Object.keys(prevAssets).sort();
+            const nextKeys = Object.keys(nextAssetsNorm).sort();
+            if (prevKeys.length !== nextKeys.length) return false;
+            for (let i = 0; i < prevKeys.length; i++) {
+              if (prevKeys[i] !== nextKeys[i]) return false;
+            }
+
+            for (const k of prevKeys) {
+              const a = prevAssets[k] || {};
+              const b = nextAssetsNorm[k] || {};
+              if (String(a.name || k) !== String(b.name || k)) return false;
+              if (Number(a.amount || 0) !== Number(b.amount || 0)) return false;
+              if (Number(a.value || 0) !== Number(b.value || 0)) return false;
+            }
+
+            const prevTotal = Number(Number(prev.totalBalanceUsd || 0).toFixed(2));
+            const nextTotal = Number(Number(nextTotalBalanceUsd || 0).toFixed(2));
+            if (prevTotal !== nextTotal) return false;
+
+            return true;
+          };
+
           // 2. Aggregate Assets
           let totalBalanceUsd = existingSnapshot?.totalBalanceUsd || 0;
           const assets: Record<string, { amount: number; value: number; name?: string }> = (existingSnapshot?.assets as any) || {};
-          const prevAssetsForCompare = existingSnapshot?.assets ? JSON.parse(JSON.stringify(existingSnapshot.assets)) : null;
-          const prevTotalBalanceUsd = Number(existingSnapshot?.totalBalanceUsd || 0);
 
           const usdzBalance = Math.max(0, user.usdzBalance || 0);
           assets['usdz'] = { amount: Number(usdzBalance.toFixed(2)), value: Number(usdzBalance.toFixed(2)), name: 'usdz' };
@@ -455,43 +501,15 @@ export class ApplePassController {
               .filter(([symbol]) => symbol !== 'usdz')
               .reduce((sum, [, a]) => sum + (typeof a?.value === 'number' ? a.value : 0), 0);
 
-            const isSameSnapshot = (() => {
-              if (!existingSnapshot) return false;
-              if (!prevAssetsForCompare) return false;
-              const a = prevAssetsForCompare as any;
-              const b = assets as any;
-              const aKeys = Object.keys(a || {}).sort();
-              const bKeys = Object.keys(b || {}).sort();
-              if (aKeys.length !== bKeys.length) return false;
-              for (let i = 0; i < aKeys.length; i++) {
-                if (aKeys[i] !== bKeys[i]) return false;
-              }
-              for (const k of aKeys) {
-                const av = a[k] || {};
-                const bv = b[k] || {};
-                const aAmt = Number(av.amount || 0);
-                const bAmt = Number(bv.amount || 0);
-                const aVal = Number(av.value || 0);
-                const bVal = Number(bv.value || 0);
-                const aName = String(av.name || k);
-                const bName = String(bv.name || k);
-                if (aName !== bName) return false;
-                if (Math.abs(aAmt - bAmt) > 0.0000001) return false;
-                if (Math.abs(aVal - bVal) > 0.0001) return false;
-              }
-              if (Math.abs(prevTotalBalanceUsd - totalBalanceUsd) > 0.0001) return false;
-              return true;
-            })();
-
-            if (!isSameSnapshot) {
+            if (!isSameSnapshotForPassCompare(existingSnapshot, assets, totalBalanceUsd)) {
               const snapshot = existingSnapshot || snapshotRepo.create({
                 serialNumber: serialAddress,
                 totalBalanceUsd: 0,
                 assets: null,
               });
 
-              snapshot.totalBalanceUsd = totalBalanceUsd;
-              snapshot.assets = assets;
+              snapshot.totalBalanceUsd = Number(Number(totalBalanceUsd).toFixed(2));
+              snapshot.assets = normalizeAssetsForPassCompare(assets);
 
               await snapshotRepo.save(snapshot);
               snapshotRef = snapshot;
@@ -505,20 +523,15 @@ export class ApplePassController {
           totalBalanceUsd = computedTotalBalanceUsd;
 
           if (!shouldRefresh) {
-            const previousUsdzAmount = (existingSnapshot?.assets as any)?.usdz?.amount;
-            const normalizedUsdzAmount = Number(usdzBalance.toFixed(2));
-            const usdzChanged = Number(previousUsdzAmount || 0) !== normalizedUsdzAmount;
-            const balanceChanged = Math.abs(Number(existingSnapshot?.totalBalanceUsd || 0) - computedTotalBalanceUsd) > 0.0001;
-
-            if (!existingSnapshot || usdzChanged || balanceChanged) {
+            if (!isSameSnapshotForPassCompare(existingSnapshot, assets, totalBalanceUsd)) {
               const snapshot = existingSnapshot || snapshotRepo.create({
                 serialNumber: serialAddress,
                 totalBalanceUsd: 0,
                 assets: null,
               });
 
-              snapshot.totalBalanceUsd = computedTotalBalanceUsd;
-              snapshot.assets = assets;
+              snapshot.totalBalanceUsd = Number(Number(computedTotalBalanceUsd).toFixed(2));
+              snapshot.assets = normalizeAssetsForPassCompare(assets);
               await snapshotRepo.save(snapshot);
 
               snapshotRef = snapshot;
@@ -531,9 +544,14 @@ export class ApplePassController {
             ? new Date(snapshotRef.updatedAt).getTime()
             : Date.now();
 
+          // HTTP-date resolution is seconds, but DB timestamps include milliseconds.
+          // Truncate to seconds to prevent false negatives when comparing with If-Modified-Since.
+          const effectiveUpdatedAtSecMs = Math.floor(effectiveUpdatedAtMs / 1000) * 1000;
+          const previousUpdatedAtSecMs = Math.floor(previousUpdatedAtMs / 1000) * 1000;
+
           if (snapshotRef && Number.isFinite(ifModifiedSinceMs)) {
-            if (effectiveUpdatedAtMs <= ifModifiedSinceMs && effectiveUpdatedAtMs === previousUpdatedAtMs) {
-              res.set('Last-Modified', new Date(effectiveUpdatedAtMs).toUTCString());
+            if (effectiveUpdatedAtSecMs <= ifModifiedSinceMs && effectiveUpdatedAtSecMs === previousUpdatedAtSecMs) {
+              res.set('Last-Modified', new Date(effectiveUpdatedAtSecMs).toUTCString());
               return res.sendStatus(304);
             }
           }
@@ -566,7 +584,7 @@ export class ApplePassController {
           // 4. Send Response
           res.set('Content-Type', 'application/vnd.apple.pkpass');
           res.set('Content-Disposition', `attachment; filename=xvault.pkpass`);
-          res.set('Last-Modified', new Date(effectiveUpdatedAtMs).toUTCString());
+          res.set('Last-Modified', new Date(effectiveUpdatedAtSecMs).toUTCString());
           
           // Disable caching to ensure update
           res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
