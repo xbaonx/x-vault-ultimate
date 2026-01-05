@@ -77,7 +77,9 @@ export class WalletController {
         return;
       }
 
-      const chainId = Number(req.query.chainId || config.blockchain.chainId);
+      const chainIdRaw = (req.query as any)?.chainId;
+      const chainId = Number(chainIdRaw || config.blockchain.chainId);
+      const chainIdProvided = chainIdRaw !== undefined && chainIdRaw !== null && String(chainIdRaw).trim().length > 0;
       
       const walletRepo = AppDataSource.getRepository(Wallet);
       // Get the requested wallet ID from query, or default to active/main
@@ -90,24 +92,52 @@ export class WalletController {
           wallet = await walletRepo.findOne({ where: { user: { id: user.id }, isActive: true } });
       }
 
-      if (device?.credentialPublicKey && wallet) {
-        try {
-          const aaAddress = await deriveAaAddressFromCredentialPublicKey({
-            credentialPublicKey: Buffer.from(device.credentialPublicKey),
-            chainId,
-            salt: wallet.aaSalt ?? 0,
-          });
+      const legacyEoaAddress = wallet?.address || '0x0000000000000000000000000000000000000000';
 
-          res.status(200).json({ address: aaAddress, walletId: wallet.id, chainId });
-          return;
-        } catch {
-          // fall back to legacy wallet address if derivation fails
+      // If caller specifies chainId, keep legacy response shape (single address)
+      if (chainIdProvided) {
+        if (device?.credentialPublicKey && wallet) {
+          try {
+            const aaAddress = await deriveAaAddressFromCredentialPublicKey({
+              credentialPublicKey: Buffer.from(device.credentialPublicKey),
+              chainId,
+              salt: wallet.aaSalt ?? 0,
+            });
+
+            res.status(200).json({ address: aaAddress, walletId: wallet.id, chainId });
+            return;
+          } catch {
+            // fall back
+          }
         }
+
+        res.status(200).json({ address: legacyEoaAddress, walletId: wallet?.id, chainId });
+        return;
       }
 
-      const address = wallet?.address || '0x0000000000000000000000000000000000000000';
+      // Otherwise, return all chain AA addresses to avoid ambiguity (UI can pick)
+      const defaultChainId = Number(config.blockchain.chainId);
+      const chains = Object.values(config.blockchain.chains);
+      const aaAddresses: Record<number, string> = {};
+      if (device?.credentialPublicKey && wallet) {
+        await Promise.all(chains.map(async (c) => {
+          try {
+            const aa = await deriveAaAddressFromCredentialPublicKey({
+              credentialPublicKey: Buffer.from(device.credentialPublicKey),
+              chainId: c.chainId,
+              salt: wallet.aaSalt ?? 0,
+              timeoutMs: 1500,
+            });
+            if (aa && String(aa).startsWith('0x')) {
+              aaAddresses[c.chainId] = String(aa);
+            }
+          } catch {
+          }
+        }));
+      }
 
-      res.status(200).json({ address, walletId: wallet?.id, chainId });
+      const address = aaAddresses[defaultChainId] || legacyEoaAddress;
+      res.status(200).json({ address, walletId: wallet?.id, chainId: defaultChainId, defaultChainId, aaAddresses, legacyEoaAddress });
     } catch (error) {
       console.error('Error in getAddress:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -126,44 +156,55 @@ export class WalletController {
             order: { createdAt: 'ASC' }
         });
 
-        const used = new Set<number>();
-        let nextSalt = 0;
-        let changed = false;
-        for (const w of wallets) {
-          const current = typeof (w as any).aaSalt === 'number' ? (w as any).aaSalt : 0;
-          if (used.has(current)) {
-            while (used.has(nextSalt)) nextSalt++;
-            (w as any).aaSalt = nextSalt;
-            used.add(nextSalt);
-            nextSalt++;
-            changed = true;
-          } else {
-            used.add(current);
-            if (current >= nextSalt) nextSalt = current + 1;
-            (w as any).aaSalt = current;
-          }
-        }
-
-        if (changed) {
-          await walletRepo.save(wallets);
-        }
-
-        const chainId = Number(config.blockchain.chainId);
-        const withAa = await Promise.all(wallets.map(async (w) => {
-          let aaAddress: string | null = null;
-          if (device?.credentialPublicKey) {
-            try {
-              aaAddress = await deriveAaAddressFromCredentialPublicKey({
-                credentialPublicKey: Buffer.from(device.credentialPublicKey),
-                chainId,
-                salt: (w as any).aaSalt ?? 0,
-              });
-            } catch {
-              aaAddress = null;
+        const repairRaw = String((req.query as any)?.repair ?? '').trim().toLowerCase();
+        const repair = repairRaw === '1' || repairRaw === 'true' || repairRaw === 'yes';
+        if (repair && wallets.length > 1) {
+          const used = new Set<number>();
+          let nextSalt = 0;
+          let changed = false;
+          for (const w of wallets) {
+            const current = typeof (w as any).aaSalt === 'number' ? (w as any).aaSalt : 0;
+            if (used.has(current)) {
+              while (used.has(nextSalt)) nextSalt++;
+              (w as any).aaSalt = nextSalt;
+              used.add(nextSalt);
+              nextSalt++;
+              changed = true;
+            } else {
+              used.add(current);
+              if (current >= nextSalt) nextSalt = current + 1;
+              (w as any).aaSalt = current;
             }
           }
 
-          return { ...w, aaAddress };
+          if (changed) {
+            await walletRepo.save(wallets);
+          }
+        }
+
+        const defaultChainId = Number(config.blockchain.chainId);
+        const chains = Object.values(config.blockchain.chains);
+        const withAa = await Promise.all(wallets.map(async (w) => {
+          const aaAddresses: Record<number, string> = {};
+          if (device?.credentialPublicKey) {
+            await Promise.all(chains.map(async (c) => {
+              try {
+                const aa = await deriveAaAddressFromCredentialPublicKey({
+                  credentialPublicKey: Buffer.from(device.credentialPublicKey),
+                  chainId: c.chainId,
+                  salt: (w as any).aaSalt ?? 0,
+                  timeoutMs: 1500,
+                });
+                if (aa && String(aa).startsWith('0x')) {
+                  aaAddresses[c.chainId] = String(aa);
+                }
+              } catch {
+              }
+            }));
+          }
+
+          const aaAddress = aaAddresses[defaultChainId] || null;
+          return { ...w, aaAddress, aaAddresses };
         }));
 
         res.status(200).json(withAa);

@@ -177,6 +177,15 @@ export const walletService = {
     return response.data;
   },
 
+  getAddressByChain: async (userId: string, deviceId: string, chainId: number, walletId?: string) => {
+    const baseUrl = walletId ? `/wallet/address/${userId}?walletId=${walletId}` : `/wallet/address/${userId}`;
+    const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}chainId=${chainId}`;
+    const response = await api.get(url, {
+      headers: { 'x-device-library-id': deviceId }
+    });
+    return response.data;
+  },
+
   /**
    * Send a secure transaction with Passkey signing
    */

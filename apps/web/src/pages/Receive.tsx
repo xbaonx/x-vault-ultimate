@@ -7,19 +7,29 @@ import { Card } from '../components/ui/card';
 import { walletService } from '../services/api';
 import { shortenAddress } from '../lib/utils';
 
+const CHAINS = [
+  { chainId: 1, name: 'Ethereum' },
+  { chainId: 8453, name: 'Base' },
+  { chainId: 137, name: 'Polygon' },
+  { chainId: 42161, name: 'Arbitrum' },
+  { chainId: 10, name: 'Optimism' },
+];
+
 export default function Receive() {
   const navigate = useNavigate();
   const [address, setAddress] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [selectedChainId, setSelectedChainId] = useState<number>(1);
 
   const userId = localStorage.getItem('x_user_id') || '';
   const deviceId = localStorage.getItem('x_device_id') || '';
+  const walletId = localStorage.getItem('x_wallet_id') || '';
 
   useEffect(() => {
     const fetchAddress = async () => {
       try {
-        const data = await walletService.getAddress(userId, deviceId);
+        const data = await walletService.getAddressByChain(userId, deviceId, selectedChainId, walletId || undefined);
         setAddress(data.address);
       } catch (error) {
         console.error("Failed to fetch address", error);
@@ -28,7 +38,7 @@ export default function Receive() {
       }
     };
     fetchAddress();
-  }, [userId, deviceId]);
+  }, [userId, deviceId, walletId, selectedChainId]);
 
   const handleCopy = () => {
     if (address) {
@@ -85,7 +95,20 @@ export default function Receive() {
             </Card>
 
             <div className="text-center space-y-2 w-full">
-                <p className="text-secondary text-sm">Your Ethereum / Base / Polygon / Arbitrum Address</p>
+                <div className="flex items-center justify-center gap-2">
+                  <p className="text-secondary text-sm">Network</p>
+                  <select
+                    value={selectedChainId}
+                    onChange={(e) => setSelectedChainId(Number(e.target.value))}
+                    className="bg-surface border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white"
+                  >
+                    {CHAINS.map((c) => (
+                      <option key={c.chainId} value={c.chainId}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div 
                     onClick={handleCopy}
                     className="bg-surface border border-white/10 p-4 rounded-xl flex items-center justify-between cursor-pointer active:bg-white/5 transition-colors"
