@@ -360,7 +360,7 @@ export class ApplePassController {
 
           let snapshotRef = existingSnapshot;
 
-          const refreshCooldownMs = 60_000;
+          const refreshCooldownMs = 600_000;
           const now = Date.now();
           const shouldRefresh =
             !existingSnapshot ||
