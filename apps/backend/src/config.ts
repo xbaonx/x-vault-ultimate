@@ -100,7 +100,7 @@ export const config = {
         polygon: {
             rpcUrl: getPreferredRpcUrl(137, process.env.POLYGON_RPC_URL, 'https://polygon-bor.publicnode.com'),
             chainId: 137,
-            symbol: 'MATIC', // Now POL, but let's keep MATIC/POL symbol flexible
+            symbol: 'POL', // Display symbol; pricing may still use MATIC ticker
             name: 'Polygon'
         },
         arbitrum: {

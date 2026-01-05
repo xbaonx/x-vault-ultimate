@@ -237,7 +237,7 @@ export class WalletController {
       }
 
       // Fetch Real Prices
-      const prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
+      const prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, POL: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
       let ethPrice = 3000;
       let maticPrice = 1.0;
       
@@ -247,6 +247,7 @@ export class WalletController {
               Object.assign(prices, portfolioPriceCache.prices);
               ethPrice = prices.ETH;
               maticPrice = prices.MATIC;
+              prices.POL = prices.MATIC;
           } else {
               const symbols = ['ETH', 'MATIC'];
               const requests = symbols.map(sym =>
@@ -264,6 +265,8 @@ export class WalletController {
                       if (symbols[index] === 'MATIC') maticPrice = price;
                   }
               });
+
+              prices.POL = prices.MATIC;
 
               portfolioPriceCache = { updatedAt: now, prices: { ...prices } };
           }
@@ -524,14 +527,15 @@ export class WalletController {
               // 1. Fetch Price
               let price = 0;
               try {
-                  const priceRes = await fetch(`https://api.coinbase.com/v2/prices/${symbol}-USD/spot`);
+                  const priceSymbol = symbol === 'POL' ? 'MATIC' : symbol;
+                  const priceRes = await fetch(`https://api.coinbase.com/v2/prices/${priceSymbol}-USD/spot`);
                   const priceJson = await priceRes.json();
                   price = parseFloat(priceJson.data.amount);
               } catch (e) {
                   console.warn("Failed to fetch price for security check, defaulting to 0 to be safe (or high fallback?)");
                   // Fallback prices
                   if (symbol === 'ETH') price = 3000;
-                  if (symbol === 'MATIC') price = 1.0;
+                  if (symbol === 'MATIC' || symbol === 'POL') price = 1.0;
               }
 
               // 2. Calculate Amount
@@ -647,7 +651,7 @@ export class WalletController {
               
               let errorMessage = 'Transaction failed';
               if (txError.code === 'INSUFFICIENT_FUNDS') {
-                  errorMessage = 'Insufficient ETH/MATIC for gas fees.';
+                  errorMessage = 'Insufficient ETH/POL for gas fees.';
               } else if (txError.message.includes('insufficient funds')) {
                    errorMessage = 'Insufficient funds for gas + value.';
               } else if (txError.code === 'NETWORK_ERROR') {

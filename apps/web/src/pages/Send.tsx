@@ -83,7 +83,7 @@ export default function Send() {
         
         // Construct Transaction Data
         if (selectedAsset.isNative) {
-            // Native Transfer (ETH, MATIC)
+            // Native Transfer (ETH, POL)
             transaction = {
                 to: recipient,
                 value: ethers.parseEther(amount).toString(),

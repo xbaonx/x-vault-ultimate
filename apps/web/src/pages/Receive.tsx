@@ -123,7 +123,7 @@ export default function Receive() {
             </div>
 
             <p className="text-xs text-secondary text-center max-w-xs leading-relaxed mt-4">
-                Send only ETH, MATIC, USDC, USDT, DAI and other supported tokens to this address. Sending other assets may result in permanent loss.
+                Send only ETH, POL, USDC, USDT, DAI and other supported tokens to this address. Sending other assets may result in permanent loss.
             </p>
         </div>
       )}

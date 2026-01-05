@@ -131,7 +131,7 @@ export default function Swap() {
   };
 
   const currentToken = WRAPPED_TOKENS[selectedChainId];
-  const nativeSymbol = currentToken?.symbol === 'WMATIC' ? 'MATIC' : 'ETH';
+  const nativeSymbol = currentToken?.symbol === 'WMATIC' ? 'POL' : 'ETH';
 
   return (
     <div className="min-h-screen bg-black text-white p-4 pb-20">

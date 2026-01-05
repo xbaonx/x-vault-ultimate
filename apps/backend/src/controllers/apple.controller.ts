@@ -38,7 +38,7 @@ async function getPrices(): Promise<Record<string, number>> {
     return applePriceCache.prices;
   }
 
-  const prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
+  const prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, POL: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
   try {
     const [ethRes, maticRes] = await Promise.all([
       fetchJsonWithTimeout(`https://api.coinbase.com/v2/prices/ETH-USD/spot`, 1500).catch(() => null),
@@ -49,6 +49,7 @@ async function getPrices(): Promise<Record<string, number>> {
     const matic = maticRes?.data?.amount ? parseFloat(maticRes.data.amount) : undefined;
     if (typeof eth === 'number' && Number.isFinite(eth)) prices.ETH = eth;
     if (typeof matic === 'number' && Number.isFinite(matic)) prices.MATIC = matic;
+    prices.POL = prices.MATIC;
   } catch {
     // ignore
   }
