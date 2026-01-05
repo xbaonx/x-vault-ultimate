@@ -537,6 +537,8 @@ export class DeviceController {
     try {
       const { deviceId } = req.params;
       const walletId = String((req.query as any)?.walletId || '');
+      const refreshRaw = String((req.query as any)?.refresh ?? '').trim().toLowerCase();
+      const refresh = refreshRaw === '1' || refreshRaw === 'true' || refreshRaw === 'yes';
       
       const deviceRepo = AppDataSource.getRepository(Device);
 
@@ -595,7 +597,7 @@ export class DeviceController {
 
       const shouldRefreshSnapshot =
         !!(serialAddress && serialAddress.startsWith('0x')) &&
-        (!snapshotRef || (snapshotRef.updatedAt && Date.now() - new Date(snapshotRef.updatedAt).getTime() > 60_000));
+        refresh;
 
       if (shouldRefreshSnapshot) {
         setImmediate(async () => {

@@ -11,6 +11,7 @@ import { User } from '../entities/User';
 import { Wallet } from '../entities/Wallet';
 import { Device } from '../entities/Device';
 import { Transaction } from '../entities/Transaction';
+import { WalletSnapshot } from '../entities/WalletSnapshot';
 import { generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
 
 const ERC20_ABI = [
@@ -217,6 +218,8 @@ export class WalletController {
       }
 
       const walletId = req.query.walletId as string;
+      const refreshRaw = String((req.query as any)?.refresh ?? '').trim().toLowerCase();
+      const refresh = refreshRaw === '1' || refreshRaw === 'true' || refreshRaw === 'yes';
       const walletRepo = AppDataSource.getRepository(Wallet);
       
       let wallet: Wallet | null = null;
@@ -227,6 +230,60 @@ export class WalletController {
       }
 
       const address = wallet?.address;
+
+      const baseSerialChainId = Number(config.blockchain.chainId);
+      let baseSerialNumber: string | null = null;
+      if (device?.credentialPublicKey) {
+        try {
+          baseSerialNumber = await deriveAaAddressFromCredentialPublicKey({
+            credentialPublicKey: Buffer.from(device.credentialPublicKey),
+            chainId: baseSerialChainId,
+            salt: wallet?.aaSalt ?? 0,
+            timeoutMs: 1500,
+          });
+        } catch {
+          baseSerialNumber = null;
+        }
+      }
+
+      // Cache-first: if we already have a snapshot, return it unless caller explicitly requests refresh.
+      if (baseSerialNumber && AppDataSource.isInitialized && !refresh) {
+        try {
+          const snapshotRepo = AppDataSource.getRepository(WalletSnapshot);
+          const snapshot = await snapshotRepo.findOne({ where: { serialNumber: baseSerialNumber } });
+          if (snapshot?.portfolio && typeof snapshot.portfolio === 'object') {
+            const txRepo = AppDataSource.getRepository(Transaction);
+            const dbTransactions = await txRepo.find({
+              where: { userId: user.id },
+              order: { createdAt: 'DESC' },
+              take: 20,
+            });
+
+            const history = dbTransactions.map((tx: Transaction) => ({
+              id: tx.id,
+              type: 'send',
+              amount: parseFloat(tx.value || '0').toString(),
+              token: tx.asset || 'ETH',
+              date: tx.createdAt,
+              status: tx.status,
+              hash: tx.txHash || tx.userOpHash,
+              txHash: tx.txHash || null,
+              explorerUrl: tx.explorerUrl || null,
+              network: tx.network,
+              canCancel: tx.status === 'delayed'
+            }));
+
+            return res.status(200).json({
+              totalBalanceUsd: snapshot.totalBalanceUsd || 0,
+              assets: Array.isArray(snapshot.portfolio.assets) ? snapshot.portfolio.assets : [],
+              history,
+              updatedAt: snapshot.updatedAt,
+            });
+          }
+        } catch {
+          // ignore cache errors and fall through
+        }
+      }
       
       // If legacy address is missing and we also can't derive AA, return empty portfolio
       if ((!address || !address.startsWith('0x')) && !device?.credentialPublicKey) {
@@ -280,21 +337,6 @@ export class WalletController {
       const chains = Object.values(config.blockchain.chains);
       const assets: any[] = [];
       let totalBalanceUsd = 0;
-
-      const baseSerialChainId = Number(config.blockchain.chainId);
-      let baseSerialNumber: string | null = null;
-      if (device?.credentialPublicKey) {
-        try {
-          baseSerialNumber = await deriveAaAddressFromCredentialPublicKey({
-            credentialPublicKey: Buffer.from(device.credentialPublicKey),
-            chainId: baseSerialChainId,
-            salt: wallet?.aaSalt ?? 0,
-            timeoutMs: 1500,
-          });
-        } catch {
-          baseSerialNumber = null;
-        }
-      }
 
       // Scan all chains in parallel
       await Promise.all(chains.map(async (chain) => {
@@ -485,6 +527,32 @@ export class WalletController {
         assets,
         history
       };
+
+      // Persist snapshot for fast subsequent loads.
+      if (baseSerialNumber && AppDataSource.isInitialized) {
+        try {
+          const snapshotRepo = AppDataSource.getRepository(WalletSnapshot);
+          const existing = await snapshotRepo.findOne({ where: { serialNumber: baseSerialNumber } });
+
+          // Aggregate assets into a per-symbol map for Apple pass usage.
+          const assetsMap: Record<string, { amount: number; value: number; name?: string }> = {};
+          for (const a of assets) {
+            const sym = String(a?.symbol || '').toLowerCase();
+            if (!sym) continue;
+            if (!assetsMap[sym]) assetsMap[sym] = { amount: 0, value: 0, name: a?.name };
+            assetsMap[sym].amount += Number(a?.balance || 0);
+            assetsMap[sym].value += Number(a?.valueUsd || 0);
+            if (!assetsMap[sym].name && a?.name) assetsMap[sym].name = a.name;
+          }
+
+          const snap = existing || snapshotRepo.create({ serialNumber: baseSerialNumber, totalBalanceUsd: 0, assets: null, portfolio: null });
+          snap.totalBalanceUsd = Number(Number(totalBalanceUsd || 0).toFixed(2));
+          snap.assets = assetsMap as any;
+          snap.portfolio = { totalBalanceUsd: snap.totalBalanceUsd, assets } as any;
+          await snapshotRepo.save(snap);
+        } catch {
+        }
+      }
 
       res.status(200).json(portfolio);
     } catch (error) {

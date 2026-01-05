@@ -12,6 +12,9 @@ export class WalletSnapshot {
   @Column({ type: "jsonb", nullable: true })
   assets!: Record<string, { amount: number; value: number }> | null;
 
+  @Column({ type: "jsonb", nullable: true })
+  portfolio!: any | null;
+
   @UpdateDateColumn()
   updatedAt!: Date;
 }
