@@ -161,6 +161,16 @@ export class DeviceController {
 
       const credentialID = response.id; // Base64URL from client
 
+      let clientChallenge: string | undefined;
+      try {
+        const clientDataJson = Buffer.from(
+          DeviceController.toBase64(response?.response?.clientDataJSON || ''),
+          'base64',
+        ).toString('utf8');
+        clientChallenge = JSON.parse(clientDataJson)?.challenge;
+      } catch {
+      }
+
       // 1. Find Device with Flexible Matching (Base64URL or Base64)
       const credentialIDBase64 = DeviceController.toBase64(credentialID);
 
@@ -180,6 +190,19 @@ export class DeviceController {
       if (!targetDevice.currentChallenge) {
         console.warn(`[Device] VerifyLogin Failed: No active challenge for Device ${targetDevice.id}`);
         return res.status(400).json({ error: "No active challenge for this device" });
+      }
+
+      if (targetDevice.currentChallenge.startsWith('used:') && clientChallenge) {
+        const parts = targetDevice.currentChallenge.split(':');
+        const usedChallenge = parts[1];
+        const usedAt = Number(parts[2]);
+        if (usedChallenge === clientChallenge && Number.isFinite(usedAt) && Date.now() - usedAt < 60_000) {
+          return res.status(200).json({
+            verified: true,
+            deviceLibraryId: targetDevice.deviceLibraryId,
+            walletAddress: '',
+          });
+        }
       }
 
       const verificationOptions = {
@@ -210,8 +233,10 @@ export class DeviceController {
       }
 
       // 4. Update Device
+      const verifiedAtMs = Date.now();
+      const usedChallengeMarker = `used:${targetDevice.currentChallenge}:${verifiedAtMs}`;
       targetDevice.counter = verification.authenticationInfo.newCounter;
-      targetDevice.currentChallenge = '';
+      targetDevice.currentChallenge = usedChallengeMarker;
       targetDevice.lastActiveAt = new Date();
       
       // Self-healing: Migrate legacy Base64 ID to Base64URL if needed
@@ -222,29 +247,22 @@ export class DeviceController {
 
       await deviceRepo.save(targetDevice);
 
-      const chainId = Number(req.body.chainId || config.blockchain.chainId);
-      const aaAddress = await deriveAaAddressFromCredentialPublicKey({
-        credentialPublicKey: Buffer.from(targetDevice.credentialPublicKey),
-        chainId,
-        salt: 0,
-      });
-
-      const baseSerialChainId = Number(config.blockchain.chainId);
-      const serialAddress = await deriveAaAddressFromCredentialPublicKey({
-        credentialPublicKey: Buffer.from(targetDevice.credentialPublicKey),
-        chainId: baseSerialChainId,
-        salt: 0,
-      });
-
       // Respond immediately to avoid client-side timeouts; do heavier work in background.
       res.status(200).json({
         verified: true,
         deviceLibraryId: targetDevice.deviceLibraryId,
-        walletAddress: aaAddress,
+        walletAddress: '',
       });
 
       setImmediate(async () => {
         try {
+          const baseSerialChainId = Number(config.blockchain.chainId);
+          const serialAddress = await deriveAaAddressFromCredentialPublicKey({
+            credentialPublicKey: Buffer.from(targetDevice.credentialPublicKey),
+            chainId: baseSerialChainId,
+            salt: 0,
+          });
+
           const chains = Object.values(config.blockchain.chains || {});
           for (const c of chains) {
             try {
