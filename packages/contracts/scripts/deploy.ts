@@ -70,6 +70,20 @@ async function main() {
 
   const ENTRY_POINT_ADDRESS = getEnvByChainId('ENTRY_POINT_ADDRESS') || DEFAULT_ENTRY_POINT_ADDRESS;
 
+  // Deploy P256Verifier (EIP-7212 fallback) and XAccount implementation.
+  // These should be deployed deterministically across chains for universal addresses.
+  const P256Verifier = await ethers.getContractFactory('P256Verifier');
+  const p256Verifier = await P256Verifier.deploy();
+  await p256Verifier.waitForDeployment();
+  const p256VerifierAddress = await p256Verifier.getAddress();
+  console.log('P256Verifier deployed to:', p256VerifierAddress);
+
+  const XAccount = await ethers.getContractFactory('XAccount');
+  const accountImpl = await XAccount.deploy(ENTRY_POINT_ADDRESS, p256VerifierAddress);
+  await accountImpl.waitForDeployment();
+  const accountImplAddress = await accountImpl.getAddress();
+  console.log('XAccount implementation deployed to:', accountImplAddress);
+
   const existingFactoryAddress = getEnvByChainId('FACTORY_ADDRESS');
   let factoryAddress: string;
   if (
@@ -80,7 +94,7 @@ async function main() {
     factoryAddress = ethers.getAddress(existingFactoryAddress);
     console.log('Using existing XFactory:', factoryAddress);
   } else {
-    const factory = await XFactory.deploy(ENTRY_POINT_ADDRESS);
+    const factory = await XFactory.deploy(accountImplAddress);
     await factory.waitForDeployment();
     factoryAddress = await factory.getAddress();
     console.log("XFactory deployed to:", factoryAddress);
@@ -115,6 +129,8 @@ async function main() {
   console.log('\n--- Render env mapping ---');
   console.log(`ENTRY_POINT_ADDRESS_${chainId}=${ENTRY_POINT_ADDRESS}`);
   console.log(`FACTORY_ADDRESS_${chainId}=${factoryAddress}`);
+  console.log(`P256_VERIFIER_ADDRESS_${chainId}=${p256VerifierAddress}`);
+  console.log(`ACCOUNT_IMPLEMENTATION_${chainId}=${accountImplAddress}`);
   if (paymasterAddress) {
     console.log(`PAYMASTER_ADDRESS_${chainId}=${paymasterAddress}`);
     if (paymasterVerifyingSigner) {

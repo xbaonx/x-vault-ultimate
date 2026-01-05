@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { ethers } from 'ethers';
 import cbor from 'cbor';
+import { randomUUID } from 'crypto';
 import { AppDataSource } from '../data-source';
 import { Device } from '../entities/Device';
 import { User } from '../entities/User';
@@ -32,6 +33,53 @@ const XACCOUNT_ABI = [
  const GAS_FEE_BPS = 30n; // 0.3%
  const PLATFORM_FEE_BPS = 50n; // 0.5%
  const BPS_DENOM = 10_000n;
+
+ let spotPriceCache: { updatedAt: number; prices: Record<string, number> } | null = null;
+
+ async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<any> {
+   const controller = new AbortController();
+   const id = setTimeout(() => controller.abort(), timeoutMs);
+   try {
+     const res = await fetch(url, { signal: controller.signal });
+     return await res.json();
+   } finally {
+     clearTimeout(id);
+   }
+ }
+
+ async function getSpotUsdPrice(symbol: string): Promise<number> {
+   const sym = String(symbol || '').toUpperCase();
+   const now = Date.now();
+   if (spotPriceCache && now - spotPriceCache.updatedAt < 60_000) {
+     const cached = spotPriceCache.prices[sym];
+     if (typeof cached === 'number' && Number.isFinite(cached) && cached > 0) return cached;
+   }
+
+   const fallbacks: Record<string, number> = {
+     ETH: 3000,
+     MATIC: 1.0,
+     POL: 1.0,
+     BNB: 300,
+     AVAX: 30,
+   };
+
+   const mapped = sym === 'POL' ? 'MATIC' : sym;
+   let price = fallbacks[mapped] ?? 0;
+   try {
+     const data = await fetchJsonWithTimeout(`https://api.coinbase.com/v2/prices/${mapped}-USD/spot`, 1500).catch(() => null);
+     const amount = data?.data?.amount ? parseFloat(data.data.amount) : NaN;
+     if (Number.isFinite(amount) && amount > 0) {
+       price = amount;
+     }
+   } catch {
+     // ignore
+   }
+
+   const prices = spotPriceCache?.prices ? { ...spotPriceCache.prices } : {};
+   prices[sym] = price;
+   spotPriceCache = { updatedAt: now, prices };
+   return price;
+ }
 
 function base64UrlEncode(buf: Buffer): string {
   return buf
@@ -228,33 +276,33 @@ export class AaController {
         treasury: treasuryAddress || ''
       };
 
-      const usdzBalance = user.usdzBalance || 0;
+      if (!treasuryAddress || !ethers.isAddress(treasuryAddress)) {
+        return res.status(500).json({ error: `TREASURY_ADDRESS_${chainConfig.chainId} not configured` });
+      }
+
+       const usdzBalance = Number(user.usdzBalance || 0);
 
       let callData: string;
 
       if (isNative) {
         const grossWei = BigInt(transaction.value || 0);
         const gasFeeWei = (grossWei * GAS_FEE_BPS) / BPS_DENOM;
-
-        // Platform fee: prefer deducting USDZ (off-chain). If no USDZ, charge on-chain in same asset.
         const platformFeeWei = (grossWei * PLATFORM_FEE_BPS) / BPS_DENOM;
 
         let platformFeeOnChainWei = 0n;
         if (platformFeeWei > 0n) {
-          const ethValue = parseFloat(ethers.formatEther(platformFeeWei));
-          const platformFeeUsd = ethValue * 2500;
-
-          if (usdzBalance >= platformFeeUsd) {
-            user.usdzBalance = Math.max(0, usdzBalance - platformFeeUsd);
-            if (AppDataSource.isInitialized) {
-              await AppDataSource.getRepository(User).save(user);
-            }
+          const price = await getSpotUsdPrice(chainConfig.symbol);
+          const platformFeeUsd = parseFloat(ethers.formatEther(platformFeeWei)) * (price || 0);
+          feeBreakdown.platformFeeUsd = platformFeeUsd;
+          if (platformFeeUsd > 0 && usdzBalance >= platformFeeUsd) {
             feeBreakdown.platformFeeChargedUsdZ = true;
           } else {
             platformFeeOnChainWei = platformFeeWei;
             feeBreakdown.platformFeeChargedOnChain = true;
           }
         }
+
+        const feeWei = gasFeeWei + platformFeeOnChainWei;
 
         const netWei = grossWei - gasFeeWei - platformFeeOnChainWei;
         if (netWei < 0n) {
@@ -264,22 +312,15 @@ export class AaController {
         feeBreakdown.gasFee = gasFeeWei.toString();
         feeBreakdown.platformFee = platformFeeWei.toString();
         feeBreakdown.netAmount = netWei.toString();
-
-        const onChainFeeWei = gasFeeWei + platformFeeOnChainWei;
-        if (onChainFeeWei > 0n && treasuryAddress && ethers.isAddress(treasuryAddress)) {
-          callData = accountInterface.encodeFunctionData('executeBatch', [
-            [transaction.to, treasuryAddress],
-            [netWei, onChainFeeWei],
-            ['0x', '0x']
-          ]);
-        } else {
-          // Treasury not configured yet -> proceed without on-chain fee collection.
-          callData = accountInterface.encodeFunctionData('execute', [
-            transaction.to,
-            grossWei,
-            transaction.data || '0x'
-          ]);
+        if (!feeBreakdown.platformFeeChargedUsdZ) {
+          feeBreakdown.platformFeeChargedOnChain = platformFeeWei > 0n;
         }
+
+        callData = accountInterface.encodeFunctionData('executeBatch', [
+          [transaction.to, treasuryAddress],
+          [netWei, feeWei],
+          ['0x', '0x']
+        ]);
       } else {
         // ERC20 transfer detection
         const erc20 = new ethers.Interface(ERC20_ABI);
@@ -291,15 +332,7 @@ export class AaController {
         }
 
         if (!decoded || decoded.name !== 'transfer') {
-          // Non-transfer call: keep as-is.
-          callData = accountInterface.encodeFunctionData('execute', [
-            transaction.to,
-            BigInt(transaction.value || 0),
-            transaction.data || '0x'
-          ]);
-          feeBreakdown.gasFee = '0';
-          feeBreakdown.platformFee = '0';
-          feeBreakdown.netAmount = '0';
+          return res.status(400).json({ error: 'Only ERC20 transfer transactions are supported' });
         } else {
           const recipient = decoded.args[0] as string;
           const gross = BigInt(decoded.args[1]);
@@ -308,27 +341,33 @@ export class AaController {
 
           let platformFeeOnChain = 0n;
           if (platformFee > 0n) {
-            // If token is stable-ish, allow charging USDZ immediately; otherwise skip USDZ deduction.
             const isStable = ['USDC', 'USDT', 'DAI', 'USDZ'].includes(assetSymbol.toUpperCase());
             if (isStable) {
               const tokenAmount = Number(ethers.formatUnits(platformFee, decimals));
               const platformFeeUsd = tokenAmount; // 1 token ~= $1
-              if (usdzBalance >= platformFeeUsd) {
-                user.usdzBalance = Math.max(0, usdzBalance - platformFeeUsd);
-                if (AppDataSource.isInitialized) {
-                  await AppDataSource.getRepository(User).save(user);
-                }
+              feeBreakdown.platformFeeUsd = platformFeeUsd;
+              if (platformFeeUsd > 0 && usdzBalance >= platformFeeUsd) {
                 feeBreakdown.platformFeeChargedUsdZ = true;
               } else {
                 platformFeeOnChain = platformFee;
                 feeBreakdown.platformFeeChargedOnChain = true;
               }
             } else {
-              // Unknown price -> can't convert to USDZ safely, so always charge on-chain.
-              platformFeeOnChain = platformFee;
-              feeBreakdown.platformFeeChargedOnChain = true;
+              // USDZ is treated as 1 USD; attempt to convert platform fee to USD and deduct.
+              const tokenAmount = Number(ethers.formatUnits(platformFee, decimals));
+              const price = await getSpotUsdPrice(assetSymbol);
+              const platformFeeUsd = tokenAmount * (price || 0);
+              feeBreakdown.platformFeeUsd = platformFeeUsd;
+              if (platformFeeUsd > 0 && usdzBalance >= platformFeeUsd) {
+                feeBreakdown.platformFeeChargedUsdZ = true;
+              } else {
+                platformFeeOnChain = platformFee;
+                feeBreakdown.platformFeeChargedOnChain = true;
+              }
             }
           }
+
+          const fee = gasFee + platformFeeOnChain;
 
           const net = gross - gasFee - platformFeeOnChain;
           if (net < 0n) {
@@ -339,25 +378,20 @@ export class AaController {
           feeBreakdown.platformFee = platformFee.toString();
           feeBreakdown.netAmount = net.toString();
 
-          const onChainFee = gasFee + platformFeeOnChain;
+          if (!feeBreakdown.platformFeeChargedUsdZ) {
+            feeBreakdown.platformFeeChargedOnChain = platformFeeOnChain > 0n;
+          }
+
+          const onChainFee = fee;
           const tokenAddress = transaction.to;
           const transferNet = erc20.encodeFunctionData('transfer', [recipient, net]);
           const transferFee = erc20.encodeFunctionData('transfer', [treasuryAddress, onChainFee]);
 
-          if (onChainFee > 0n && treasuryAddress && ethers.isAddress(treasuryAddress)) {
-            callData = accountInterface.encodeFunctionData('executeBatch', [
-              [tokenAddress, tokenAddress],
-              [0n, 0n],
-              [transferNet, transferFee]
-            ]);
-          } else {
-            // Treasury not configured yet -> proceed without on-chain fee collection.
-            callData = accountInterface.encodeFunctionData('execute', [
-              tokenAddress,
-              0n,
-              transaction.data || '0x'
-            ]);
-          }
+          callData = accountInterface.encodeFunctionData('executeBatch', [
+            [tokenAddress, tokenAddress],
+            [0n, 0n],
+            [transferNet, transferFee]
+          ]);
         }
       }
 
@@ -391,6 +425,7 @@ export class AaController {
           user,
           device,
           spendingPin,
+          salt,
         });
 
         if (sponsor.statusCode !== 200) {
@@ -411,6 +446,42 @@ export class AaController {
       device.currentChallenge = challenge;
       if (AppDataSource.isInitialized) {
         await AppDataSource.getRepository(Device).save(device);
+      }
+
+      if (AppDataSource.isInitialized) {
+        try {
+          const txRepo = AppDataSource.getRepository(Transaction);
+          const userEntity = (req as any).user as User;
+          const quoteId = `quote-${randomUUID()}`;
+          const quoteTx = txRepo.create({
+            userOpHash: quoteId,
+            network: chainConfig.name,
+            status: 'quote',
+            value: String(transaction.value || '0'),
+            asset: assetSymbol,
+            user: userEntity,
+            userId: userEntity.id,
+            txData: {
+              type: 'aa_quote',
+              chainId: chainConfig.chainId,
+              sender: userOp.sender,
+              callData: userOp.callData,
+              walletId: wallet?.id || null,
+              challenge,
+              fee: feeBreakdown,
+              tx: {
+                to: transaction.to,
+                data: transaction.data || '0x',
+                value: String(transaction.value || '0'),
+                isNative: Boolean(isNative),
+                decimals,
+                assetSymbol,
+              },
+            },
+          });
+          await txRepo.save(quoteTx);
+        } catch {
+        }
       }
 
       res.status(200).json({
@@ -492,6 +563,40 @@ export class AaController {
         return res.status(401).json({ error: 'Passkey verification failed' });
       }
 
+      let quoteTx: Transaction | null = null;
+      if (AppDataSource.isInitialized) {
+        try {
+          const txRepo = AppDataSource.getRepository(Transaction);
+          const userEntity = (req as any).user as User;
+          quoteTx = await txRepo
+            .createQueryBuilder('t')
+            .where('t.userId = :uid', { uid: userEntity.id })
+            .andWhere('t.status = :status', { status: 'quote' })
+            .andWhere("t.txData->>'challenge' = :challenge", { challenge: expectedChallenge })
+            .orderBy('t.createdAt', 'DESC')
+            .getOne();
+
+          const fee = (quoteTx as any)?.txData?.fee;
+          const platformFeeUsd = Number(fee?.platformFeeUsd || 0);
+          const wantsUsdZ = Boolean(fee?.platformFeeChargedUsdZ);
+          if (wantsUsdZ && platformFeeUsd > 0) {
+            const currentUsdZ = Number(userEntity.usdzBalance || 0);
+            if (currentUsdZ < platformFeeUsd) {
+              return res.status(402).json({
+                error: 'Insufficient USDZ for platform fee; re-quote required',
+                requiredUsd: platformFeeUsd,
+                usdzBalance: currentUsdZ,
+              });
+            }
+
+            userEntity.usdzBalance = Math.max(0, currentUsdZ - platformFeeUsd);
+            await AppDataSource.getRepository(User).save(userEntity);
+          }
+        } catch {
+          quoteTx = null;
+        }
+      }
+
       const clientDataJSON = base64UrlDecode(assertion.response.clientDataJSON);
       const authData = base64UrlDecode(assertion.response.authenticatorData);
       const sigDer = base64UrlDecode(assertion.response.signature);
@@ -540,17 +645,32 @@ export class AaController {
         const userEntity = (req as any).user as User;
 
         try {
-          const newTx = txRepo.create({
-            userOpHash: sentUserOpHash,
-            network: chainConfig.name,
-            status: 'pending',
-            value: '0',
-            asset: chainConfig.symbol,
-            user: userEntity,
-            userId: userEntity.id,
-            txData: { type: 'aa', chainId: chainConfig.chainId, sender: userOp.sender, callData: userOp.callData, walletId: (req.body as any)?.walletId || null }
-          });
-          await txRepo.save(newTx);
+          if (quoteTx) {
+            quoteTx.userOpHash = sentUserOpHash;
+            quoteTx.status = 'pending';
+            quoteTx.network = chainConfig.name;
+            quoteTx.txData = {
+              ...(quoteTx.txData || {}),
+              type: 'aa',
+              chainId: chainConfig.chainId,
+              sender: userOp.sender,
+              callData: userOp.callData,
+              walletId: (req.body as any)?.walletId || (quoteTx as any)?.txData?.walletId || null,
+            };
+            await txRepo.save(quoteTx);
+          } else {
+            const newTx = txRepo.create({
+              userOpHash: sentUserOpHash,
+              network: chainConfig.name,
+              status: 'pending',
+              value: '0',
+              asset: chainConfig.symbol,
+              user: userEntity,
+              userId: userEntity.id,
+              txData: { type: 'aa', chainId: chainConfig.chainId, sender: userOp.sender, callData: userOp.callData, walletId: (req.body as any)?.walletId || null }
+            });
+            await txRepo.save(newTx);
+          }
         } catch (e) {
           console.warn('[AA] Failed to save tx record:', e);
         }

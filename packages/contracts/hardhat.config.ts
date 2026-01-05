@@ -51,6 +51,21 @@ const config: HardhatUserConfig = {
       chainId: 10,
       accounts,
     },
+    bsc: {
+      url: process.env.BSC_RPC_URL || 'https://bsc-dataseed.binance.org',
+      chainId: 56,
+      accounts,
+    },
+    avalanche: {
+      url: process.env.AVALANCHE_RPC_URL || 'https://api.avax.network/ext/bc/C/rpc',
+      chainId: 43114,
+      accounts,
+    },
+    linea: {
+      url: process.env.LINEA_RPC_URL || 'https://rpc.linea.build',
+      chainId: 59144,
+      accounts,
+    },
   },
 };
 

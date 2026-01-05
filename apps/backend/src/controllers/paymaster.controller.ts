@@ -153,6 +153,7 @@ export class PaymasterController {
     user: User;
     device: Device;
     spendingPin?: string;
+    salt?: number;
   }): Promise<{
     statusCode: number;
     body: any;
@@ -199,7 +200,8 @@ export class PaymasterController {
       const { x, y } = decodeP256PublicKeyXY(device.credentialPublicKey);
       const provider = ProviderService.getProvider(chainConfig.chainId);
       const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);
-      const expectedSender = await factory['getAddress(uint256,uint256,uint256)'](x, y, 0);
+      const salt = Number(params.salt ?? 0);
+      const expectedSender = await factory['getAddress(uint256,uint256,uint256)'](x, y, salt);
       if (String(expectedSender).toLowerCase() !== String(sender).toLowerCase()) {
         return { statusCode: 403, body: { error: 'Sender does not match device passkey-derived AA address' } };
       }
@@ -211,93 +213,41 @@ export class PaymasterController {
       return { statusCode: 403, body: { error: 'Account is frozen' } };
     }
 
-    const { value } = PaymasterController.decodeCallData(userOp.callData);
-
-    if (treasuryAddress && ethers.isAddress(treasuryAddress)) {
-      const { feeAmount, grossAmount } = PaymasterController.parseFeeFromXAccountCallData(userOp.callData, treasuryAddress);
-      if (grossAmount > 0n) {
-        const minFee = (grossAmount * GAS_FEE_BPS) / BPS_DENOM;
-        const maxFee = (grossAmount * (GAS_FEE_BPS + PLATFORM_FEE_BPS)) / BPS_DENOM;
-        if (feeAmount < minFee || feeAmount > maxFee) {
-          return {
-            statusCode: 200,
-            body: { paymasterAndData: '0x', message: 'Fee payment invalid; sponsorship declined' }
-          };
-        }
-      } else {
-        return {
-          statusCode: 200,
-          body: { paymasterAndData: '0x', message: 'Missing fee payment; sponsorship declined' }
-        };
-      }
-    }
-
-    // --- USDZ Economy: Gas Sponsorship Logic ---
-    const callGasLimit = BigInt(userOp.callGasLimit || 0);
-    const verificationGasLimit = BigInt(userOp.verificationGasLimit || 0);
-    const preVerificationGas = BigInt(userOp.preVerificationGas || 0);
-    const maxFeePerGas = BigInt(userOp.maxFeePerGas || 0);
-
-    const totalGasLimit = callGasLimit + verificationGasLimit + preVerificationGas;
-    const maxGasCostWei = totalGasLimit * maxFeePerGas;
-
-    const gasCostEth = parseFloat(ethers.formatEther(maxGasCostWei));
-    const gasCostUsd = gasCostEth * 2500;
-
-    console.log(`[Paymaster] Estimated Gas Cost: ${gasCostEth} ETH ($${gasCostUsd.toFixed(4)})`);
-    console.log(`[Paymaster] User Balance: ${user.usdzBalance} USDZ`);
-
-    if ((user.usdzBalance || 0) <= 0) {
-      console.log('[Paymaster] User out of USDZ credits. Sponsorship declined.');
+    if (!treasuryAddress || !ethers.isAddress(treasuryAddress)) {
       return {
         statusCode: 200,
-        body: { paymasterAndData: '0x', message: 'Insufficient USDZ balance for sponsorship' }
+        body: { paymasterAndData: '0x', message: `TREASURY_ADDRESS_${chainConfig.chainId} not configured; sponsorship declined` }
       };
     }
 
-    user.usdzBalance = Math.max(0, (user.usdzBalance || 0) - gasCostUsd);
-    await AppDataSource.getRepository(User).save(user);
-    console.log(`[Paymaster] Sponsored! New Balance: ${user.usdzBalance.toFixed(4)} USDZ`);
+    const { value } = PaymasterController.decodeCallData(userOp.callData);
 
-    if (value > 0n) {
-      const ethValue = parseFloat(ethers.formatEther(value));
-      const usdValue = ethValue * 2500;
+    // Require fee payment embedded in callData (executeBatch).
+    const { feeAmount, grossAmount } = PaymasterController.parseFeeFromXAccountCallData(userOp.callData, treasuryAddress);
+    if (grossAmount <= 0n) {
+      return {
+        statusCode: 200,
+        body: { paymasterAndData: '0x', message: 'Missing fee payment; sponsorship declined' }
+      };
+    }
 
-      if (usdValue >= user.largeTransactionThresholdUsd) {
-        if (!user.spendingPinHash) {
-          return { statusCode: 400, body: { error: 'Spending PIN required for this amount but not set on account.' } };
-        }
-        if (!spendingPin) {
-          return { statusCode: 401, body: { error: 'Spending PIN required for large transactions.' } };
-        }
-        const validPin = await bcrypt.compare(spendingPin, user.spendingPinHash);
-        if (!validPin) {
-          return { statusCode: 401, body: { error: 'Invalid Spending PIN.' } };
-        }
-        console.log(`[Paymaster] Large transaction ($${usdValue}) authorized with PIN.`);
+    const minFee = (grossAmount * GAS_FEE_BPS) / BPS_DENOM;
+    const maxFee = (grossAmount * (GAS_FEE_BPS + PLATFORM_FEE_BPS)) / BPS_DENOM;
+    if (feeAmount < minFee || feeAmount > maxFee) {
+      return {
+        statusCode: 200,
+        body: { paymasterAndData: '0x', message: 'Fee payment invalid; sponsorship declined' }
+      };
+    }
+
+    // Optional security: require spending pin for native transfers above threshold.
+    if (value > 0n && (user.spendingPinHash || '').length > 0) {
+      if (!spendingPin) {
+        return { statusCode: 401, body: { error: 'Spending PIN required.' } };
       }
-
-      const txRepo = AppDataSource.getRepository(Transaction);
-      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-      const recentTxs = await txRepo.find({
-        where: {
-          user: { id: user.id },
-          createdAt: MoreThan(oneDayAgo)
-        }
-      });
-
-      let totalSpentUsd = 0;
-      for (const tx of recentTxs) {
-        if (tx.value) {
-          const txEth = parseFloat(ethers.formatEther(tx.value));
-          totalSpentUsd += txEth * 2500;
-        }
-      }
-
-      if (totalSpentUsd + usdValue > user.dailyLimitUsd) {
-        console.warn(`[Paymaster] Blocked transaction: Limit exceeded. Spent: $${totalSpentUsd}, Attempt: $${usdValue}, Limit: $${user.dailyLimitUsd}`);
-        return { statusCode: 403, body: { error: `Daily spending limit exceeded ($${user.dailyLimitUsd})` } };
+      const validPin = await bcrypt.compare(spendingPin, user.spendingPinHash);
+      if (!validPin) {
+        return { statusCode: 401, body: { error: 'Invalid Spending PIN.' } };
       }
     }
 

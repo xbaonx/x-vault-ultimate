@@ -19,6 +19,7 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     uint256 public publicKeyY;
     
     IEntryPoint private immutable _entryPoint;
+    address private immutable _p256Verifier;
     
     // Device binding mapping: deviceIdHash => isActive
     mapping(bytes32 => bool) public activeDevices;
@@ -70,9 +71,6 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     event TransactionExecuted(bytes32 indexed txId);
     event TransactionCancelled(bytes32 indexed txId);
 
-    // RIP-7212 Precompile Address
-    address constant P256_VERIFIER = address(0x100);
-
     modifier onlyOwner() {
         _checkOwner();
         _;
@@ -83,8 +81,9 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
         _;
     }
 
-    constructor(IEntryPoint anEntryPoint) {
+    constructor(IEntryPoint anEntryPoint, address p256Verifier) {
         _entryPoint = anEntryPoint;
+        _p256Verifier = p256Verifier;
         _disableInitializers();
     }
 
@@ -143,7 +142,7 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
 
         bytes memory input = abi.encodePacked(messageHash, r, s, publicKeyX, publicKeyY);
         
-        (bool success, bytes memory ret) = P256_VERIFIER.staticcall(input);
+        (bool success, bytes memory ret) = _p256Verifier.staticcall(input);
         
         // Check if call succeeded and result is 1 (valid)
         if (!success || ret.length == 0 || uint256(bytes32(ret)) != 1) {

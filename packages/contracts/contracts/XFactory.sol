@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/utils/Create2.sol";
-import "@account-abstraction/contracts/interfaces/IEntryPoint.sol";
 import "./XAccount.sol";
 
 /**
@@ -16,8 +15,9 @@ contract XFactory {
 
     event AccountCreated(address indexed account, uint256 publicKeyX, uint256 publicKeyY);
 
-    constructor(IEntryPoint _entryPoint) {
-        accountImplementation = new XAccount(_entryPoint);
+    constructor(address _accountImplementation) {
+        require(_accountImplementation != address(0), "XFactory: invalid implementation");
+        accountImplementation = XAccount(payable(_accountImplementation));
     }
 
     /**

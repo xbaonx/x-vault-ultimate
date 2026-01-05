@@ -44,7 +44,10 @@ function isDefaultPublicRpc(url?: string): boolean {
     normalized.includes('polygon-bor.publicnode.com') ||
     normalized.includes('optimism-rpc.publicnode.com') ||
     normalized.includes('ethereum-rpc.publicnode.com') ||
-    normalized.includes('arbitrum-one-rpc.publicnode.com')
+    normalized.includes('arbitrum-one-rpc.publicnode.com') ||
+    normalized.includes('bsc-dataseed.binance.org') ||
+    normalized.includes('api.avax.network') ||
+    normalized.includes('rpc.linea.build')
   );
 }
 
@@ -120,6 +123,24 @@ export const config = {
             chainId: 1,
             symbol: 'ETH',
             name: 'Ethereum'
+        },
+        bsc: {
+            rpcUrl: getPreferredRpcUrl(56, process.env.BSC_RPC_URL, 'https://bsc-dataseed.binance.org'),
+            chainId: 56,
+            symbol: 'BNB',
+            name: 'BSC'
+        },
+        avalanche: {
+            rpcUrl: getPreferredRpcUrl(43114, process.env.AVALANCHE_RPC_URL, 'https://api.avax.network/ext/bc/C/rpc'),
+            chainId: 43114,
+            symbol: 'AVAX',
+            name: 'Avalanche'
+        },
+        linea: {
+            rpcUrl: getPreferredRpcUrl(59144, process.env.LINEA_RPC_URL, 'https://rpc.linea.build'),
+            chainId: 59144,
+            symbol: 'ETH',
+            name: 'Linea'
         }
     }
   },
