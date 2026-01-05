@@ -67,7 +67,7 @@ export class TokenDiscoveryService {
     timeoutMs?: number;
     maxTokens?: number;
     prices?: PricesMap;
-  }): Promise<Array<{ symbol: string; name: string; amount: number; value: number }>> {
+  }): Promise<Array<{ symbol: string; name: string; amount: number; value: number; contractAddress: string; decimals: number }>> {
     const timeoutMs = params.timeoutMs ?? 2500;
     const maxTokens = params.maxTokens ?? 25;
 
@@ -159,9 +159,9 @@ export class TokenDiscoveryService {
         const price = stableSymbols.has(upper) ? 1 : (prices[upper] || 0);
         const value = price > 0 ? amount * price : 0;
 
-        return { symbol, name, amount, value };
+        return { symbol, name, amount, value, contractAddress: m.contractAddress, decimals };
       })
-      .filter(Boolean) as Array<{ symbol: string; name: string; amount: number; value: number }>;
+      .filter(Boolean) as Array<{ symbol: string; name: string; amount: number; value: number; contractAddress: string; decimals: number }>;
 
     return assets;
   }

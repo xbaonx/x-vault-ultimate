@@ -422,7 +422,7 @@ export class WalletController {
               }
 
               // 2. ERC-20 Token Balances
-              let discovered: Array<{ symbol: string; name: string; amount: number; value: number }> = [];
+              let discovered: Array<{ symbol: string; name: string; amount: number; value: number; contractAddress: string; decimals: number }> = [];
               try {
                 discovered = await TokenDiscoveryService.getErc20Assets({
                   chainId: chain.chainId,
@@ -447,8 +447,8 @@ export class WalletController {
                     balance: t.amount,
                     network: chain.name.toLowerCase(),
                     valueUsd,
-                    tokenAddress: null,
-                    decimals: null,
+                    tokenAddress: t.contractAddress,
+                    decimals: t.decimals,
                     chainId: chain.chainId,
                     isNative: false,
                     name: t.name,
