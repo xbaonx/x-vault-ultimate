@@ -10,7 +10,7 @@ import { PassRegistration } from "../entities/PassRegistration";
 import { ChainCursor } from "../entities/ChainCursor";
 import { DepositEvent } from "../entities/DepositEvent";
 import * as forge from "node-forge";
-import { ILike } from "typeorm";
+import { ILike, In } from "typeorm";
 
 import { PassService } from "../services/pass.service";
 
@@ -38,6 +38,123 @@ export class AdminController {
     } catch (error: any) {
         console.error("Error generating test pass:", error);
         res.status(500).json({ error: error.message || "Failed to generate pass" });
+    }
+  }
+
+  static async getUserDetail(req: Request, res: Response) {
+    if (!AppDataSource.isInitialized) {
+      return res.status(503).json({ error: "Database not initialized" });
+    }
+
+    const { userId } = req.params;
+    if (!userId) {
+      return res.status(400).json({ error: "Missing userId" });
+    }
+
+    try {
+      const userRepo = AppDataSource.getRepository(User);
+      const walletRepo = AppDataSource.getRepository(Wallet);
+      const deviceRepo = AppDataSource.getRepository(Device);
+      const txRepo = AppDataSource.getRepository(Transaction);
+      const passRegRepo = AppDataSource.getRepository(PassRegistration);
+
+      const user = await userRepo
+        .createQueryBuilder('user')
+        .where('user.id = :userId', { userId })
+        .addSelect('user.spendingPinHash')
+        .getOne();
+
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const wallets = await walletRepo
+        .createQueryBuilder('wallet')
+        .where('wallet.userId = :userId', { userId })
+        .orderBy('wallet.createdAt', 'ASC')
+        .getMany();
+
+      const devices = await deviceRepo.find({
+        where: { userId },
+        order: { createdAt: "ASC" },
+      });
+
+      const deviceLibraryIds = (devices || [])
+        .map((d) => d.deviceLibraryId)
+        .filter(Boolean);
+
+      const passRegistrations = deviceLibraryIds.length
+        ? await passRegRepo.find({
+            where: { deviceLibraryIdentifier: In(deviceLibraryIds) },
+            order: { createdAt: "DESC" },
+          })
+        : [];
+
+      const recentTransactions = await txRepo.find({
+        where: { userId },
+        order: { createdAt: "DESC" },
+        take: 20,
+      });
+
+      return res.status(200).json({
+        user: {
+          id: user.id,
+          appleUserId: user.appleUserId,
+          email: user.email,
+          isFrozen: user.isFrozen,
+          hasPin: !!user.spendingPinHash,
+          spendingLimitUsd: user.dailyLimitUsd,
+          usdzBalance: user.usdzBalance,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+        },
+        wallets: (wallets || []).map((w) => ({
+          id: w.id,
+          name: w.name,
+          address: w.address,
+          aaSalt: w.aaSalt,
+          salt: w.salt,
+          isActive: w.isActive,
+          createdAt: w.createdAt,
+          updatedAt: w.updatedAt,
+        })),
+        devices: (devices || []).map((d) => ({
+          id: d.id,
+          deviceLibraryId: d.deviceLibraryId,
+          name: d.name,
+          pushTokenLast4: d.pushToken ? d.pushToken.slice(-4) : null,
+          isActive: d.isActive,
+          credentialID: d.credentialID || null,
+          hasCredentialPublicKey: !!d.credentialPublicKey,
+          counter: d.counter,
+          transports: d.transports || [],
+          createdAt: d.createdAt,
+          lastActiveAt: d.lastActiveAt,
+        })),
+        passRegistrations: (passRegistrations || []).map((p) => ({
+          id: p.id,
+          deviceLibraryIdentifier: p.deviceLibraryIdentifier,
+          passTypeIdentifier: p.passTypeIdentifier,
+          serialNumber: p.serialNumber,
+          pushTokenLast4: p.pushToken ? p.pushToken.slice(-4) : null,
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+        })),
+        recentTransactions: (recentTransactions || []).map((t) => ({
+          id: t.id,
+          userOpHash: t.userOpHash,
+          txHash: t.txHash,
+          network: t.network,
+          status: t.status,
+          value: t.value,
+          asset: t.asset,
+          explorerUrl: t.explorerUrl,
+          createdAt: t.createdAt,
+        })),
+      });
+    } catch (error: any) {
+      console.error("Error in getUserDetail:", error);
+      return res.status(500).json({ error: error.message || "Internal server error" });
     }
   }
 

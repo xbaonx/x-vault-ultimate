@@ -54,6 +54,64 @@ export type UserData = {
   isFrozen?: boolean;
 };
 
+export type UserDetailData = {
+  user: {
+    id: string;
+    appleUserId?: string;
+    email?: string;
+    isFrozen?: boolean;
+    hasPin?: boolean;
+    spendingLimitUsd?: number;
+    usdzBalance?: number;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+  wallets: Array<{
+    id: string;
+    name: string;
+    address: string;
+    aaSalt: number;
+    salt: string;
+    isActive: boolean;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  devices: Array<{
+    id: string;
+    deviceLibraryId: string;
+    name?: string;
+    pushTokenLast4: string | null;
+    isActive: boolean;
+    credentialID: string | null;
+    hasCredentialPublicKey: boolean;
+    counter: number;
+    transports: string[];
+    createdAt: string;
+    lastActiveAt: string;
+  }>;
+  passRegistrations: Array<{
+    id: string;
+    deviceLibraryIdentifier: string;
+    passTypeIdentifier: string;
+    serialNumber: string;
+    pushTokenLast4: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  recentTransactions: Array<{
+    id: string;
+    userOpHash?: string;
+    txHash?: string;
+    network: string;
+    status: string;
+    value?: string;
+    asset?: string;
+    explorerUrl?: string;
+    createdAt: string;
+    updatedAt?: string;
+  }>;
+};
+
 export type TransactionData = {
   id: string;
   userOpHash: string;
@@ -82,6 +140,23 @@ export const adminApi = {
     if (!res.ok) {
       throw new Error('Failed to fetch dashboard stats');
     }
+    return res.json();
+  },
+
+  getUserDetail: async (adminKey: string, userId: string): Promise<UserDetailData> => {
+    const res = await fetch(`${API_URL}/admin/users/${userId}`, {
+      headers: buildHeaders(adminKey),
+    });
+
+    if (res.status === 401) {
+      throw new Error('Invalid Admin Key. Please check your key.');
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || 'Failed to fetch user detail');
+    }
+
     return res.json();
   },
 

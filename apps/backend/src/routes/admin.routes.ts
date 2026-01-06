@@ -9,6 +9,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.get("/dashboard", adminAuth, AdminController.getDashboardStats);
 router.get("/users", adminAuth, AdminController.getUsers);
+router.get("/users/:userId", adminAuth, AdminController.getUserDetail);
 router.get("/transactions", adminAuth, AdminController.getTransactions);
 
 router.get("/apple/config", adminAuth, AdminController.getAppleConfig);

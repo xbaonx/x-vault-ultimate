@@ -14,7 +14,7 @@ import { Users, CreditCard, Activity, DollarSign, Settings, Bell, Key } from 'lu
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { adminApi, type AppleConfigStatus, type DashboardStats, type UserData, type TransactionData } from '../services/api';
+import { adminApi, type AppleConfigStatus, type DashboardStats, type UserData, type TransactionData, type UserDetailData } from '../services/api';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -30,6 +30,11 @@ export default function AdminDashboard() {
   const [transactionsList, setTransactionsList] = useState<TransactionData[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
+
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [userDetail, setUserDetail] = useState<UserDetailData | null>(null);
+  const [userDetailLoading, setUserDetailLoading] = useState(false);
+  const [userDetailError, setUserDetailError] = useState<string | null>(null);
 
   // Apple Config State
   const [teamId, setTeamId] = useState('');
@@ -170,6 +175,30 @@ export default function AdminDashboard() {
       fetchData(sessionKey);
     } catch (err: any) {
       alert(err.message || 'Failed to delete user');
+    }
+  };
+
+  const handleViewUser = async (userId: string) => {
+    if (!sessionKey) return;
+
+    if (selectedUserId === userId) {
+      setSelectedUserId(null);
+      setUserDetail(null);
+      setUserDetailError(null);
+      return;
+    }
+
+    setSelectedUserId(userId);
+    setUserDetail(null);
+    setUserDetailError(null);
+    setUserDetailLoading(true);
+    try {
+      const detail = await adminApi.getUserDetail(sessionKey, userId);
+      setUserDetail(detail);
+    } catch (err: any) {
+      setUserDetailError(err.message || 'Failed to load user detail');
+    } finally {
+      setUserDetailLoading(false);
     }
   };
 
@@ -418,35 +447,89 @@ export default function AdminDashboard() {
             <CardContent>
               <div className="space-y-4">
                 {usersList.map((user) => (
-                  <div key={user.id} className="flex items-center justify-between border-b border-white/5 pb-4 last:border-0 last:pb-0">
-                    <div>
-                      <p className="font-medium text-white">{user.address}</p>
-                      <p className="text-xs text-secondary">Joined: {new Date(user.createdAt).toLocaleString()}</p>
-                      <p className="text-xs text-secondary/50">ID: {user.id}</p>
+                  <div key={user.id} className="border-b border-white/5 pb-4 last:border-0 last:pb-0">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-white">{user.address}</p>
+                        <p className="text-xs text-secondary">Joined: {new Date(user.createdAt).toLocaleString()}</p>
+                        <p className="text-xs text-secondary/50">ID: {user.id}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                          <div className={`px-2 py-1 rounded-full text-xs ${
+                              user.isFrozen ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success'
+                          }`}>
+                              {user.isFrozen ? 'FROZEN' : 'Active'}
+                          </div>
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleViewUser(user.id)}>
+                              {selectedUserId === user.id ? 'Hide' : 'View'}
+                          </Button>
+                          {user.isFrozen ? (
+                              <Button size="sm" variant="outline" className="h-7 text-xs border-success/50 text-success hover:text-success" onClick={() => handleUnfreeze(user.id)}>
+                                  Unfreeze
+                              </Button>
+                          ) : (
+                              <Button size="sm" variant="outline" className="h-7 text-xs border-destructive/50 text-destructive hover:text-destructive" onClick={() => handleFreeze(user.id)}>
+                                  Freeze
+                              </Button>
+                          )}
+                          <Button size="sm" variant="outline" className="h-7 text-xs border-destructive/50 text-destructive hover:text-destructive" onClick={() => handleDeleteUser(user.id)}>
+                              Delete
+                          </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <div className={`px-2 py-1 rounded-full text-xs ${
-                            user.isFrozen ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success'
-                        }`}>
-                            {user.isFrozen ? 'FROZEN' : 'Active'}
-                        </div>
-                        {user.isFrozen ? (
-                            <Button size="sm" variant="outline" className="h-7 text-xs border-success/50 text-success hover:text-success" onClick={() => handleUnfreeze(user.id)}>
-                                Unfreeze
-                            </Button>
-                        ) : (
-                            <Button size="sm" variant="outline" className="h-7 text-xs border-destructive/50 text-destructive hover:text-destructive" onClick={() => handleFreeze(user.id)}>
-                                Freeze
-                            </Button>
+
+                    {selectedUserId === user.id && (
+                      <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+                        {userDetailLoading && (
+                          <div className="text-sm text-secondary">Loading user detail...</div>
                         )}
-                        <Button size="sm" variant="outline" className="h-7 text-xs border-destructive/50 text-destructive hover:text-destructive" onClick={() => handleDeleteUser(user.id)}>
-                            Delete
-                        </Button>
-                    </div>
+                        {userDetailError && (
+                          <div className="text-sm text-destructive">{userDetailError}</div>
+                        )}
+                        {userDetail && (
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="text-xs text-secondary">
+                                <div className="text-white font-medium">User</div>
+                                <div>ID: <span className="text-white/80">{userDetail.user.id}</span></div>
+                                <div>Email: <span className="text-white/80">{userDetail.user.email || '-'}</span></div>
+                                <div>AppleUserId: <span className="text-white/80">{userDetail.user.appleUserId || '-'}</span></div>
+                                <div>Frozen: <span className="text-white/80">{String(!!userDetail.user.isFrozen)}</span></div>
+                                <div>Has PIN: <span className="text-white/80">{String(!!userDetail.user.hasPin)}</span></div>
+                                <div>Limit (USD): <span className="text-white/80">{String(userDetail.user.spendingLimitUsd ?? '-')}</span></div>
+                                <div>USDZ: <span className="text-white/80">{String(userDetail.user.usdzBalance ?? '-')}</span></div>
+                              </div>
+                              <div className="text-xs text-secondary">
+                                <div className="text-white font-medium">Counts</div>
+                                <div>Wallets: <span className="text-white/80">{userDetail.wallets.length}</span></div>
+                                <div>Devices: <span className="text-white/80">{userDetail.devices.length}</span></div>
+                                <div>Pass Registrations: <span className="text-white/80">{userDetail.passRegistrations.length}</span></div>
+                                <div>Recent TXs: <span className="text-white/80">{userDetail.recentTransactions.length}</span></div>
+                              </div>
+                            </div>
+
+                            <div className="flex justify-end">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs"
+                                onClick={() => navigator.clipboard.writeText(JSON.stringify(userDetail, null, 2))}
+                              >
+                                Copy JSON
+                              </Button>
+                            </div>
+
+                            <pre className="text-[11px] leading-relaxed overflow-auto max-h-80 rounded-lg bg-black/40 border border-white/10 p-3 text-white/80">
+{JSON.stringify(userDetail, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
-                {usersList.length === 0 && !loadingData && <p className="text-secondary text-sm">No users found.</p>}
               </div>
+              {usersList.length === 0 && !loadingData && <p className="text-secondary text-sm">No users found.</p>}
             </CardContent>
           </Card>
         )}
