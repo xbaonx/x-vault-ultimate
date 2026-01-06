@@ -153,7 +153,7 @@ export class AaController {
       const entryPointAddress = config.blockchain.aa.entryPointAddress(chainConfig.chainId);
 
       if (!factoryAddress) {
-        return res.status(500).json({ error: `FACTORY_ADDRESS_${chainConfig.chainId} not configured` });
+        return res.status(500).json({ error: 'FACTORY_ADDRESS not configured (universal mode)' });
       }
 
       if (!entryPointAddress) {
@@ -163,6 +163,15 @@ export class AaController {
       const { x, y } = decodeP256PublicKeyXY(device.credentialPublicKey);
 
       const provider = ProviderService.getProvider(chainConfig.chainId);
+
+      const factoryCode = await provider.getCode(factoryAddress);
+      if (!factoryCode || factoryCode === '0x') {
+        return res.status(500).json({
+          error: 'AA Factory not deployed',
+          details: `chainId=${chainConfig.chainId} address=${factoryAddress}`,
+        });
+      }
+
       const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);
 
       const walletRepo = AppDataSource.getRepository(Wallet);
@@ -215,7 +224,7 @@ export class AaController {
       const bundlerUrl = config.blockchain.aa.bundlerUrl(chainConfig.chainId);
 
       if (!factoryAddress) {
-        return res.status(500).json({ error: `FACTORY_ADDRESS_${chainConfig.chainId} not configured` });
+        return res.status(500).json({ error: 'FACTORY_ADDRESS not configured (universal mode)' });
       }
 
       if (!entryPointAddress) {
@@ -227,6 +236,14 @@ export class AaController {
       }
 
       const provider = ProviderService.getProvider(chainConfig.chainId);
+
+      const factoryCode = await provider.getCode(factoryAddress);
+      if (!factoryCode || factoryCode === '0x') {
+        return res.status(500).json({
+          error: 'AA Factory not deployed',
+          details: `chainId=${chainConfig.chainId} address=${factoryAddress}`,
+        });
+      }
 
       const { x, y } = decodeP256PublicKeyXY(device.credentialPublicKey);
       const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);

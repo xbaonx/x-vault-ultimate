@@ -192,13 +192,25 @@ export class PaymasterController {
     if (!factoryAddress) {
       return {
         statusCode: 200,
-        body: { paymasterAndData: '0x', message: `FACTORY_ADDRESS_${chainConfig.chainId} not configured` }
+        body: { paymasterAndData: '0x', message: 'FACTORY_ADDRESS not configured (universal mode)' }
       };
     }
 
     try {
       const { x, y } = decodeP256PublicKeyXY(device.credentialPublicKey);
       const provider = ProviderService.getProvider(chainConfig.chainId);
+
+      const factoryCode = await provider.getCode(factoryAddress);
+      if (!factoryCode || factoryCode === '0x') {
+        return {
+          statusCode: 200,
+          body: {
+            paymasterAndData: '0x',
+            message: `AA Factory not deployed on chainId=${chainConfig.chainId} at ${factoryAddress}; sponsorship declined`,
+          }
+        };
+      }
+
       const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);
       const salt = Number(params.salt ?? 0);
       const expectedSender = await factory['getAddress(uint256,uint256,uint256)'](x, y, salt);
