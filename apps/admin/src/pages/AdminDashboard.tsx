@@ -519,9 +519,154 @@ export default function AdminDashboard() {
                               </Button>
                             </div>
 
-                            <pre className="text-[11px] leading-relaxed overflow-auto max-h-80 rounded-lg bg-black/40 border border-white/10 p-3 text-white/80">
+                            <div className="space-y-4">
+                              <div>
+                                <div className="text-sm font-semibold text-white mb-2">Wallets</div>
+                                {userDetail.wallets.length === 0 ? (
+                                  <div className="text-xs text-secondary">No wallets</div>
+                                ) : (
+                                  <div className="overflow-auto border border-white/10 rounded-lg">
+                                    <table className="w-full text-xs">
+                                      <thead className="bg-black/30 text-secondary">
+                                        <tr>
+                                          <th className="text-left p-2">Name</th>
+                                          <th className="text-left p-2">Address</th>
+                                          <th className="text-left p-2">aaSalt</th>
+                                          <th className="text-left p-2">Active</th>
+                                          <th className="text-left p-2">Created</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {userDetail.wallets.map((w) => (
+                                          <tr key={w.id} className="border-t border-white/10">
+                                            <td className="p-2 text-white/80">{w.name}</td>
+                                            <td className="p-2 font-mono text-white/80">{w.address}</td>
+                                            <td className="p-2 text-white/80">{String(w.aaSalt)}</td>
+                                            <td className="p-2 text-white/80">{String(!!w.isActive)}</td>
+                                            <td className="p-2 text-white/80">{new Date(w.createdAt).toLocaleString()}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div>
+                                <div className="text-sm font-semibold text-white mb-2">Devices</div>
+                                {userDetail.devices.length === 0 ? (
+                                  <div className="text-xs text-secondary">No devices</div>
+                                ) : (
+                                  <div className="overflow-auto border border-white/10 rounded-lg">
+                                    <table className="w-full text-xs">
+                                      <thead className="bg-black/30 text-secondary">
+                                        <tr>
+                                          <th className="text-left p-2">Name</th>
+                                          <th className="text-left p-2">Device ID</th>
+                                          <th className="text-left p-2">Active</th>
+                                          <th className="text-left p-2">Has Key</th>
+                                          <th className="text-left p-2">Counter</th>
+                                          <th className="text-left p-2">Last Active</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {userDetail.devices.map((d) => (
+                                          <tr key={d.id} className="border-t border-white/10">
+                                            <td className="p-2 text-white/80">{d.name || '-'}</td>
+                                            <td className="p-2 font-mono text-white/80">{d.deviceLibraryId}</td>
+                                            <td className="p-2 text-white/80">{String(!!d.isActive)}</td>
+                                            <td className="p-2 text-white/80">{String(!!d.hasCredentialPublicKey)}</td>
+                                            <td className="p-2 text-white/80">{String(d.counter)}</td>
+                                            <td className="p-2 text-white/80">{new Date(d.lastActiveAt).toLocaleString()}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div>
+                                <div className="text-sm font-semibold text-white mb-2">Pass Registrations</div>
+                                {userDetail.passRegistrations.length === 0 ? (
+                                  <div className="text-xs text-secondary">No pass registrations</div>
+                                ) : (
+                                  <div className="overflow-auto border border-white/10 rounded-lg">
+                                    <table className="w-full text-xs">
+                                      <thead className="bg-black/30 text-secondary">
+                                        <tr>
+                                          <th className="text-left p-2">Serial</th>
+                                          <th className="text-left p-2">Pass Type</th>
+                                          <th className="text-left p-2">Device Lib</th>
+                                          <th className="text-left p-2">Push</th>
+                                          <th className="text-left p-2">Created</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {userDetail.passRegistrations.map((p) => (
+                                          <tr key={p.id} className="border-t border-white/10">
+                                            <td className="p-2 font-mono text-white/80">{p.serialNumber}</td>
+                                            <td className="p-2 font-mono text-white/80">{p.passTypeIdentifier}</td>
+                                            <td className="p-2 font-mono text-white/80">{p.deviceLibraryIdentifier}</td>
+                                            <td className="p-2 text-white/80">{p.pushTokenLast4 || '-'}</td>
+                                            <td className="p-2 text-white/80">{new Date(p.createdAt).toLocaleString()}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div>
+                                <div className="text-sm font-semibold text-white mb-2">Recent Transactions</div>
+                                {userDetail.recentTransactions.length === 0 ? (
+                                  <div className="text-xs text-secondary">No transactions</div>
+                                ) : (
+                                  <div className="overflow-auto border border-white/10 rounded-lg">
+                                    <table className="w-full text-xs">
+                                      <thead className="bg-black/30 text-secondary">
+                                        <tr>
+                                          <th className="text-left p-2">Network</th>
+                                          <th className="text-left p-2">Status</th>
+                                          <th className="text-left p-2">Asset</th>
+                                          <th className="text-left p-2">Value</th>
+                                          <th className="text-left p-2">Hash</th>
+                                          <th className="text-left p-2">Created</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {userDetail.recentTransactions.map((t) => (
+                                          <tr key={t.id} className="border-t border-white/10">
+                                            <td className="p-2 text-white/80">{t.network}</td>
+                                            <td className="p-2 text-white/80">{t.status}</td>
+                                            <td className="p-2 text-white/80">{t.asset || '-'}</td>
+                                            <td className="p-2 font-mono text-white/80">{t.value || '-'}</td>
+                                            <td className="p-2 font-mono text-white/80">
+                                              {t.explorerUrl ? (
+                                                <a className="underline" href={t.explorerUrl} target="_blank" rel="noreferrer">
+                                                  {(t.txHash || t.userOpHash || '').slice(0, 18)}...
+                                                </a>
+                                              ) : (
+                                                <span>{(t.txHash || t.userOpHash || '').slice(0, 18)}...</span>
+                                              )}
+                                            </td>
+                                            <td className="p-2 text-white/80">{new Date(t.createdAt).toLocaleString()}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+
+                              <details className="border border-white/10 rounded-lg bg-black/20 p-3">
+                                <summary className="cursor-pointer text-xs text-secondary">Raw JSON</summary>
+                                <pre className="mt-3 text-[11px] leading-relaxed overflow-auto max-h-80 text-white/80">
 {JSON.stringify(userDetail, null, 2)}
-                            </pre>
+                                </pre>
+                              </details>
+                            </div>
                           </div>
                         )}
                       </div>
