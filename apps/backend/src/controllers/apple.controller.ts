@@ -138,17 +138,6 @@ export class ApplePassController {
         await repo.save(registration);
         console.log(`[ApplePass] Device registered successfully`);
 
-        try {
-          const baseSerialChainId = Number(config.blockchain.chainId);
-          await AaAddressMapService.upsert({
-            chainId: baseSerialChainId,
-            aaAddress: serialNumber,
-            serialNumber: serialNumber,
-            deviceId: deviceLibraryIdentifier,
-          });
-        } catch {
-        }
-
         res.sendStatus(201);
     } catch (error) {
         console.error("[ApplePass] Registration error:", error);
@@ -293,54 +282,32 @@ export class ApplePassController {
           // serialNumber is the AA address (Base chain) in our model
           const serialAddress = serialNumber;
 
-          const registrationRepo = AppDataSource.getRepository(PassRegistration);
-          const registrations = await registrationRepo
-            .createQueryBuilder('r')
-            .where('LOWER(r.serialNumber) = LOWER(:serialNumber)', { serialNumber: serialAddress })
-            .andWhere('r.passTypeIdentifier = :passTypeIdentifier', { passTypeIdentifier })
-            .getMany();
-
           const deviceRepo = AppDataSource.getRepository(Device);
 
           const baseSerialChainId = Number(config.blockchain.chainId);
 
           let matchedDevice: Device | null = null;
-          if (registrations.length) {
-            const deviceLibraryIds = Array.from(
-              new Set(registrations.map(r => String(r.deviceLibraryIdentifier || '').toLowerCase()).filter(Boolean))
-            );
 
-            if (deviceLibraryIds.length) {
-              matchedDevice = await deviceRepo
-                .createQueryBuilder('d')
-                .leftJoinAndSelect('d.user', 'user')
-                .where('d.isActive = :isActive', { isActive: true })
-                .andWhere('LOWER(d.deviceLibraryId) IN (:...ids)', { ids: deviceLibraryIds })
-                .getOne();
-            }
-          }
+          // Resolve the internal Device using AaAddressMap (serialNumber -> internal Device.deviceLibraryId).
+          // Apple deviceLibraryIdentifier is NOT the same as our Device.deviceLibraryId.
+          try {
+            const mappedDeviceLibraryId = await AaAddressMapService.findDeviceIdByAddress({
+              chainId: baseSerialChainId,
+              aaAddress: serialAddress,
+            });
 
-          // Fallback: map serialNumber -> deviceLibraryId via AaAddressMap (stable, avoids RPC derives)
-          if (!matchedDevice) {
-            try {
-              const mappedDeviceLibraryId = await AaAddressMapService.findDeviceIdByAddress({
-                chainId: baseSerialChainId,
-                aaAddress: serialAddress,
+            if (mappedDeviceLibraryId) {
+              matchedDevice = await deviceRepo.findOne({
+                where: { deviceLibraryId: mappedDeviceLibraryId, isActive: true },
+                relations: ['user'],
               });
-
-              if (mappedDeviceLibraryId) {
-                matchedDevice = await deviceRepo.findOne({
-                  where: { deviceLibraryId: mappedDeviceLibraryId, isActive: true },
-                  relations: ['user'],
-                });
-              }
-            } catch {
             }
+          } catch {
           }
 
           if (!matchedDevice || !matchedDevice.user) {
             console.warn(`[ApplePass] No device/user found for serial: ${serialAddress}`);
-            return res.sendStatus(401);
+            return res.sendStatus(404);
           }
 
           const user = matchedDevice.user;
