@@ -10,7 +10,8 @@
     "deploy:ethereum": "hardhat run scripts/deploy.ts --network ethereum",
     "deploy:polygon": "hardhat run scripts/deploy.ts --network polygon",
     "deploy:arbitrum": "hardhat run scripts/deploy.ts --network arbitrum",
-    "deploy:optimism": "hardhat run scripts/deploy.ts --network optimism"
+    "deploy:optimism": "hardhat run scripts/deploy.ts --network optimism",
+    "deploy:bsc": "hardhat run scripts/deploy.ts --network bsc"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",

@@ -23,6 +23,8 @@ services:
         sync: false
       - key: OPTIMISM_RPC_URL
         sync: false
+      - key: BSC_RPC_URL
+        sync: false
       - key: ALCHEMY_API_KEY
         sync: false
       - key: ALCHEMY_WEBHOOK_SIGNING_KEY
@@ -53,16 +55,20 @@ services:
         value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
       - key: ENTRY_POINT_ADDRESS_10
         value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
+      - key: ENTRY_POINT_ADDRESS_56
+        value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
+      - key: FACTORY_ADDRESS
+        value: 0x3BEc1cBE0205885454ab63a8E4B55E91b207fc7D
       - key: FACTORY_ADDRESS_8453
-        value: 0x3225274a8bD80d878F124055767203e4B062B6f7
+        value: 0x3BEc1cBE0205885454ab63a8E4B55E91b207fc7D
       - key: FACTORY_ADDRESS_1
-        value: 0x46bE9F47BdAD5cdA33808FC24F7FC303f94e33Ba
+        value: 0x3BEc1cBE0205885454ab63a8E4B55E91b207fc7D
       - key: FACTORY_ADDRESS_137
-        value: 0x3225274a8bD80d878F124055767203e4B062B6f7
+        value: 0x3BEc1cBE0205885454ab63a8E4B55E91b207fc7D
       - key: FACTORY_ADDRESS_42161
-        value: 0x3225274a8bD80d878F124055767203e4B062B6f7
+        value: 0x3BEc1cBE0205885454ab63a8E4B55E91b207fc7D
       - key: FACTORY_ADDRESS_10
-        value: 0x3225274a8bD80d878F124055767203e4B062B6f7
+        value: 0x3BEc1cBE0205885454ab63a8E4B55E91b207fc7D
       - key: BUNDLER_URL_8453
         sync: false
       - key: BUNDLER_URL_1
@@ -73,16 +79,20 @@ services:
         sync: false
       - key: BUNDLER_URL_10
         sync: false
+      - key: BUNDLER_URL_56
+        sync: false
       - key: PAYMASTER_ADDRESS_8453
-        value: 0x407AC220c0B82AD76654647d78224d5EFA7606e4
-      - key: PAYMASTER_ADDRESS_1
         value: 0x3a286fE264d3769e64c3146EF70ae6d656E23bd7
+      - key: PAYMASTER_ADDRESS_1
+        value: 0x5aBEDAC353dacAd53A9332b706B44F49cAC26d6C
       - key: PAYMASTER_ADDRESS_137
-        value: 0x407AC220c0B82AD76654647d78224d5EFA7606e4
+        value: 0x3a286fE264d3769e64c3146EF70ae6d656E23bd7
       - key: PAYMASTER_ADDRESS_42161
-        value: 0x407AC220c0B82AD76654647d78224d5EFA7606e4
+        value: 0x46bE9F47BdAD5cdA33808FC24F7FC303f94e33Ba
       - key: PAYMASTER_ADDRESS_10
-        value: 0x407AC220c0B82AD76654647d78224d5EFA7606e4
+        value: 0x81252EbC7E15b49C95700660734Cf3e9dC7807cC
+      - key: PAYMASTER_ADDRESS_56
+        value: 0x42186Ec1fc663d341204C6846Aa091C1800343fE
       - key: PAYMASTER_SIGNING_KEY_8453
         sync: false
       - key: PAYMASTER_SIGNING_KEY_1
@@ -93,6 +103,8 @@ services:
         sync: false
       - key: PAYMASTER_SIGNING_KEY_10
         sync: false
+      - key: PAYMASTER_SIGNING_KEY_56
+        sync: false
       - key: TREASURY_ADDRESS_8453
         sync: false
       - key: TREASURY_ADDRESS_1
@@ -102,6 +114,8 @@ services:
       - key: TREASURY_ADDRESS_42161
         sync: false
       - key: TREASURY_ADDRESS_10
+        sync: false
+      - key: TREASURY_ADDRESS_56
         sync: false
     autoDeploy: true
 
