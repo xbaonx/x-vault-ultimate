@@ -87,7 +87,7 @@ export const config = {
     aa: {
       bundlerUrl: (chainId: number) => getEnvByChainId('BUNDLER_URL', chainId) || getAlchemyBundlerUrl(chainId) || '',
       entryPointAddress: (chainId: number) => getEnvByChainId('ENTRY_POINT_ADDRESS', chainId) || DEFAULT_ENTRY_POINT_ADDRESS,
-      factoryAddress: (chainId: number) => getEnvByChainId('FACTORY_ADDRESS', chainId) || '',
+      factoryAddress: (_chainId: number) => (process.env.FACTORY_ADDRESS || '').trim(),
       paymasterAddress: (chainId: number) => getEnvByChainId('PAYMASTER_ADDRESS', chainId) || '',
       paymasterSigningKey: (chainId: number) => getEnvByChainId('PAYMASTER_SIGNING_KEY', chainId) || '',
       treasuryAddress: (chainId: number) => getEnvByChainId('TREASURY_ADDRESS', chainId) || '',

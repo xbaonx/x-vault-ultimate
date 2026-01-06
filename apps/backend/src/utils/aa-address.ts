@@ -31,15 +31,11 @@ export async function deriveAaAddressFromCredentialPublicKey(params: {
   const { credentialPublicKey, chainId } = params;
   const salt = BigInt(params.salt ?? 0);
 
-  const factoryAddressRaw = config.blockchain.aa.factoryAddress(chainId);
+  const factoryAddressRaw = String(config.blockchain.aa.factoryAddress(chainId) || '').trim();
   if (!factoryAddressRaw) {
-    throw new Error(`FACTORY_ADDRESS_${chainId} not configured`);
+    throw new Error('FACTORY_ADDRESS not configured (universal mode)');
   }
-
-  const factoryAddresses = String(factoryAddressRaw)
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean);
+  const factoryAddresses = [factoryAddressRaw];
 
   const { x, y } = decodeP256PublicKeyXY(credentialPublicKey);
 
@@ -60,7 +56,7 @@ export async function deriveAaAddressFromCredentialPublicKey(params: {
       ]);
 
       if (!code || code === '0x') {
-        continue;
+        throw new Error(`AA Factory not deployed on chainId=${chainId} at ${factoryAddress}`);
       }
 
       const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);

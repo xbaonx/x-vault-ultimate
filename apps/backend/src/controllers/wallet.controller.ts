@@ -90,33 +90,38 @@ export class WalletController {
           wallet = await walletRepo.findOne({ where: { user: { id: user.id }, isActive: true } });
       }
 
-      const legacyEoaAddress = wallet?.address || '0x0000000000000000000000000000000000000000';
+      if (!wallet) {
+        res.status(404).json({ error: 'Wallet not found' });
+        return;
+      }
+
+      if (!device?.credentialPublicKey) {
+        res.status(400).json({ error: 'Device has no passkey registered' });
+        return;
+      }
 
       // If caller specifies chainId, keep legacy response shape (single address)
       if (chainIdProvided) {
-        if (device?.credentialPublicKey && wallet) {
-          try {
-            const aaAddress = await deriveAaAddressFromCredentialPublicKey({
-              credentialPublicKey: Buffer.from(device.credentialPublicKey),
-              chainId,
-              salt: wallet.aaSalt ?? 0,
-            });
+        try {
+          const aaAddress = await deriveAaAddressFromCredentialPublicKey({
+            credentialPublicKey: Buffer.from(device.credentialPublicKey),
+            chainId,
+            salt: wallet.aaSalt ?? 0,
+          });
 
-            res.status(200).json({ address: aaAddress, walletId: wallet.id, chainId });
-            return;
-          } catch {
-            // fall back
-          }
+          res.status(200).json({ address: aaAddress, walletId: wallet.id, chainId });
+          return;
+        } catch (e: any) {
+          res.status(500).json({ error: 'AA address derivation failed', details: e?.message || String(e) });
+          return;
         }
-
-        res.status(200).json({ address: legacyEoaAddress, walletId: wallet?.id, chainId });
-        return;
       }
 
       // Otherwise, return all chain AA addresses to avoid ambiguity (UI can pick)
       const defaultChainId = Number(config.blockchain.chainId);
       const chains = Object.values(config.blockchain.chains);
       const aaAddresses: Record<number, string> = {};
+      const errors: Record<number, string> = {};
       if (device?.credentialPublicKey && wallet) {
         await Promise.all(chains.map(async (c) => {
           try {
@@ -129,13 +134,18 @@ export class WalletController {
             if (aa && String(aa).startsWith('0x')) {
               aaAddresses[c.chainId] = String(aa);
             }
-          } catch {
+          } catch (e: any) {
+            errors[c.chainId] = e?.message || String(e);
           }
         }));
       }
 
-      const address = aaAddresses[defaultChainId] || legacyEoaAddress;
-      res.status(200).json({ address, walletId: wallet?.id, chainId: defaultChainId, defaultChainId, aaAddresses, legacyEoaAddress });
+      const address = aaAddresses[defaultChainId];
+      if (!address) {
+        res.status(500).json({ error: `AA address unavailable for defaultChainId=${defaultChainId}`, defaultChainId, aaAddresses, errors });
+        return;
+      }
+      res.status(200).json({ address, walletId: wallet.id, chainId: defaultChainId, defaultChainId, aaAddresses, errors });
     } catch (error) {
       console.error('Error in getAddress:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -273,7 +283,7 @@ export class WalletController {
           wallet = await walletRepo.findOne({ where: { user: { id: user.id }, isActive: true } });
       }
 
-      const address = wallet?.address;
+      const address = wallet?.address && wallet.address !== ethers.ZeroAddress ? wallet.address : null;
 
       const baseSerialChainId = Number(config.blockchain.chainId);
       let baseSerialNumber: string | null = null;
@@ -328,8 +338,8 @@ export class WalletController {
         }
       }
       
-      // If legacy address is missing and we also can't derive AA, return empty portfolio
-      if ((!address || !address.startsWith('0x')) && !device?.credentialPublicKey) {
+      // AA-only: if there is no passkey, return empty portfolio.
+      if (!device?.credentialPublicKey) {
          res.status(200).json({
             totalBalanceUsd: 0.00,
             assets: [],
@@ -429,9 +439,9 @@ export class WalletController {
                 }
               }
 
-              // Fallback to legacy EOA address only when AA is not available.
+              // No EOA fallback in AA-only mode.
               if (!scanAddress) {
-                scanAddress = address || null;
+                scanAddress = address;
               }
 
               if (!scanAddress || !scanAddress.startsWith('0x')) {
