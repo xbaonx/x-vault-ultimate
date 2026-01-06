@@ -126,13 +126,30 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
         override
         returns (uint256 validationData)
     {
-        // ABI-encoded tuple head is 5 * 32 bytes; anything less will revert on abi.decode
         if (userOp.signature.length < 160) {
             return SIG_VALIDATION_FAILED;
         }
 
-        (uint256 r, uint256 s, bytes memory authenticatorData, bytes memory clientDataPrefix, bytes memory clientDataSuffix) =
-            abi.decode(userOp.signature, (uint256, uint256, bytes, bytes, bytes));
+        uint256 r;
+        uint256 s;
+        bytes memory authenticatorData;
+        bytes memory clientDataPrefix;
+        bytes memory clientDataSuffix;
+        try this._decodeWebAuthnSignature(userOp.signature) returns (
+            uint256 _r,
+            uint256 _s,
+            bytes memory _authenticatorData,
+            bytes memory _clientDataPrefix,
+            bytes memory _clientDataSuffix
+        ) {
+            r = _r;
+            s = _s;
+            authenticatorData = _authenticatorData;
+            clientDataPrefix = _clientDataPrefix;
+            clientDataSuffix = _clientDataSuffix;
+        } catch {
+            return SIG_VALIDATION_FAILED;
+        }
 
         bytes memory challengeB64 = _base64UrlEncode32(userOpHash);
         bytes memory clientDataJSON = bytes.concat(clientDataPrefix, challengeB64, clientDataSuffix);
@@ -150,6 +167,20 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
         }
 
         return 0;
+    }
+
+    function _decodeWebAuthnSignature(bytes calldata sig)
+        external
+        pure
+        returns (
+            uint256 r,
+            uint256 s,
+            bytes memory authenticatorData,
+            bytes memory clientDataPrefix,
+            bytes memory clientDataSuffix
+        )
+    {
+        return abi.decode(sig, (uint256, uint256, bytes, bytes, bytes));
     }
 
     /**
@@ -210,6 +241,7 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     }
 
     function executeDelayedDirect(bytes32 txId) external notFrozen {
+        _requireFromEntryPoint();
         PendingTx storage p = pendingTxs[txId];
         require(p.executeAfter != 0, "XAccount: Unknown tx");
         require(!p.canceled, "XAccount: Cancelled");
@@ -258,6 +290,7 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     }
 
     function executeDelayedBatchDirect(bytes32 txId) external notFrozen {
+        _requireFromEntryPoint();
         PendingBatchTx storage p = pendingBatchTxs[txId];
         require(p.executeAfter != 0, "XAccount: Unknown tx");
         require(!p.canceled, "XAccount: Cancelled");

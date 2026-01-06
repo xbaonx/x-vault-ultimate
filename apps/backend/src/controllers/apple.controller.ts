@@ -13,6 +13,7 @@ import { DepositWatcherService } from "../services/deposit-watcher.service";
 import { Wallet } from "../entities/Wallet";
 import { TokenDiscoveryService } from "../services/token-discovery.service";
 import { AaAddressMapService } from "../services/aa-address-map.service";
+import { computeApplePassAuthToken } from "../utils/apple-pass-auth";
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -103,9 +104,13 @@ export class ApplePassController {
         console.log(`[ApplePass] Registering device: ${deviceLibraryIdentifier} for pass: ${serialNumber}`);
 
         // Verify Auth Token (ApplePass <token>)
-        // In a real app, we should verify this token matches what we embedded in the pass.
-        // For now, we'll accept if it matches our standard token or just proceed for MVP.
-        if (!authHeader || !authHeader.startsWith("ApplePass")) {
+        if (!authHeader || !authHeader.startsWith("ApplePass ")) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+
+        const receivedToken = authHeader.replace("ApplePass ", "").trim();
+        const expectedToken = computeApplePassAuthToken(serialNumber);
+        if (!receivedToken || receivedToken !== expectedToken) {
             return res.status(401).json({ error: "Unauthorized" });
         }
 
@@ -159,7 +164,13 @@ export class ApplePassController {
 
           console.log(`[ApplePass] Unregistering device: ${deviceLibraryIdentifier}`);
 
-          if (!authHeader || !authHeader.startsWith("ApplePass")) {
+          if (!authHeader || !authHeader.startsWith("ApplePass ")) {
+              return res.status(401).json({ error: "Unauthorized" });
+          }
+
+          const receivedToken = authHeader.replace("ApplePass ", "").trim();
+          const expectedToken = computeApplePassAuthToken(serialNumber);
+          if (!receivedToken || receivedToken !== expectedToken) {
               return res.status(401).json({ error: "Unauthorized" });
           }
 
@@ -183,6 +194,13 @@ export class ApplePassController {
       try {
           const { deviceLibraryIdentifier, passTypeIdentifier } = req.params;
           const passesUpdatedSinceRaw = req.query.passesUpdatedSince as string | undefined;
+          const authHeader = req.headers.authorization;
+
+          if (!authHeader || !authHeader.startsWith("ApplePass ")) {
+              return res.status(401).json({ error: "Unauthorized" });
+          }
+
+          const receivedToken = authHeader.replace("ApplePass ", "").trim();
 
           // For simplicity, we just return all serial numbers associated with this device
           // In a real optimized system, we would check update timestamps.
@@ -193,6 +211,14 @@ export class ApplePassController {
 
           if (registrations.length === 0) {
               return res.sendStatus(204); // No content
+          }
+
+          const ok = registrations.some((r) => {
+            const expectedToken = computeApplePassAuthToken(r.serialNumber);
+            return receivedToken && receivedToken === expectedToken;
+          });
+          if (!ok) {
+            return res.status(401).json({ error: "Unauthorized" });
           }
 
           const serialNumbers = registrations.map(r => r.serialNumber);
@@ -252,8 +278,15 @@ export class ApplePassController {
           console.log(`[ApplePass] [Update Request] User-Agent: ${req.headers['user-agent']}`);
 
           // Verify Auth Token
-          if (!authHeader || !authHeader.startsWith("ApplePass")) {
+          if (!authHeader || !authHeader.startsWith("ApplePass ")) {
               console.warn(`[ApplePass] Unauthorized update request for ${serialNumber}`);
+              return res.status(401).json({ error: "Unauthorized" });
+          }
+
+          const receivedToken = authHeader.replace("ApplePass ", "").trim();
+          const expectedToken = computeApplePassAuthToken(serialNumber);
+          if (!receivedToken || receivedToken !== expectedToken) {
+              console.warn(`[ApplePass] Unauthorized update request for ${serialNumber}: token mismatch`);
               return res.status(401).json({ error: "Unauthorized" });
           }
 
@@ -302,26 +335,6 @@ export class ApplePassController {
                 });
               }
             } catch {
-            }
-          }
-
-          if (!matchedDevice) {
-            const devices = await deviceRepo.find({ where: { isActive: true }, relations: ['user'] });
-            for (const d of devices) {
-              if (!d.credentialPublicKey) continue;
-              try {
-                const derived = await deriveAaAddressFromCredentialPublicKey({
-                  credentialPublicKey: Buffer.from(d.credentialPublicKey),
-                  chainId: baseSerialChainId,
-                  salt: 0,
-                  timeoutMs: 1500,
-                });
-                if (String(derived).toLowerCase() === String(serialAddress).toLowerCase()) {
-                  matchedDevice = d;
-                  break;
-                }
-              } catch {
-              }
             }
           }
 
@@ -599,7 +612,9 @@ export class ApplePassController {
           // FIX: Use HOST header for webServiceURL to ensure it points to the BACKEND
           const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol;
           const host = req.get('host');
-          const serverUrl = `${protocol}://${host}`;
+          const inferredUrl = `${protocol}://${host}`;
+          const trustedUrl = String(process.env.RENDER_EXTERNAL_URL || config.security.origin || '').trim();
+          const serverUrl = config.nodeEnv === 'production' && trustedUrl ? trustedUrl : inferredUrl;
 
           const userData = {
             address: serialAddress,
@@ -608,7 +623,6 @@ export class ApplePassController {
             assets: assets,
             smartContract: "0x4337...Vault",
             securityDelay: "Active: 48h Window",
-            authToken: authHeader.replace("ApplePass ", ""),
             origin: serverUrl 
           };
 

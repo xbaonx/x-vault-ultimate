@@ -19,6 +19,7 @@ import { deriveAaAddressFromCredentialPublicKey } from '../utils/aa-address';
 import { AaAddressMapService } from '../services/aa-address-map.service';
 import { TokenDiscoveryService } from '../services/token-discovery.service';
 import { WalletSnapshot } from '../entities/WalletSnapshot';
+import { signDeviceJwt } from '../utils/jwt';
 
 export class DeviceController {
   
@@ -160,10 +161,16 @@ export class DeviceController {
         const usedChallenge = parts[1];
         const usedAt = Number(parts[2]);
         if (usedChallenge === clientChallenge && Number.isFinite(usedAt) && Date.now() - usedAt < 60_000) {
+          let authToken: string | undefined;
+          try {
+            authToken = signDeviceJwt({ sub: targetDevice.userId, deviceId: targetDevice.deviceLibraryId });
+          } catch {
+          }
           return res.status(200).json({
             verified: true,
             deviceLibraryId: targetDevice.deviceLibraryId,
             walletAddress: '',
+            authToken,
           });
         }
       }
@@ -210,20 +217,36 @@ export class DeviceController {
 
       await deviceRepo.save(targetDevice);
 
+      let authToken: string | undefined;
+      try {
+        authToken = signDeviceJwt({ sub: targetDevice.userId, deviceId: targetDevice.deviceLibraryId });
+      } catch {
+      }
+
       // Respond immediately to avoid client-side timeouts; do heavier work in background.
       res.status(200).json({
         verified: true,
         deviceLibraryId: targetDevice.deviceLibraryId,
         walletAddress: '',
+        authToken,
       });
 
       setImmediate(async () => {
         try {
+          let walletSalt = 0;
+          try {
+            const walletRepo = AppDataSource.getRepository(Wallet);
+            const activeWallet = await walletRepo.findOne({ where: { user: { id: targetDevice.userId }, isActive: true } });
+            walletSalt = Number((activeWallet as any)?.aaSalt ?? 0);
+          } catch {
+            walletSalt = 0;
+          }
+
           const baseSerialChainId = Number(config.blockchain.chainId);
           const serialAddress = await deriveAaAddressFromCredentialPublicKey({
             credentialPublicKey: Buffer.from(targetDevice.credentialPublicKey),
             chainId: baseSerialChainId,
-            salt: 0,
+            salt: walletSalt,
           });
 
           const chains = Object.values(config.blockchain.chains || {});
@@ -232,7 +255,7 @@ export class DeviceController {
               const chainAddress = await deriveAaAddressFromCredentialPublicKey({
                 credentialPublicKey: Buffer.from(targetDevice.credentialPublicKey),
                 chainId: c.chainId,
-                salt: 0,
+                salt: walletSalt,
               });
               await AaAddressMapService.upsert({
                 chainId: c.chainId,
@@ -288,15 +311,11 @@ export class DeviceController {
         
         // Create default wallet for provisional user
         const walletRepo = AppDataSource.getRepository(Wallet);
-        
-        const randomWallet = ethers.Wallet.createRandom();
-        
         const wallet = walletRepo.create({
           user,
           name: 'Main Wallet',
           salt: 'random',
-          address: randomWallet.address,
-          privateKey: randomWallet.privateKey,
+          address: ethers.ZeroAddress,
           isActive: true
         });
         await walletRepo.save(wallet);
@@ -380,18 +399,27 @@ export class DeviceController {
         
         await deviceRepo.save(device);
 
+        let walletSalt = 0;
+        try {
+          const walletRepo = AppDataSource.getRepository(Wallet);
+          const activeWallet = await walletRepo.findOne({ where: { user: { id: device.user.id }, isActive: true } });
+          walletSalt = Number((activeWallet as any)?.aaSalt ?? 0);
+        } catch {
+          walletSalt = 0;
+        }
+
         const chainId = Number(req.body.chainId || config.blockchain.chainId);
         const aaAddress = await deriveAaAddressFromCredentialPublicKey({
           credentialPublicKey: Buffer.from(device.credentialPublicKey),
           chainId,
-          salt: 0,
+          salt: walletSalt,
         });
 
         const baseSerialChainId = Number(config.blockchain.chainId);
         const serialAddress = await deriveAaAddressFromCredentialPublicKey({
           credentialPublicKey: Buffer.from(device.credentialPublicKey),
           chainId: baseSerialChainId,
-          salt: 0,
+          salt: walletSalt,
         });
 
         const chains = Object.values(config.blockchain.chains || {});
@@ -400,7 +428,7 @@ export class DeviceController {
             const chainAddress = await deriveAaAddressFromCredentialPublicKey({
               credentialPublicKey: Buffer.from(device.credentialPublicKey),
               chainId: c.chainId,
-              salt: 0,
+              salt: walletSalt,
             });
             await AaAddressMapService.upsert({
               chainId: c.chainId,
@@ -419,17 +447,24 @@ export class DeviceController {
             id: sessionId,
             status: 'completed',
             deviceId: device.deviceLibraryId,
-            passUrl: `/api/device/pass/${device.deviceLibraryId}`
+            passUrl: `/api/device/pass/session/${sessionId}`
         });
         await sessionRepo.save(newSession);
 
         console.log(`[Device] WebAuthn Registration success. User: ${device.user.id}, Device: ${device.deviceLibraryId}`);
 
+        let authToken: string | undefined;
+        try {
+          authToken = signDeviceJwt({ sub: device.user.id, deviceId: device.deviceLibraryId });
+        } catch {
+        }
+
         res.status(200).json({ 
             verified: true, 
             sessionId,
             deviceLibraryId: device.deviceLibraryId,
-            walletAddress: aaAddress 
+            walletAddress: aaAddress,
+            authToken,
         });
       } else {
         res.status(400).json({ verified: false, error: 'Verification failed' });
@@ -466,7 +501,7 @@ export class DeviceController {
             if (session) {
                 session.status = 'completed';
                 session.deviceId = deviceLibraryId;
-                session.passUrl = `/api/device/pass/${deviceLibraryId}`;
+                session.passUrl = `/api/device/pass/session/${sessionId}`;
                 await sessionRepo.save(session);
 
                 // Create User + Wallet + Device
@@ -477,14 +512,11 @@ export class DeviceController {
                     });
                     await userRepo.save(user);
 
-                    const salt = 'main';
-                    const hash = ethers.keccak256(ethers.toUtf8Bytes(`${user.id}-${salt}`));
-                    const address = ethers.getAddress(`0x${hash.substring(26)}`);
                     const wallet = walletRepo.create({
                         user,
                         name: 'Main Wallet',
-                        salt,
-                        address,
+                        salt: 'main',
+                        address: ethers.ZeroAddress,
                         isActive: true
                     });
                     await walletRepo.save(wallet);
@@ -533,195 +565,238 @@ export class DeviceController {
     }
   }
 
-  static async downloadPass(req: Request, res: Response) {
+  static async downloadPassBySession(req: Request, res: Response) {
     try {
-      const { deviceId } = req.params;
-      const walletId = String((req.query as any)?.walletId || '');
-      const refreshRaw = String((req.query as any)?.refresh ?? '').trim().toLowerCase();
-      const refresh = refreshRaw === '1' || refreshRaw === 'true' || refreshRaw === 'yes';
-      
-      const deviceRepo = AppDataSource.getRepository(Device);
+      const { sessionId } = req.params;
+      const sessionRepo = AppDataSource.getRepository(PollingSession);
+      const session = await sessionRepo.findOneBy({ id: sessionId });
 
-      const device = await deviceRepo.findOne({ where: { deviceLibraryId: deviceId }, relations: ['user'] });
-
-      if (!device || !device.user || !device.credentialPublicKey) {
-        return res.status(404).json({ error: 'Device not found' });
+      if (!session || session.status !== 'completed' || !session.deviceId) {
+        res.status(404).json({ error: 'Session not found' });
+        return;
       }
 
-      let walletSalt = 0;
-      try {
-        const walletRepo = AppDataSource.getRepository(Wallet);
-        const wallet = walletId
-          ? await walletRepo.findOne({ where: { id: walletId, user: { id: device.user.id } } })
-          : await walletRepo.findOne({ where: { user: { id: device.user.id }, isActive: true } });
-        walletSalt = Number((wallet as any)?.aaSalt ?? 0);
-      } catch {
-        walletSalt = 0;
+      await DeviceController.sendPassForDevice(req, res, session.deviceId);
+    } catch (error) {
+      console.error('Error in downloadPassBySession:', error);
+      res.status(500).json({ error: 'Failed to generate pass' });
+    }
+  }
+
+  static async createPassSession(req: Request, res: Response) {
+    try {
+      const device = (req as any).device as Device | undefined;
+      if (!device || !device.deviceLibraryId) {
+        res.status(403).json({ error: 'Unauthorized' });
+        return;
       }
 
-      const baseSerialChainId = Number(config.blockchain.chainId);
-      const serialAddress = await deriveAaAddressFromCredentialPublicKey({
-        credentialPublicKey: Buffer.from(device.credentialPublicKey),
-        chainId: baseSerialChainId,
-        salt: walletSalt,
-        timeoutMs: 2000,
+      const sessionRepo = AppDataSource.getRepository(PollingSession);
+      const sessionId = uuidv4();
+      const passUrl = `/api/device/pass/session/${sessionId}`;
+      const newSession = sessionRepo.create({
+        id: sessionId,
+        status: 'completed',
+        deviceId: device.deviceLibraryId,
+        passUrl,
       });
+      await sessionRepo.save(newSession);
 
-      // Ensure Apple pass updates can resolve serialNumber -> device quickly (no RPC fallback).
-      try {
-        await AaAddressMapService.upsert({
-          chainId: baseSerialChainId,
-          aaAddress: serialAddress,
-          serialNumber: serialAddress,
-          deviceId: device.deviceLibraryId,
-        });
-      } catch {
-      }
+      res.status(200).json({ sessionId, passUrl });
+    } catch (error) {
+      console.error('Error in createPassSession:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 
-      const snapshotRepo = AppDataSource.getRepository(WalletSnapshot);
-      const snapshotRef = serialAddress && serialAddress.startsWith('0x')
-        ? await snapshotRepo
-            .createQueryBuilder('s')
-            .where('LOWER(s.serialNumber) = LOWER(:sn)', { sn: serialAddress })
-            .getOne()
-        : null;
+  private static async sendPassForDevice(req: Request, res: Response, deviceId: string) {
+    const walletId = String((req.query as any)?.walletId || '');
+    const refreshRaw = String((req.query as any)?.refresh ?? '').trim().toLowerCase();
+    const requestedRefresh = refreshRaw === '1' || refreshRaw === 'true' || refreshRaw === 'yes';
+    const refresh = config.nodeEnv === 'production' ? false : requestedRefresh;
 
-      const assets: Record<string, { amount: number; value: number; name?: string }> = {
-        ...((snapshotRef?.assets as any) || {}),
-      };
+    const deviceRepo = AppDataSource.getRepository(Device);
+    const device = await deviceRepo.findOne({ where: { deviceLibraryId: deviceId }, relations: ['user'] });
 
-      const usdzBalance = Math.max(0, device.user.usdzBalance || 0);
-      assets['usdz'] = { amount: Number(usdzBalance.toFixed(2)), value: Number(usdzBalance.toFixed(2)) };
+    if (!device || !device.user || !device.credentialPublicKey) {
+      res.status(404).json({ error: 'Device not found' });
+      return;
+    }
 
-      const totalBalanceUsd = Number(Number(snapshotRef?.totalBalanceUsd || 0).toFixed(2));
+    let walletSalt = 0;
+    try {
+      const walletRepo = AppDataSource.getRepository(Wallet);
+      const wallet = walletId
+        ? await walletRepo.findOne({ where: { id: walletId, user: { id: device.user.id } } })
+        : await walletRepo.findOne({ where: { user: { id: device.user.id }, isActive: true } });
+      walletSalt = Number((wallet as any)?.aaSalt ?? 0);
+    } catch {
+      walletSalt = 0;
+    }
 
-      const shouldRefreshSnapshot =
-        !!(serialAddress && serialAddress.startsWith('0x')) &&
-        refresh;
+    const baseSerialChainId = Number(config.blockchain.chainId);
+    const serialAddress = await deriveAaAddressFromCredentialPublicKey({
+      credentialPublicKey: Buffer.from(device.credentialPublicKey),
+      chainId: baseSerialChainId,
+      salt: walletSalt,
+      timeoutMs: 2000,
+    });
 
-      if (shouldRefreshSnapshot) {
-        setImmediate(async () => {
+    try {
+      await AaAddressMapService.upsert({
+        chainId: baseSerialChainId,
+        aaAddress: serialAddress,
+        serialNumber: serialAddress,
+        deviceId: device.deviceLibraryId,
+      });
+    } catch {
+    }
+
+    const snapshotRepo = AppDataSource.getRepository(WalletSnapshot);
+    const snapshotRef = serialAddress && serialAddress.startsWith('0x')
+      ? await snapshotRepo
+          .createQueryBuilder('s')
+          .where('LOWER(s.serialNumber) = LOWER(:sn)', { sn: serialAddress })
+          .getOne()
+      : null;
+
+    const assets: Record<string, { amount: number; value: number; name?: string }> = {
+      ...((snapshotRef?.assets as any) || {}),
+    };
+
+    const usdzBalance = Math.max(0, device.user.usdzBalance || 0);
+    assets['usdz'] = { amount: Number(usdzBalance.toFixed(2)), value: Number(usdzBalance.toFixed(2)) };
+
+    const totalBalanceUsd = Number(Number(snapshotRef?.totalBalanceUsd || 0).toFixed(2));
+
+    const shouldRefreshSnapshot =
+      !!(serialAddress && serialAddress.startsWith('0x')) &&
+      refresh;
+
+    if (shouldRefreshSnapshot) {
+      setImmediate(async () => {
+        try {
+          let refreshTotalBalanceUsd = 0;
+          const refreshAssets: Record<string, { amount: number; value: number; name?: string }> = {};
+
+          const refreshUsdzBalance = Math.max(0, device.user.usdzBalance || 0);
+          refreshAssets['usdz'] = { amount: Number(refreshUsdzBalance.toFixed(2)), value: Number(refreshUsdzBalance.toFixed(2)) };
+
+          let prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
           try {
-            let refreshTotalBalanceUsd = 0;
-            const refreshAssets: Record<string, { amount: number; value: number; name?: string }> = {};
+            const symbols = ['ETH', 'MATIC', 'DAI', 'USDT', 'USDC'];
+            const requests = symbols.map(sym => fetch(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`).then(r => r.json()).catch(() => null));
+            const results = await Promise.all(requests);
+            results.forEach((data, index) => {
+              if (data && data.data && data.data.amount) {
+                prices[symbols[index]] = parseFloat(data.data.amount);
+              }
+            });
+          } catch {
+          }
 
-            const refreshUsdzBalance = Math.max(0, device.user.usdzBalance || 0);
-            refreshAssets['usdz'] = { amount: Number(refreshUsdzBalance.toFixed(2)), value: Number(refreshUsdzBalance.toFixed(2)) };
-
-            let prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
+          const chains = Object.values(config.blockchain.chains || {});
+          await Promise.all(chains.map(async (chain) => {
             try {
-              const symbols = ['ETH', 'MATIC', 'DAI', 'USDT', 'USDC'];
-              const requests = symbols.map(sym => fetch(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`).then(r => r.json()).catch(() => null));
-              const results = await Promise.all(requests);
-              results.forEach((data, index) => {
-                if (data && data.data && data.data.amount) {
-                  prices[symbols[index]] = parseFloat(data.data.amount);
-                }
+              const chainAddress = await deriveAaAddressFromCredentialPublicKey({
+                credentialPublicKey: Buffer.from(device.credentialPublicKey),
+                chainId: chain.chainId,
+                salt: walletSalt,
+                timeoutMs: 2000,
               });
-            } catch {
-            }
 
-            const chains = Object.values(config.blockchain.chains || {});
-            await Promise.all(chains.map(async (chain) => {
+              const provider = ProviderService.getProvider(chain.chainId);
+
               try {
-                const chainAddress = await deriveAaAddressFromCredentialPublicKey({
-                  credentialPublicKey: Buffer.from(device.credentialPublicKey),
-                  chainId: chain.chainId,
-                  salt: walletSalt,
-                  timeoutMs: 2000,
-                });
-
-                const provider = ProviderService.getProvider(chain.chainId);
-
-                try {
-                  const balanceWei = await Promise.race([
-                    provider.getBalance(chainAddress),
-                    new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
-                  ]);
-                  const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
-                  if (nativeBalance > 0) {
-                    const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? prices['MATIC'] : prices['ETH'];
-                    const key = chain.symbol;
-                    if (!refreshAssets[key]) refreshAssets[key] = { amount: 0, value: 0, name: key };
-                    refreshAssets[key].amount += nativeBalance;
-                    refreshAssets[key].value += nativeBalance * price;
-                    refreshTotalBalanceUsd += nativeBalance * price;
-                  }
-                } catch {
-                }
-
-                const discovered = await TokenDiscoveryService.getErc20Assets({
-                  chainId: chain.chainId,
-                  address: chainAddress,
-                  timeoutMs: 2500,
-                  maxTokens: 40,
-                  prices,
-                });
-
-                if (discovered.length) {
-                  for (const t of discovered) {
-                    const sym = String(t.symbol || '').toUpperCase();
-                    if (!sym || sym === 'USDZ') continue;
-                    if (!refreshAssets[sym]) refreshAssets[sym] = { amount: 0, value: 0, name: t.name || sym };
-                    refreshAssets[sym].amount += t.amount;
-                    refreshAssets[sym].value += t.value;
-                    refreshTotalBalanceUsd += t.value;
-                  }
+                const balanceWei = await Promise.race([
+                  provider.getBalance(chainAddress),
+                  new Promise<bigint>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
+                ]);
+                const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
+                if (nativeBalance > 0) {
+                  const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? prices['MATIC'] : prices['ETH'];
+                  const key = chain.symbol;
+                  if (!refreshAssets[key]) refreshAssets[key] = { amount: 0, value: 0, name: key };
+                  refreshAssets[key].amount += nativeBalance;
+                  refreshAssets[key].value += nativeBalance * price;
+                  refreshTotalBalanceUsd += nativeBalance * price;
                 }
               } catch {
               }
-            }));
 
-            const snapshot = snapshotRef || snapshotRepo.create({
-              serialNumber: serialAddress,
-              totalBalanceUsd: 0,
-              assets: null,
-            });
+              const discovered = await TokenDiscoveryService.getErc20Assets({
+                chainId: chain.chainId,
+                address: chainAddress,
+                timeoutMs: 2500,
+                maxTokens: 40,
+                prices,
+              });
 
-            snapshot.totalBalanceUsd = Number(Number(refreshTotalBalanceUsd).toFixed(2));
-            snapshot.assets = refreshAssets as any;
-            await snapshotRepo.save(snapshot);
-          } catch {
-          }
-        });
+              if (discovered.length) {
+                for (const t of discovered) {
+                  const sym = String(t.symbol || '').toUpperCase();
+                  if (!sym || sym === 'USDZ') continue;
+                  if (!refreshAssets[sym]) refreshAssets[sym] = { amount: 0, value: 0, name: t.name || sym };
+                  refreshAssets[sym].amount += t.amount;
+                  refreshAssets[sym].value += t.value;
+                  refreshTotalBalanceUsd += t.value;
+                }
+              }
+            } catch {
+            }
+          }));
+
+          const snapshot = snapshotRef || snapshotRepo.create({
+            serialNumber: serialAddress,
+            totalBalanceUsd: 0,
+            assets: null,
+          });
+
+          snapshot.totalBalanceUsd = Number(Number(refreshTotalBalanceUsd).toFixed(2));
+          snapshot.assets = refreshAssets as any;
+          await snapshotRepo.save(snapshot);
+        } catch {
+        }
+      });
+    }
+
+    const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol;
+    const host = req.get('host');
+    const inferredUrl = `${protocol}://${host}`;
+    const trustedUrl = String(process.env.RENDER_EXTERNAL_URL || config.security.origin || '').trim();
+    const serverUrl = config.nodeEnv === 'production' && trustedUrl ? trustedUrl : inferredUrl;
+
+    const userData = {
+      address: serialAddress,
+      balance: totalBalanceUsd.toFixed(2),
+      deviceId: deviceId,
+      assets: assets,
+      smartContract: "0x4337...Vault",
+      securityDelay: "Active: 48h Window",
+      origin: serverUrl
+    };
+
+    console.log(`[Device] Generating pass for ${deviceId} with Address: ${serialAddress}, Balance: ${totalBalanceUsd.toFixed(2)}, ServerUrl: ${serverUrl}`);
+
+    const passBuffer = await PassService.generatePass(userData);
+
+    console.log(`[Device] Pass generated successfully. Buffer size: ${passBuffer.length} bytes`);
+
+    res.set('Content-Type', 'application/vnd.apple.pkpass');
+    res.set('Content-Disposition', `attachment; filename=xvault-${deviceId}.pkpass`);
+    res.send(passBuffer);
+
+    console.log(`[Device] Sent pass response. Content-Type: application/vnd.apple.pkpass, Length: ${passBuffer.length}`);
+  }
+
+  static async downloadPass(req: Request, res: Response) {
+    try {
+      if (config.nodeEnv === 'production') {
+        res.status(410).json({ error: 'Pass download by deviceId is disabled. Use session-based pass URL.' });
+        return;
       }
-
-      // If total balance is 0, let's put some dummy data for the user to see the beautiful UI (Mock Mode)
-      // REMOVE THIS IN PRODUCTION
-      // if (totalBalanceUsd === 0) {
-      //   assets['ETH'] = { amount: 15.00, value: 33750 };
-      //   assets['BTC'] = { amount: 0.52, value: 35100 };
-      //   assets['USDT'] = { amount: 12000, value: 12000 };
-      //   assets['SOL'] = { amount: 240.50, value: 0 }; // Value depends on price
-      //   totalBalanceUsd = 80850 + 25; // Including usdz
-      // }
-
-      // FIX: Use HOST header for webServiceURL to ensure it points to the BACKEND, not the frontend (Origin)
-      const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol;
-      const host = req.get('host');
-      const serverUrl = `${protocol}://${host}`;
-
-      const userData = {
-        address: serialAddress,
-        balance: totalBalanceUsd.toFixed(2),
-        deviceId: deviceId,
-        assets: assets,
-        smartContract: "0x4337...Vault", // Placeholder
-        securityDelay: "Active: 48h Window",
-        origin: serverUrl // Pass the backend URL as origin
-      };
-      
-      console.log(`[Device] Generating pass for ${deviceId} with Address: ${serialAddress}, Balance: ${totalBalanceUsd.toFixed(2)}, ServerUrl: ${serverUrl}`);
-
-      const passBuffer = await PassService.generatePass(userData);
-      
-      console.log(`[Device] Pass generated successfully. Buffer size: ${passBuffer.length} bytes`);
-
-      res.set('Content-Type', 'application/vnd.apple.pkpass');
-      res.set('Content-Disposition', `attachment; filename=xvault-${deviceId}.pkpass`);
-      res.send(passBuffer);
-      
-      console.log(`[Device] Sent pass response. Content-Type: application/vnd.apple.pkpass, Length: ${passBuffer.length}`);
+      const { deviceId } = req.params;
+      await DeviceController.sendPassForDevice(req, res, deviceId);
     } catch (error) {
       console.error('Error in downloadPass:', error);
       res.status(500).json({ error: 'Failed to generate pass' });

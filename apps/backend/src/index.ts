@@ -16,7 +16,17 @@ app.set('etag', false);
 // Middleware
 app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key', 'x-device-library-id'],
-  origin: '*' // In production, you might want to restrict this to your frontend domains
+  origin: (origin, callback) => {
+    const allowlist = (config.security?.corsOrigins || []).filter(Boolean);
+    if (config.nodeEnv !== 'production' || allowlist.length === 0) {
+      return callback(null, true);
+    }
+    if (!origin) {
+      return callback(null, false);
+    }
+    const allowed = allowlist.includes(origin);
+    return callback(null, allowed);
+  },
 }));
 app.use(helmet());
 app.use(morgan('dev'));

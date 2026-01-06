@@ -118,6 +118,7 @@ export default function Onboarding() {
                     setDeviceId(verification.deviceLibraryId); // <--- CRITICAL FIX: Update state
                     localStorage.setItem('x_device_id', verification.deviceLibraryId);
                     localStorage.setItem('x_user_id', userId!);
+                    if (verification.authToken) localStorage.setItem('x_auth_token', verification.authToken);
                     
                     if (hasPin) {
                         navigate('/dashboard');
@@ -163,6 +164,7 @@ export default function Onboarding() {
         // Save device ID locally
         localStorage.setItem('x_device_id', verification.deviceLibraryId);
         if (userId) localStorage.setItem('x_user_id', userId);
+        if (verification.authToken) localStorage.setItem('x_auth_token', verification.authToken);
 
         // Move to PIN setup/verify
         setStep('pin-setup');
@@ -195,9 +197,9 @@ export default function Onboarding() {
                   if (sessionId) {
                       setStep('pairing');
                   } else {
-                      // If Login flow (no session), we can construct pass URL manually and go to success
-                      // This ensures returning users can also download their pass
-                      setPassUrl(`/api/device/pass/${deviceId}`);
+                      // If Login flow (no session), request a short-lived pass session link
+                      const created = await deviceService.createPassSession(deviceId);
+                      setPassUrl(created.passUrl);
                       setStep('success');
                   }
               } else {
@@ -210,7 +212,8 @@ export default function Onboarding() {
               if (sessionId) {
                   setStep('pairing');
               } else {
-                  setPassUrl(`/api/device/pass/${deviceId}`);
+                  const created = await deviceService.createPassSession(deviceId);
+                  setPassUrl(created.passUrl);
                   setStep('success');
               }
           }

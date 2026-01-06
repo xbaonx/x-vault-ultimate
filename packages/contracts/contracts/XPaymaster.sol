@@ -74,7 +74,9 @@ contract XPaymaster is BasePaymaster {
         uint48 validAfter = uint48(bytes6(userOp.paymasterAndData[26:32]));
         bytes memory signature = userOp.paymasterAndData[32:];
 
-        require(signature.length == 64 || signature.length == 65, "XPaymaster: invalid signature length");
+        if (!(signature.length == 64 || signature.length == 65)) {
+            return ("", _packValidationData(true, 0, 0));
+        }
 
         // Verify signature
         // Hash: keccak256(userOpHash, validUntil, validAfter) (This is a simplified scheme)
@@ -82,12 +84,13 @@ contract XPaymaster is BasePaymaster {
         // We will use a simple hash for this implementation.
         
         bytes32 ethSignedHash = getHash(userOp, validUntil, validAfter).toEthSignedMessageHash();
-        senderNonce[userOp.getSender()]++;
 
         if (ethSignedHash.recover(signature) != verifyingSigner) {
             // Signature mismatch
             return ("", _packValidationData(true, 0, 0));
         }
+
+        senderNonce[userOp.getSender()]++;
 
         // Return validation data with time range
         return ("", _packValidationData(false, validUntil, validAfter));

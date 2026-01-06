@@ -4,7 +4,6 @@ import { AppDataSource } from '../data-source';
 import { User } from '../entities/User';
 import { Wallet } from '../entities/Wallet';
 import { config } from '../config';
-import { v4 as uuidv4 } from 'uuid';
 import { ethers } from 'ethers';
 
 export class AuthController {
@@ -24,7 +23,7 @@ export class AuthController {
       try {
           const { sub, email: tokenEmail } = await appleSignin.verifyIdToken(identityToken, {
             audience: config.apple.clientId,
-            ignoreExpiration: true,
+            ignoreExpiration: config.nodeEnv !== 'production',
           });
           
           appleUserId = sub;
@@ -115,15 +114,11 @@ export class AuthController {
       console.log(`[Auth] Wallets for user ${user.id}: count=${wallets.length}, active=${wallets.filter(w => w.isActive).length}`);
 
       if (wallets.length === 0) {
-        // Generate a REAL random wallet with private key
-        const randomWallet = ethers.Wallet.createRandom();
-
         const mainWallet = walletRepo.create({
           user: user,
           name: 'Main Wallet',
           salt: 'random',
-          address: randomWallet.address,
-          privateKey: randomWallet.privateKey,
+          address: ethers.ZeroAddress,
           isActive: true,
         });
         await walletRepo.save(mainWallet);

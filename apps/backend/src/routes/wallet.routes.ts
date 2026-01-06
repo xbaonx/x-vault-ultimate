@@ -16,9 +16,4 @@ router.get('/address/:userId?', WalletController.getAddress);
 router.get('/portfolio/:userId?', WalletController.getPortfolio);
 router.post('/deploy', WalletController.deployWallet);
 
-// Transaction Signing Flow
-router.post('/transaction/options', WalletController.getTransactionOptions);
-router.post('/transaction/send', WalletController.sendTransaction);
-router.post('/transaction/cancel', WalletController.cancelTransaction);
-
 export default router;

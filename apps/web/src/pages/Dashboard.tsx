@@ -215,19 +215,6 @@ export default function Dashboard() {
       alert("Device successfully linked!");
   };
 
-  const handleCancelTransaction = async (txId: string) => {
-      if (!confirm("Are you sure you want to cancel this delayed transaction?")) return;
-      
-      try {
-          await walletService.cancelTransaction(userId, txId, deviceId);
-          alert("Transaction cancelled successfully.");
-          fetchPortfolio(); // Refresh list
-      } catch (e) {
-          console.error("Failed to cancel", e);
-          alert("Failed to cancel transaction.");
-      }
-  };
-
   const currentWallet = wallets.find(w => w.id === selectedWalletId);
 
   const getNormalizedApiUrl = () => {
@@ -465,19 +452,6 @@ export default function Dashboard() {
                           {tx.status === 'cancelled' && <span className="text-red-500">Cancelled</span>}
                           {tx.status !== 'delayed' && tx.status !== 'cancelled' && tx.status}
                       </div>
-                      
-                      {tx.canCancel && (
-                          <button 
-                              onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCancelTransaction(tx.id);
-                              }}
-                              className="mt-2 text-[10px] bg-red-500/20 text-red-500 px-3 py-1.5 rounded-full hover:bg-red-500/30 flex items-center ml-auto transition-colors"
-                          >
-                              <XCircle className="w-3 h-3 mr-1" />
-                              Cancel
-                          </button>
-                      )}
                     </div>
                   </CardContent>
                 </Card>

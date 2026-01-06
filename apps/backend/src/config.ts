@@ -156,9 +156,15 @@ export const config = {
     }
   },
   security: {
-    adminKey: process.env.ADMIN_KEY || 'default-admin-key',
+    adminKey: process.env.ADMIN_KEY || '',
     rpId: process.env.RP_ID || 'zaur.at',
     rpName: process.env.RP_NAME || 'Zaur Wallet',
     origin: process.env.ORIGIN || 'https://zaur.at',
+    jwtSecret: process.env.JWT_SECRET || '',
+    applePassAuthSecret: process.env.APPLE_PASS_AUTH_SECRET || '',
+    corsOrigins: (process.env.CORS_ORIGINS || '')
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean),
   }
 };

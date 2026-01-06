@@ -6,6 +6,7 @@ import * as forge from 'node-forge';
 import { config } from '../config';
 import { AppDataSource } from '../data-source';
 import { AppleConfig } from '../entities/AppleConfig';
+import { computeApplePassAuthToken } from '../utils/apple-pass-auth';
 
 export class PassService {
   // Helper to resolve cert from string content or file path
@@ -76,6 +77,12 @@ export class PassService {
       origin?: string;
   }) {
     try {
+      const authToken = userData.authToken || computeApplePassAuthToken(userData.address);
+      const trustedBaseUrl = String(process.env.RENDER_EXTERNAL_URL || config.security.origin || '').trim();
+      const inferredOrigin = String(userData.origin || config.security.origin || '').trim();
+      const effectiveOrigin = (config.nodeEnv === 'production' && trustedBaseUrl)
+        ? trustedBaseUrl
+        : (inferredOrigin || trustedBaseUrl);
       const modelPath = path.resolve(__dirname, '../../assets/pass.model');
       const hasModel = fs.existsSync(modelPath);
 
@@ -169,11 +176,10 @@ export class PassService {
           passJson.sharingProhibited = true; // Prevent sharing via AirDrop/iMessage
           
           // Use provided origin or fallback to config
-          const origin = userData.origin || config.security.origin;
-          passJson.webServiceURL = `${origin}/api/apple`;
+          passJson.webServiceURL = `${effectiveOrigin}/api/apple`;
           console.log(`[PassService] Setting webServiceURL to: ${passJson.webServiceURL}`);
           
-          passJson.authenticationToken = userData.authToken || '3325692850392023594'; // Token for APNs updates
+          passJson.authenticationToken = authToken;
           
           // SEMANTIC TAGS (iOS 15+)
           // Allows iOS to display key info (Balance, etc.) in the Wallet Dashboard/Stack View
@@ -224,8 +230,8 @@ export class PassService {
             logoText: 'ZAUR', // Simulates the Bank Brand Top-Right
             sharingProhibited: true,
             // Use RENDER_EXTERNAL_URL if available (Production Backend), otherwise fallback to origin
-            webServiceURL: `${process.env.RENDER_EXTERNAL_URL || userData.origin || config.security.origin}/api/apple`,
-            authenticationToken: userData.authToken || '3325692850392023594',
+            webServiceURL: `${effectiveOrigin}/api/apple`,
+            authenticationToken: authToken,
             barcodes: [{
                 format: 'PKBarcodeFormatQR',
                 message: userData.address,

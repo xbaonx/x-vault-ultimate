@@ -21,6 +21,18 @@ export const api = axios.create({
   },
 });
 
+api.interceptors.request.use((req) => {
+  try {
+    const token = localStorage.getItem('x_auth_token');
+    if (token && !req.headers?.Authorization) {
+      req.headers = req.headers || {};
+      (req.headers as any).Authorization = `Bearer ${token}`;
+    }
+  } catch {
+  }
+  return req;
+});
+
 export interface DeviceSession {
   sessionId: string;
   status: 'pending' | 'completed';
@@ -48,7 +60,7 @@ export const deviceService = {
   },
 
   // WebAuthn Step 2: Verify Response
-  verifyRegistration: async (tempUserId: string, attResp: any): Promise<{ verified: boolean; sessionId: string; deviceLibraryId: string; walletAddress: string }> => {
+  verifyRegistration: async (tempUserId: string, attResp: any): Promise<{ verified: boolean; sessionId: string; deviceLibraryId: string; walletAddress: string; authToken?: string }> => {
     const response = await api.post('/device/register/verify', {
       tempUserId,
       response: attResp,
@@ -57,7 +69,7 @@ export const deviceService = {
   },
 
   // WebAuthn Login Step 2: Verify Login
-  verifyLogin: async (userId: string, response: any): Promise<{ verified: boolean; deviceLibraryId: string; walletAddress: string }> => {
+  verifyLogin: async (userId: string, response: any): Promise<{ verified: boolean; deviceLibraryId: string; walletAddress: string; authToken?: string }> => {
       const res = await api.post('/device/login/verify', {
           userId,
           response
@@ -67,6 +79,15 @@ export const deviceService = {
 
   pollStatus: async (sessionId: string): Promise<DeviceSession> => {
     const response = await api.get(`/device/poll/${sessionId}`);
+    return response.data;
+  },
+
+  createPassSession: async (deviceId: string): Promise<{ sessionId: string; passUrl: string }> => {
+    const response = await api.post('/device/pass/session', {}, {
+      headers: {
+        'x-device-library-id': deviceId,
+      }
+    });
     return response.data;
   },
 
@@ -138,8 +159,10 @@ export const migrationService = {
     return response.data;
   },
 
-  cancelMigration: async (userId: string) => {
-    const response = await api.post('/migration/cancel', { userId });
+  cancelMigration: async (userId: string, deviceId: string) => {
+    const response = await api.post('/migration/cancel', { userId }, {
+      headers: { 'x-device-library-id': deviceId }
+    });
     return response.data;
   }
 };
@@ -219,14 +242,4 @@ export const walletService = {
       throw error;
     }
   },
-
-  cancelTransaction: async (userId: string, transactionId: string, deviceId: string) => {
-      const response = await api.post('/wallet/transaction/cancel', {
-          userId,
-          transactionId
-      }, {
-          headers: { 'x-device-library-id': deviceId }
-      });
-      return response.data;
-  }
 };

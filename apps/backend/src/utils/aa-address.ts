@@ -31,20 +31,51 @@ export async function deriveAaAddressFromCredentialPublicKey(params: {
   const { credentialPublicKey, chainId } = params;
   const salt = BigInt(params.salt ?? 0);
 
-  const factoryAddress = config.blockchain.aa.factoryAddress(chainId);
-  if (!factoryAddress) {
+  const factoryAddressRaw = config.blockchain.aa.factoryAddress(chainId);
+  if (!factoryAddressRaw) {
     throw new Error(`FACTORY_ADDRESS_${chainId} not configured`);
   }
+
+  const factoryAddresses = String(factoryAddressRaw)
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
 
   const { x, y } = decodeP256PublicKeyXY(credentialPublicKey);
 
   const provider = ProviderService.getProvider(chainId);
-  const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);
 
   const timeoutMs = Number(params.timeoutMs ?? 2000);
-  const address = await Promise.race([
-    factory['getAddress(uint256,uint256,uint256)'](x, y, salt),
-    new Promise<string>((_, reject) => setTimeout(() => reject(new Error('AA Derivation Timeout')), timeoutMs)),
-  ]);
-  return String(address);
+  const deadlineAt = Date.now() + timeoutMs;
+
+  let lastError: unknown;
+  for (const factoryAddress of factoryAddresses) {
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs <= 0) break;
+
+    try {
+      const code = await Promise.race([
+        provider.getCode(factoryAddress),
+        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('AA Derivation Timeout')), remainingMs)),
+      ]);
+
+      if (!code || code === '0x') {
+        continue;
+      }
+
+      const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);
+      const address = await Promise.race([
+        factory['getAddress(uint256,uint256,uint256)'](x, y, salt),
+        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('AA Derivation Timeout')), remainingMs)),
+      ]);
+      return String(address);
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  if (lastError) {
+    throw lastError as any;
+  }
+  throw new Error('AA Derivation Timeout');
 }

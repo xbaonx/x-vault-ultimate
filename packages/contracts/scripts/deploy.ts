@@ -1,5 +1,44 @@
 import { ethers } from "hardhat";
 
+const SINGLETON_CREATE2_FACTORY = "0x4e59b44847b379578588920cA78FbF26c0B4956C";
+
+async function deployDeterministic(
+  deployer: any,
+  initCode: string,
+  salt: string,
+): Promise<string> {
+  const provider = deployer.provider;
+  if (!provider) {
+    throw new Error('Deployer signer has no provider.');
+  }
+
+  const factoryCode = await provider.getCode(SINGLETON_CREATE2_FACTORY);
+  if (!factoryCode || factoryCode === '0x') {
+    throw new Error('Singleton CREATE2 factory not deployed on this chain');
+  }
+
+  const initCodeHash = ethers.keccak256(initCode);
+  const predicted = ethers.getCreate2Address(SINGLETON_CREATE2_FACTORY, salt, initCodeHash);
+  const existingCode = await provider.getCode(predicted);
+  if (existingCode && existingCode !== '0x') {
+    return predicted;
+  }
+
+  const factory = new ethers.Contract(
+    SINGLETON_CREATE2_FACTORY,
+    ["function deploy(bytes _initCode, bytes32 _salt) public returns (address)"]
+  ).connect(deployer);
+
+  const tx = await (factory as any).deploy(initCode, salt);
+  await tx.wait();
+  return predicted;
+}
+
+function saltFor(label: string): string {
+  const base = (process.env.UNIVERSAL_CREATE2_SALT || 'xvault-universal-v1').trim();
+  return ethers.keccak256(ethers.toUtf8Bytes(`${base}:${label}`));
+}
+
 async function main() {
   const [deployer] = await ethers.getSigners();
   if (!deployer) {
@@ -15,6 +54,8 @@ async function main() {
 
   const network = await deployer.provider.getNetwork();
   const chainId = Number(network.chainId);
+
+  const deterministic = String(process.env.DETERMINISTIC_DEPLOY || '').trim() === '1';
 
   // Deploy EntryPoint (simulated or real, usually we use the singleton, but for local dev we might need one)
   // For now, let's assume we use the singleton address or deploy a mock if needed.
@@ -73,15 +114,43 @@ async function main() {
   // Deploy P256Verifier (EIP-7212 fallback) and XAccount implementation.
   // These should be deployed deterministically across chains for universal addresses.
   const P256Verifier = await ethers.getContractFactory('P256Verifier');
-  const p256Verifier = await P256Verifier.deploy();
-  await p256Verifier.waitForDeployment();
-  const p256VerifierAddress = await p256Verifier.getAddress();
+  let p256VerifierAddress: string;
+  if (deterministic) {
+    const txReq = await P256Verifier.getDeployTransaction();
+    const initCode = String(txReq.data || '');
+    if (!initCode || initCode === '0x') {
+      throw new Error('Failed to build P256Verifier init code');
+    }
+    p256VerifierAddress = await deployDeterministic(
+      deployer,
+      initCode,
+      saltFor('P256Verifier'),
+    );
+  } else {
+    const p256Verifier = await P256Verifier.deploy();
+    await p256Verifier.waitForDeployment();
+    p256VerifierAddress = await p256Verifier.getAddress();
+  }
   console.log('P256Verifier deployed to:', p256VerifierAddress);
 
   const XAccount = await ethers.getContractFactory('XAccount');
-  const accountImpl = await XAccount.deploy(ENTRY_POINT_ADDRESS, p256VerifierAddress);
-  await accountImpl.waitForDeployment();
-  const accountImplAddress = await accountImpl.getAddress();
+  let accountImplAddress: string;
+  if (deterministic) {
+    const txReq = await XAccount.getDeployTransaction(ENTRY_POINT_ADDRESS, p256VerifierAddress);
+    const initCode = String(txReq.data || '');
+    if (!initCode || initCode === '0x') {
+      throw new Error('Failed to build XAccount init code');
+    }
+    accountImplAddress = await deployDeterministic(
+      deployer,
+      initCode,
+      saltFor('XAccountImplementation'),
+    );
+  } else {
+    const accountImpl = await XAccount.deploy(ENTRY_POINT_ADDRESS, p256VerifierAddress);
+    await accountImpl.waitForDeployment();
+    accountImplAddress = await accountImpl.getAddress();
+  }
   console.log('XAccount implementation deployed to:', accountImplAddress);
 
   const existingFactoryAddress = getEnvByChainId('FACTORY_ADDRESS');
@@ -94,10 +163,24 @@ async function main() {
     factoryAddress = ethers.getAddress(existingFactoryAddress);
     console.log('Using existing XFactory:', factoryAddress);
   } else {
-    const factory = await XFactory.deploy(accountImplAddress);
-    await factory.waitForDeployment();
-    factoryAddress = await factory.getAddress();
-    console.log("XFactory deployed to:", factoryAddress);
+    if (deterministic) {
+      const txReq = await XFactory.getDeployTransaction(accountImplAddress);
+      const initCode = String(txReq.data || '');
+      if (!initCode || initCode === '0x') {
+        throw new Error('Failed to build XFactory init code');
+      }
+      factoryAddress = await deployDeterministic(
+        deployer,
+        initCode,
+        saltFor('XFactory'),
+      );
+      console.log('XFactory deployed to:', factoryAddress);
+    } else {
+      const factory = await XFactory.deploy(accountImplAddress);
+      await factory.waitForDeployment();
+      factoryAddress = await factory.getAddress();
+      console.log("XFactory deployed to:", factoryAddress);
+    }
   }
 
   const paymasterSigningKey = normalizePrivateKey(getEnvByChainId('PAYMASTER_SIGNING_KEY'));

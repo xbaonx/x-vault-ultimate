@@ -142,19 +142,10 @@ export default function Send() {
         }
 
         console.log("Transaction Result:", result);
-        
-        if (result.delayed) {
-            setSuccess(null); // Clear generic success
-            // Show specific delay message
-            setError(null);
-            // We can use a separate state for delayed status or reuse success with a prefix
-            // Let's use a specific UI for delay
-            setSuccess(`🔒 SECURITY DELAY: ${result.message}`);
-        } else {
-            setSuccess(`Transaction Submitted! Hash: ${result.txHash}`);
-            if (result.explorerUrl) {
-                window.open(result.explorerUrl, '_blank');
-            }
+
+        setSuccess(`Transaction Submitted! Hash: ${result.txHash}`);
+        if (result.explorerUrl) {
+            window.open(result.explorerUrl, '_blank');
         }
         
         setAmount('');

@@ -5,6 +5,11 @@ export function adminAuth(req: Request, res: Response, next: NextFunction) {
   const receivedKey = (req.headers["x-admin-key"] as string || "").trim();
   const expectedKey = (config.security.adminKey || "").trim();
 
+  if (config.nodeEnv === 'production' && !expectedKey) {
+    res.status(500).json({ error: 'Server misconfigured: ADMIN_KEY missing' });
+    return;
+  }
+
   if (!receivedKey || receivedKey !== expectedKey) {
     console.log('[AdminAuth] Unauthorized access attempt');
     res.status(401).json({ error: "Unauthorized" });

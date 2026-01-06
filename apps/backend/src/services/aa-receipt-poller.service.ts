@@ -30,11 +30,14 @@ async function fetchUserOpReceipt(bundlerUrl: string, userOpHash: string): Promi
     params: [userOpHash],
   };
 
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), 4000);
   const resp = await fetch(bundlerUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
-  });
+    signal: controller.signal,
+  }).finally(() => clearTimeout(id));
 
   const json = await resp.json();
   if (json?.error) {

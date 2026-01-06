@@ -509,9 +509,14 @@ export class AaController {
         return res.status(400).json({ error: 'Missing userOp or assertion' });
       }
 
+      const user = (req as any).user as User;
       const device = (req as any).device as Device;
-      if (!device || !device.currentChallenge) {
+      if (!user || !device || !device.currentChallenge) {
         return res.status(400).json({ error: 'Device or challenge not found' });
+      }
+
+      if (!device.credentialPublicKey) {
+        return res.status(400).json({ error: 'Device has no passkey registered' });
       }
 
       const chainId = Number(req.body.chainId || config.blockchain.chainId);
@@ -520,6 +525,8 @@ export class AaController {
 
       const entryPointAddress = config.blockchain.aa.entryPointAddress(chainConfig.chainId);
       const bundlerUrl = config.blockchain.aa.bundlerUrl(chainConfig.chainId);
+      const factoryAddress = config.blockchain.aa.factoryAddress(chainConfig.chainId);
+      const paymasterAddress = config.blockchain.aa.paymasterAddress(chainConfig.chainId);
 
       if (!entryPointAddress) {
         return res.status(500).json({ error: `ENTRY_POINT_ADDRESS_${chainConfig.chainId} not configured` });
@@ -527,6 +534,53 @@ export class AaController {
 
       if (!bundlerUrl) {
         return res.status(500).json({ error: `BUNDLER_URL_${chainConfig.chainId} not configured` });
+      }
+
+      if (!factoryAddress) {
+        return res.status(500).json({ error: `FACTORY_ADDRESS_${chainConfig.chainId} not configured` });
+      }
+
+      // Enforce that sender is the AA address derived from this device + selected wallet aaSalt.
+      try {
+        const walletRepo = AppDataSource.getRepository(Wallet);
+        const walletId = String((req.body as any)?.walletId || '');
+        const wallet = walletId
+          ? await walletRepo.findOne({ where: { id: walletId, user: { id: user.id } } })
+          : await walletRepo.findOne({ where: { user: { id: user.id }, isActive: true } });
+        const salt = Number(wallet?.aaSalt ?? 0);
+
+        const { x, y } = decodeP256PublicKeyXY(device.credentialPublicKey);
+        const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);
+        const expectedSender = await factory['getAddress(uint256,uint256,uint256)'](x, y, salt);
+
+        if (String(expectedSender).toLowerCase() !== String(userOp.sender || '').toLowerCase()) {
+          return res.status(403).json({ error: 'Sender does not match passkey-derived AA address' });
+        }
+
+        // If initCode is present (counterfactual deploy), it must be a call to our factory.
+        const initCode = String(userOp.initCode || '0x');
+        if (initCode !== '0x') {
+          const factoryPrefix = String(factoryAddress).toLowerCase();
+          const initPrefix = initCode.slice(0, 2 + 40).toLowerCase();
+          if (initPrefix !== `0x${factoryPrefix.replace(/^0x/, '')}`) {
+            return res.status(400).json({ error: 'Invalid initCode factory prefix' });
+          }
+        }
+
+        // If userOp uses a paymaster, it must be ours.
+        const pnd = String(userOp.paymasterAndData || '0x');
+        if (pnd !== '0x') {
+          if (!paymasterAddress) {
+            return res.status(400).json({ error: 'Paymaster not configured for this chain' });
+          }
+          const pfx = pnd.slice(0, 2 + 40).toLowerCase();
+          const expectedPfx = `0x${String(paymasterAddress).toLowerCase().replace(/^0x/, '')}`;
+          if (pfx !== expectedPfx) {
+            return res.status(400).json({ error: 'Invalid paymasterAndData prefix' });
+          }
+        }
+      } catch (e: any) {
+        return res.status(400).json({ error: e?.message || 'AA sender validation failed' });
       }
 
       const entryPoint = new ethers.Contract(entryPointAddress, ENTRYPOINT_ABI, provider);
@@ -626,11 +680,14 @@ export class AaController {
         params: [userOp, entryPointAddress]
       };
 
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 6000);
       const resp = await fetch(bundlerUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(id));
 
       const json = await resp.json();
       if (json.error) {

@@ -3,6 +3,7 @@ import { AppDataSource } from '../data-source';
 import { Device } from '../entities/Device';
 import { DepositEvent } from '../entities/DepositEvent';
 import { ChainCursor } from '../entities/ChainCursor';
+import { Wallet } from '../entities/Wallet';
 import { ProviderService } from './provider.service';
 import { PassUpdateService } from './pass-update.service';
 import { AaAddressMapService } from './aa-address-map.service';
@@ -43,9 +44,11 @@ export class DepositWatcherService {
     if (!AppDataSource.isInitialized) return;
 
     const deviceRepo = AppDataSource.getRepository(Device);
-    const devices = await deviceRepo.find({ where: { isActive: true } });
-    const activeDevices = devices.filter(d => !!d.credentialPublicKey);
+    const devices = await deviceRepo.find({ where: { isActive: true }, relations: ['user'] });
+    const activeDevices = devices.filter(d => !!d.credentialPublicKey && !!d.user);
     if (!activeDevices.length) return;
+
+    const walletRepo = AppDataSource.getRepository(Wallet);
 
     const chains = Object.values(config.blockchain.chains || {});
 
@@ -60,18 +63,26 @@ export class DepositWatcherService {
         let walletAddress = '';
         let serialNumberForPassUpdate = '';
         try {
+          let walletSalt = 0;
+          try {
+            const wallet = await walletRepo.findOne({ where: { user: { id: device.user.id }, isActive: true } });
+            walletSalt = Number((wallet as any)?.aaSalt ?? 0);
+          } catch {
+            walletSalt = 0;
+          }
+
           // serialNumber is derived deterministically on the "base" chainId.
           // We keep pass serial stable even when scanning deposits on multiple chains.
           serialNumberForPassUpdate = await deriveAaAddressFromCredentialPublicKey({
             credentialPublicKey: Buffer.from(device.credentialPublicKey),
             chainId: Number(config.blockchain.chainId),
-            salt: 0,
+            salt: walletSalt,
           });
 
           walletAddress = await deriveAaAddressFromCredentialPublicKey({
             credentialPublicKey: Buffer.from(device.credentialPublicKey),
             chainId: chain.chainId,
-            salt: 0,
+            salt: walletSalt,
           });
         } catch {
           continue;
