@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { ArrowUpRight, ArrowDownLeft, RefreshCw, Plus, ChevronDown, Wallet as WalletIcon, CreditCard, XCircle, Clock } from 'lucide-react';
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
-import { migrationService, walletService } from "../services/api";
+import { deviceService, migrationService, walletService } from "../services/api";
 import { shortenAddress } from "../lib/utils";
 import { MigrationModal } from '../components/MigrationModal';
 
@@ -120,6 +120,25 @@ export default function Dashboard() {
       setAddress('0x00...');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAddToAppleWallet = async () => {
+    try {
+      setError(null);
+      const created = await deviceService.createPassSession(deviceId);
+      const passUrl = created?.passUrl;
+      if (!passUrl) {
+        setError('Failed to create pass session');
+        return;
+      }
+
+      const base = getNormalizedApiUrl();
+      const url = `${base}${passUrl}${selectedWalletId ? `?walletId=${encodeURIComponent(selectedWalletId)}` : ''}`;
+      window.location.href = url;
+    } catch (e: any) {
+      console.error('Failed to create pass session:', e);
+      setError(e?.response?.data?.error || 'Failed to generate Apple Wallet pass');
     }
   };
 
@@ -292,15 +311,16 @@ export default function Dashboard() {
                         ))}
                         <div className="h-px bg-white/10 my-1" />
                         
-                        <a 
-                            href={`${getNormalizedApiUrl()}/api/device/pass/${deviceId}${selectedWalletId ? `?walletId=${selectedWalletId}` : ''}`}
+                        <button
+                            type="button"
+                            onClick={handleAddToAppleWallet}
                             className="w-full flex items-center gap-3 p-3 rounded-lg text-left hover:bg-white/5 text-secondary hover:text-white transition-colors"
                         >
                             <div className="bg-white/10 p-2 rounded-full">
                                 <CreditCard className="w-4 h-4 text-white" />
                             </div>
                             <span className="text-sm">Add to Apple Wallet</span>
-                        </a>
+                        </button>
 
                         <button
                             onClick={handleCreateWallet}
