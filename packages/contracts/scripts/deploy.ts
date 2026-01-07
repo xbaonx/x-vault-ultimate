@@ -6,6 +6,7 @@ async function deployDeterministic(
   deployer: any,
   initCode: string,
   salt: string,
+  chainId: number,
 ): Promise<string> {
   const provider = deployer.provider;
   if (!provider) {
@@ -24,13 +25,78 @@ async function deployDeterministic(
     return predicted;
   }
 
-  const factory = new ethers.Contract(
-    SINGLETON_CREATE2_FACTORY,
-    ["function deploy(bytes _initCode, bytes32 _salt) public returns (address)"]
-  ).connect(deployer);
+  console.log(`[DeterministicDeploy] predicted=${predicted} salt=${salt}`);
 
-  const tx = await (factory as any).deploy(initCode, salt);
-  await tx.wait();
+  const getEnvByChainId = (baseKey: string): string | undefined => {
+    const v1 = process.env[`${baseKey}_${chainId}`];
+    if (v1 && v1.length > 0) return v1.trim();
+    const v0 = process.env[baseKey];
+    if (v0 && v0.length > 0) return v0.trim();
+    return undefined;
+  };
+
+  const gasLimitRaw = String(getEnvByChainId('DETERMINISTIC_GAS_LIMIT') || '').trim();
+  const gasLimit = gasLimitRaw ? BigInt(gasLimitRaw) : 12_000_000n;
+
+  // Fee caps help avoid "insufficient funds" due to overly high maxFeePerGas defaults.
+  // If the network base fee rises above this cap, the tx may be rejected; in that case,
+  // retry later or increase the cap.
+  const feeCapGweiRaw = String(getEnvByChainId('DEPLOY_MAX_FEE_GWEI') || '').trim();
+  const tipGweiRaw = String(getEnvByChainId('DEPLOY_TIP_GWEI') || '').trim();
+  const feeCap = feeCapGweiRaw ? ethers.parseUnits(feeCapGweiRaw, 'gwei') : null;
+  const tip = tipGweiRaw ? ethers.parseUnits(tipGweiRaw, 'gwei') : null;
+
+  const feeData = await provider.getFeeData();
+  let maxFeePerGas = feeData.maxFeePerGas ?? null;
+  let maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ?? null;
+  let gasPrice = feeData.gasPrice ?? null;
+
+  if (feeCap) {
+    if (maxFeePerGas && maxFeePerGas > feeCap) maxFeePerGas = feeCap;
+    if (gasPrice && gasPrice > feeCap) gasPrice = feeCap;
+  }
+  if (tip && maxPriorityFeePerGas && maxPriorityFeePerGas > tip) {
+    maxPriorityFeePerGas = tip;
+  }
+
+  const overrides: any = { gasLimit };
+  if (maxFeePerGas) overrides.maxFeePerGas = maxFeePerGas;
+  if (maxPriorityFeePerGas) overrides.maxPriorityFeePerGas = maxPriorityFeePerGas;
+  if (!maxFeePerGas && gasPrice) overrides.gasPrice = gasPrice;
+
+  // ERC-2470 singleton factory expects calldata = salt (bytes32) || initCode (bytes)
+  const initCodeHex = String(initCode || '').startsWith('0x') ? String(initCode) : `0x${String(initCode)}`;
+  const saltHex = String(salt || '').startsWith('0x') ? String(salt) : `0x${String(salt)}`;
+  const data = ethers.concat([saltHex as any, initCodeHex as any]);
+
+  const tx = await deployer.sendTransaction({
+    to: SINGLETON_CREATE2_FACTORY,
+    data,
+    ...overrides,
+  });
+  console.log(`[DeterministicDeploy] txHash=${tx.hash}`);
+  const receipt = await tx.wait();
+  if (!receipt) {
+    throw new Error(`[DeterministicDeploy] No receipt for tx ${tx.hash}`);
+  }
+  if (typeof receipt.status === 'number' && receipt.status !== 1) {
+    const used = (receipt as any).gasUsed ? String((receipt as any).gasUsed) : 'unknown';
+    throw new Error(
+      `[DeterministicDeploy] Deployment tx reverted: ${tx.hash} (chainId=${chainId} gasUsed=${used} gasLimit=${gasLimit}). ` +
+      `Try increasing DETERMINISTIC_GAS_LIMIT_${chainId} or raising fee caps.`
+    );
+  }
+
+  let deployedCode = await provider.getCode(predicted);
+  for (let i = 0; i < 12 && (!deployedCode || deployedCode === '0x'); i++) {
+    await new Promise((r) => setTimeout(r, 750));
+    deployedCode = await provider.getCode(predicted);
+  }
+  if (!deployedCode || deployedCode === '0x') {
+    throw new Error(
+      `[DeterministicDeploy] Tx mined but no code at predicted address. predicted=${predicted} tx=${tx.hash}`
+    );
+  }
   return predicted;
 }
 
@@ -125,6 +191,7 @@ async function main() {
       deployer,
       initCode,
       saltFor('P256Verifier'),
+      chainId,
     );
   } else {
     const p256Verifier = await P256Verifier.deploy();
@@ -145,6 +212,7 @@ async function main() {
       deployer,
       initCode,
       saltFor('XAccountImplementation'),
+      chainId,
     );
   } else {
     const accountImpl = await XAccount.deploy(ENTRY_POINT_ADDRESS, p256VerifierAddress);
@@ -173,6 +241,7 @@ async function main() {
         deployer,
         initCode,
         saltFor('XFactory'),
+        chainId,
       );
       console.log('XFactory deployed to:', factoryAddress);
     } else {

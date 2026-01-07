@@ -3,17 +3,18 @@ import { AppDataSource } from "../data-source";
 import { PassRegistration } from "../entities/PassRegistration";
 import { Device } from "../entities/Device";
 import { User } from "../entities/User";
+import { Wallet } from "../entities/Wallet";
 import { WalletSnapshot } from "../entities/WalletSnapshot";
 import { PassService } from "../services/pass.service";
 import { ethers } from "ethers";
 import { config } from "../config";
-import { ProviderService } from "../services/provider.service";
-import { deriveAaAddressFromCredentialPublicKey } from "../utils/aa-address";
-import { DepositWatcherService } from "../services/deposit-watcher.service";
-import { Wallet } from "../entities/Wallet";
-import { TokenDiscoveryService } from "../services/token-discovery.service";
-import { AaAddressMapService } from "../services/aa-address-map.service";
-import { computeApplePassAuthToken } from "../utils/apple-pass-auth";
+import { PassUpdateService } from '../services/pass-update.service';
+import { deriveAaAddressFromCredentialPublicKey } from '../utils/aa-address';
+import { AaAddressMapService } from '../services/aa-address-map.service';
+import { DepositWatcherService } from '../services/deposit-watcher.service';
+import { TokenDiscoveryService } from '../services/token-discovery.service';
+import { ProviderService } from '../services/provider.service';
+import { computeApplePassAuthToken, verifyApplePassAuthToken } from '../utils/apple-pass-auth';
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -109,8 +110,8 @@ export class ApplePassController {
         }
 
         const receivedToken = authHeader.replace("ApplePass ", "").trim();
-        const expectedToken = computeApplePassAuthToken(serialNumber);
-        if (!receivedToken || receivedToken !== expectedToken) {
+        const ok = verifyApplePassAuthToken({ serialNumber, receivedToken });
+        if (!ok) {
             return res.status(401).json({ error: "Unauthorized" });
         }
 
@@ -158,8 +159,8 @@ export class ApplePassController {
           }
 
           const receivedToken = authHeader.replace("ApplePass ", "").trim();
-          const expectedToken = computeApplePassAuthToken(serialNumber);
-          if (!receivedToken || receivedToken !== expectedToken) {
+          const ok = verifyApplePassAuthToken({ serialNumber, receivedToken });
+          if (!ok) {
               return res.status(401).json({ error: "Unauthorized" });
           }
 
@@ -203,8 +204,7 @@ export class ApplePassController {
           }
 
           const ok = registrations.some((r) => {
-            const expectedToken = computeApplePassAuthToken(r.serialNumber);
-            return receivedToken && receivedToken === expectedToken;
+            return verifyApplePassAuthToken({ serialNumber: r.serialNumber, receivedToken });
           });
           if (!ok) {
             return res.status(401).json({ error: "Unauthorized" });
@@ -273,8 +273,8 @@ export class ApplePassController {
           }
 
           const receivedToken = authHeader.replace("ApplePass ", "").trim();
-          const expectedToken = computeApplePassAuthToken(serialNumber);
-          if (!receivedToken || receivedToken !== expectedToken) {
+          const ok = verifyApplePassAuthToken({ serialNumber, receivedToken });
+          if (!ok) {
               console.warn(`[ApplePass] Unauthorized update request for ${serialNumber}: token mismatch`);
               return res.status(401).json({ error: "Unauthorized" });
           }
