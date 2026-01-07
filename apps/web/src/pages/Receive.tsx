@@ -22,6 +22,12 @@ export default function Receive() {
   const [copied, setCopied] = useState(false);
   const [selectedChainId, setSelectedChainId] = useState<number>(1);
 
+  const qrValue = address
+    ? (selectedChainId === 1
+        ? `ethereum:${address}`
+        : `ethereum:${address}@${selectedChainId}`)
+    : '';
+
   const userId = localStorage.getItem('x_user_id') || '';
   const deviceId = localStorage.getItem('x_device_id') || '';
   const walletId = localStorage.getItem('x_wallet_id') || '';
@@ -85,7 +91,7 @@ export default function Receive() {
                 <div className="w-full h-full flex items-center justify-center">
                     {address && (
                         <QRCode 
-                            value={address} 
+                            value={qrValue} 
                             size={256}
                             style={{ height: "auto", maxWidth: "100%", width: "100%" }}
                             viewBox={`0 0 256 256`}
