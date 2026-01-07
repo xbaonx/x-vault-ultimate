@@ -23,9 +23,7 @@ export default function Receive() {
   const [selectedChainId, setSelectedChainId] = useState<number>(1);
 
   const qrValue = address
-    ? (selectedChainId === 1
-        ? `ethereum:${address}`
-        : `ethereum:${address}@${selectedChainId}`)
+    ? `ethereum:pay-${address}@${selectedChainId}?value=0`
     : '';
 
   const userId = localStorage.getItem('x_user_id') || '';
