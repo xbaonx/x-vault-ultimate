@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { ethers } from 'ethers';
 import cbor from 'cbor';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { AppDataSource } from '../data-source';
 import { Device } from '../entities/Device';
 import { User } from '../entities/User';
@@ -19,13 +19,20 @@ const ENTRYPOINT_ABI = [
 ];
 
 const XFACTORY_ABI = [
-  'function getAddress(uint256 publicKeyX, uint256 publicKeyY, uint256 salt) view returns (address)'
+  'function getAddress(uint256 publicKeyX, uint256 publicKeyY, uint256 salt) view returns (address)',
+  'function accountImplementation() view returns (address)'
 ];
 
 const XACCOUNT_ABI = [
   'function execute(address dest, uint256 value, bytes func)',
-  'function executeBatch(address[] dest, uint256[] value, bytes[] func)'
+  'function executeBatch(address[] dest, uint256[] value, bytes[] func)',
+  'function upgradeTo(address newImplementation)',
+  'function setExpectedRpIdHash(bytes32 expectedRpIdHash)',
+  'function setRequireUserVerification(bool requireUserVerification)'
 ];
+
+const ERC1967_IMPLEMENTATION_SLOT =
+  '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
 
  const ERC20_ABI = [
   'function transfer(address to, uint256 amount) returns (bool)'
@@ -214,6 +221,27 @@ export class AaController {
       const code = await provider.getCode(sender);
       const isDeployed = code && code !== '0x';
 
+      const desiredImplRaw = String(config.blockchain.aa.accountImplementationAddress(chainConfig.chainId) || '').trim();
+      const desiredImpl = desiredImplRaw && ethers.isAddress(desiredImplRaw) ? ethers.getAddress(desiredImplRaw) : '';
+
+      let needsUpgrade = false;
+      if (desiredImpl) {
+        if (isDeployed) {
+          const slotVal = await provider.getStorage(sender, ERC1967_IMPLEMENTATION_SLOT);
+          const currentImpl = slotVal && slotVal !== '0x'
+            ? ethers.getAddress(`0x${slotVal.slice(-40)}`)
+            : ethers.ZeroAddress;
+          needsUpgrade = currentImpl.toLowerCase() !== desiredImpl.toLowerCase();
+        } else {
+          try {
+            const factoryImpl = await factory.accountImplementation();
+            needsUpgrade = String(factoryImpl || '').toLowerCase() !== desiredImpl.toLowerCase();
+          } catch {
+            needsUpgrade = true;
+          }
+        }
+      }
+
       const ifaceFactory = new ethers.Interface([
         'function createAccount(uint256 publicKeyX, uint256 publicKeyY, uint256 salt)'
       ]);
@@ -229,6 +257,11 @@ export class AaController {
       const nonce = isDeployed ? await entryPoint.getNonce(sender, 0) : 0n;
 
       const accountInterface = new ethers.Interface(XACCOUNT_ABI);
+
+      const rpId = String(config.security.rpId || '').trim();
+      const rpIdHash = rpId
+        ? `0x${createHash('sha256').update(rpId, 'utf8').digest('hex')}`
+        : ethers.ZeroHash;
 
       const treasuryAddress = config.blockchain.aa.treasuryAddress(chainConfig.chainId);
       const isNative = Boolean(transaction.isNative) || (String(transaction.data || '0x') === '0x' && BigInt(transaction.value || 0) > 0n);
@@ -253,7 +286,9 @@ export class AaController {
 
       const usdzBalance = Number(user.usdzBalance || 0);
 
-      let callData: string;
+      let batchDest: any[];
+      let batchValue: any[];
+      let batchFunc: any[];
 
       if (isNative) {
         const grossWei = BigInt(transaction.value || 0);
@@ -290,11 +325,9 @@ export class AaController {
           feeBreakdown.platformFeeChargedOnChain = platformFeeWei > 0n;
         }
 
-        callData = accountInterface.encodeFunctionData('executeBatch', [
-          [transaction.to, treasuryAddress],
-          [netWei, feeWei],
-          ['0x', '0x']
-        ]);
+        batchDest = [transaction.to, treasuryAddress];
+        batchValue = [netWei, feeWei];
+        batchFunc = ['0x', '0x'];
       } else {
         // ERC20 transfer detection
         const erc20 = new ethers.Interface(ERC20_ABI);
@@ -350,13 +383,31 @@ export class AaController {
           const transferNet = erc20.encodeFunctionData('transfer', [recipient, net]);
           const transferFee = erc20.encodeFunctionData('transfer', [treasuryAddress, onChainFee]);
 
-          callData = accountInterface.encodeFunctionData('executeBatch', [
-            [tokenAddress, tokenAddress],
-            [0n, 0n],
-            [transferNet, transferFee]
-          ]);
+          batchDest = [tokenAddress, tokenAddress];
+          batchValue = [0n, 0n];
+          batchFunc = [transferNet, transferFee];
         }
       }
+
+      if (desiredImpl && needsUpgrade) {
+        const selfCallsDest = [sender, sender, sender];
+        const selfCallsValue = [0n, 0n, 0n];
+        const selfCallsFunc = [
+          accountInterface.encodeFunctionData('upgradeTo', [desiredImpl]),
+          accountInterface.encodeFunctionData('setExpectedRpIdHash', [rpIdHash]),
+          accountInterface.encodeFunctionData('setRequireUserVerification', [true]),
+        ];
+
+        batchDest = [...selfCallsDest, ...batchDest];
+        batchValue = [...selfCallsValue, ...batchValue];
+        batchFunc = [...selfCallsFunc, ...batchFunc];
+      }
+
+      const callData = accountInterface.encodeFunctionData('executeBatch', [
+        batchDest,
+        batchValue,
+        batchFunc,
+      ]);
 
       const userOp: any = {
         sender,
@@ -618,13 +669,42 @@ export class AaController {
       const authData = base64UrlDecode(assertion.response.authenticatorData);
       const sigDer = base64UrlDecode(assertion.response.signature);
 
-      const idx = clientDataJSON.indexOf(Buffer.from(expectedChallenge, 'utf8'));
-      if (idx < 0) {
+      const challengeKey = Buffer.from('"challenge"', 'utf8');
+      const keyIdx = clientDataJSON.indexOf(challengeKey);
+      if (keyIdx < 0) {
+        return res.status(400).json({ error: 'Challenge mismatch' });
+      }
+      if (clientDataJSON.indexOf(challengeKey, keyIdx + 1) >= 0) {
         return res.status(400).json({ error: 'Challenge mismatch' });
       }
 
-      const clientPrefix = clientDataJSON.subarray(0, idx);
-      const clientSuffix = clientDataJSON.subarray(idx + expectedChallenge.length);
+      const isWs = (c: number) => c === 0x20 || c === 0x09 || c === 0x0a || c === 0x0d;
+
+      let i = keyIdx + challengeKey.length;
+      while (i < clientDataJSON.length && isWs(clientDataJSON[i])) i++;
+      if (i >= clientDataJSON.length || clientDataJSON[i] !== ':'.charCodeAt(0)) {
+        return res.status(400).json({ error: 'Challenge mismatch' });
+      }
+      i++;
+      while (i < clientDataJSON.length && isWs(clientDataJSON[i])) i++;
+      if (i >= clientDataJSON.length || clientDataJSON[i] !== '"'.charCodeAt(0)) {
+        return res.status(400).json({ error: 'Challenge mismatch' });
+      }
+
+      const valueIdx = i + 1;
+      const challengeEnd = valueIdx + expectedChallenge.length;
+      if (challengeEnd > clientDataJSON.length) {
+        return res.status(400).json({ error: 'Challenge mismatch' });
+      }
+      if (clientDataJSON.subarray(valueIdx, challengeEnd).toString('utf8') !== expectedChallenge) {
+        return res.status(400).json({ error: 'Challenge mismatch' });
+      }
+      if (challengeEnd >= clientDataJSON.length || clientDataJSON[challengeEnd] !== '"'.charCodeAt(0)) {
+        return res.status(400).json({ error: 'Challenge mismatch' });
+      }
+
+      const clientPrefix = clientDataJSON.subarray(0, valueIdx);
+      const clientSuffix = clientDataJSON.subarray(challengeEnd);
 
       const { r, s } = parseDerEcdsaSignature(sigDer);
 

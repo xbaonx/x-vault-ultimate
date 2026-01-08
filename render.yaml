@@ -45,6 +45,8 @@ services:
         value: https://zaur.at
       - key: RP_NAME
         value: Zaur Wallet
+      - key: REQUIRE_UV
+        value: 1
       - key: ENTRY_POINT_ADDRESS_8453
         value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
       - key: ENTRY_POINT_ADDRESS_1
@@ -64,11 +66,23 @@ services:
       - key: FACTORY_ADDRESS_1
         value: 0xc90F1CC032f287Af46120604A275AD5F2bEAc494
       - key: FACTORY_ADDRESS_137
-        value: 0x3BEc1cBE0205885454ab63a8E4B55E91b207fc7D
+        value: 0xc90F1CC032f287Af46120604A275AD5F2bEAc494
       - key: FACTORY_ADDRESS_42161
         value: 0xc90F1CC032f287Af46120604A275AD5F2bEAc494
       - key: FACTORY_ADDRESS_10
         value: 0xc90F1CC032f287Af46120604A275AD5F2bEAc494
+      - key: ACCOUNT_IMPLEMENTATION_8453
+        value: 0xfA568D8E49E4CEe3fE92e264d2098C0b4Eb48a6a
+      - key: ACCOUNT_IMPLEMENTATION_1
+        value: 0xfA568D8E49E4CEe3fE92e264d2098C0b4Eb48a6a
+      - key: ACCOUNT_IMPLEMENTATION_137
+        sync: false
+      - key: ACCOUNT_IMPLEMENTATION_42161
+        sync: false
+      - key: ACCOUNT_IMPLEMENTATION_10
+        sync: false
+      - key: ACCOUNT_IMPLEMENTATION_56
+        sync: false
       - key: BUNDLER_URL_8453
         sync: false
       - key: BUNDLER_URL_1
@@ -86,13 +100,13 @@ services:
       - key: PAYMASTER_ADDRESS_1
         value: 0xa0a107171dD4a67AD3C1558Af8fb70F07034F681
       - key: PAYMASTER_ADDRESS_137
-        value: 0x3a286fE264d3769e64c3146EF70ae6d656E23bd7
+        sync: false
       - key: PAYMASTER_ADDRESS_42161
-        value: 0xFa858f5DE06Ed339edB4bC3496e2677F1E11B07c
+        sync: false
       - key: PAYMASTER_ADDRESS_10
-        value: 0x72971e499A7FE3a1DaF9E09ebbF3c0f7f367479c
+        sync: false
       - key: PAYMASTER_ADDRESS_56
-        value: 0x42186Ec1fc663d341204C6846Aa091C1800343fE
+        sync: false
       - key: PAYMASTER_SIGNING_KEY_8453
         sync: false
       - key: PAYMASTER_SIGNING_KEY_1

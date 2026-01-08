@@ -20,6 +20,8 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     
     IEntryPoint private immutable _entryPoint;
     address private immutable _p256Verifier;
+    bytes32 private immutable _defaultRpIdHash;
+    bool private immutable _defaultRequireUserVerification;
     
     // Device binding mapping: deviceIdHash => isActive
     mapping(bytes32 => bool) public activeDevices;
@@ -57,6 +59,9 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     mapping(bytes32 => PendingBatchTx) private pendingBatchTxs;
     uint256 public pendingBatchTxNonce;
 
+    bytes32 public expectedRpIdHash;
+    bool public requireUserVerification;
+
     event DeviceAdded(bytes32 indexed deviceIdHash);
     event DeviceRemoved(bytes32 indexed deviceIdHash);
     event SpendingLimitChanged(uint256 newLimit);
@@ -81,9 +86,11 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
         _;
     }
 
-    constructor(IEntryPoint anEntryPoint, address p256Verifier) {
+    constructor(IEntryPoint anEntryPoint, address p256Verifier, bytes32 defaultRpIdHash, bool defaultRequireUserVerification) {
         _entryPoint = anEntryPoint;
         _p256Verifier = p256Verifier;
+        _defaultRpIdHash = defaultRpIdHash;
+        _defaultRequireUserVerification = defaultRequireUserVerification;
         _disableInitializers();
     }
 
@@ -101,8 +108,20 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
     function initialize(uint256 _publicKeyX, uint256 _publicKeyY) public virtual initializer {
         publicKeyX = _publicKeyX;
         publicKeyY = _publicKeyY;
+        requireUserVerification = _defaultRequireUserVerification;
+        if (expectedRpIdHash == bytes32(0) && _defaultRpIdHash != bytes32(0)) {
+            expectedRpIdHash = _defaultRpIdHash;
+        }
         dailyLimit = 1000 ether; // Default limit (high for tokens, logic can be refined)
         largeTxThresholdWei = 0;
+    }
+
+    function setExpectedRpIdHash(bytes32 _expectedRpIdHash) external onlyOwner {
+        expectedRpIdHash = _expectedRpIdHash;
+    }
+
+    function setRequireUserVerification(bool _requireUserVerification) external onlyOwner {
+        requireUserVerification = _requireUserVerification;
     }
 
     function entryPoint() public view virtual override returns (IEntryPoint) {
@@ -148,6 +167,26 @@ contract XAccount is BaseAccount, Initializable, UUPSUpgradeable {
             clientDataPrefix = _clientDataPrefix;
             clientDataSuffix = _clientDataSuffix;
         } catch {
+            return SIG_VALIDATION_FAILED;
+        }
+
+        if (authenticatorData.length < 37) {
+            return SIG_VALIDATION_FAILED;
+        }
+
+        bytes32 rpIdHash;
+        assembly {
+            rpIdHash := mload(add(authenticatorData, 32))
+        }
+        if (expectedRpIdHash != bytes32(0) && rpIdHash != expectedRpIdHash) {
+            return SIG_VALIDATION_FAILED;
+        }
+
+        uint8 flags = uint8(authenticatorData[32]);
+        if ((flags & 0x01) == 0) {
+            return SIG_VALIDATION_FAILED;
+        }
+        if (requireUserVerification && (flags & 0x04) == 0) {
             return SIG_VALIDATION_FAILED;
         }
 

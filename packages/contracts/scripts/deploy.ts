@@ -1,4 +1,5 @@
 import { ethers } from "hardhat";
+import { createHash } from 'crypto';
 
 const SINGLETON_CREATE2_FACTORY = "0x4e59b44847b379578588920cA78FbF26c0B4956C";
 
@@ -177,6 +178,22 @@ async function main() {
 
   const ENTRY_POINT_ADDRESS = getEnvByChainId('ENTRY_POINT_ADDRESS') || DEFAULT_ENTRY_POINT_ADDRESS;
 
+  const rpIdHashFromEnv = getEnvByChainId('RP_ID_HASH');
+  const rpId = getEnvByChainId('RP_ID');
+  const defaultRpIdHash = rpIdHashFromEnv
+    ? ethers.hexlify(rpIdHashFromEnv as any)
+    : (rpId
+        ? (`0x${createHash('sha256').update(rpId, 'utf8').digest('hex')}` as const)
+        : ethers.ZeroHash);
+
+  const requireUvRaw = String(getEnvByChainId('REQUIRE_UV') ?? '').trim().toLowerCase();
+  const defaultRequireUserVerification = requireUvRaw === '0'
+    ? false
+    : (requireUvRaw === 'false' ? false : true);
+
+  const forceFactoryRedeployRaw = String(getEnvByChainId('FORCE_FACTORY_REDEPLOY') ?? '').trim().toLowerCase();
+  const forceFactoryRedeploy = forceFactoryRedeployRaw === '1' || forceFactoryRedeployRaw === 'true';
+
   // Deploy P256Verifier (EIP-7212 fallback) and XAccount implementation.
   // These should be deployed deterministically across chains for universal addresses.
   const P256Verifier = await ethers.getContractFactory('P256Verifier');
@@ -203,7 +220,12 @@ async function main() {
   const XAccount = await ethers.getContractFactory('XAccount');
   let accountImplAddress: string;
   if (deterministic) {
-    const txReq = await XAccount.getDeployTransaction(ENTRY_POINT_ADDRESS, p256VerifierAddress);
+    const txReq = await XAccount.getDeployTransaction(
+      ENTRY_POINT_ADDRESS,
+      p256VerifierAddress,
+      defaultRpIdHash,
+      defaultRequireUserVerification,
+    );
     const initCode = String(txReq.data || '');
     if (!initCode || initCode === '0x') {
       throw new Error('Failed to build XAccount init code');
@@ -215,13 +237,18 @@ async function main() {
       chainId,
     );
   } else {
-    const accountImpl = await XAccount.deploy(ENTRY_POINT_ADDRESS, p256VerifierAddress);
+    const accountImpl = await XAccount.deploy(
+      ENTRY_POINT_ADDRESS,
+      p256VerifierAddress,
+      defaultRpIdHash,
+      defaultRequireUserVerification,
+    );
     await accountImpl.waitForDeployment();
     accountImplAddress = await accountImpl.getAddress();
   }
   console.log('XAccount implementation deployed to:', accountImplAddress);
 
-  const existingFactoryAddress = getEnvByChainId('FACTORY_ADDRESS');
+  const existingFactoryAddress = forceFactoryRedeploy ? undefined : getEnvByChainId('FACTORY_ADDRESS');
   let factoryAddress: string;
   if (
     existingFactoryAddress &&

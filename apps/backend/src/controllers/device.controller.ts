@@ -30,9 +30,11 @@ export class DeviceController {
     const requestOrigin = req.get('Origin') || '';
     let { rpId, origin } = config.security;
 
-    // If we are in production or receiving a request from a real domain,
-    // and the config is still default 'localhost' or 'zaur.at', try to adapt.
-    if ((rpId === 'localhost' || rpId === 'zaur.at') && requestOrigin && !requestOrigin.includes('localhost')) {
+    const isProd = String(config.nodeEnv || '').toLowerCase() === 'production';
+
+    // Only allow dynamic adaptation in non-production to ease local dev.
+    // In production the RP ID must be pinned to a known domain.
+    if (!isProd && (rpId === 'localhost' || rpId === 'zaur.at') && requestOrigin && !requestOrigin.includes('localhost')) {
       try {
         const url = new URL(requestOrigin);
         rpId = url.hostname;
