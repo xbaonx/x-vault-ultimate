@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowUpRight, ArrowDownLeft, RefreshCw, Plus, ChevronDown, Wallet as WalletIcon, CreditCard, XCircle, Clock } from 'lucide-react';
 import { Button } from "../components/ui/button";
@@ -10,6 +10,7 @@ import { MigrationModal } from '../components/MigrationModal';
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [portfolio, setPortfolio] = useState<any>(null);
   const [address, setAddress] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -40,7 +41,14 @@ export default function Dashboard() {
   // Mock user ID for MVP
   const userId = localStorage.getItem('x_user_id') || 'user-123';
   const deviceId = localStorage.getItem('x_device_id') || 'device-123';
-  const storedWalletId = localStorage.getItem('x_wallet_id');
+  const walletIdFromQuery = new URLSearchParams(location.search).get('walletId') || '';
+  const storedWalletId = walletIdFromQuery || localStorage.getItem('x_wallet_id');
+
+  useEffect(() => {
+    if (walletIdFromQuery) {
+      localStorage.setItem('x_wallet_id', walletIdFromQuery);
+    }
+  }, [walletIdFromQuery]);
 
   const formatCurrency = (value: number) => {
     const n = Number.isFinite(value) ? value : 0;

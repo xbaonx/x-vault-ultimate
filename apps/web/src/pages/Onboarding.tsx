@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Check, Loader2, Wallet, AlertTriangle, ShieldCheck, Lock } from 'lucide-react';
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
@@ -13,6 +13,18 @@ type OnboardingStep = 'siwa' | 'biometric' | 'pin-setup' | 'pairing' | 'success'
 
 export default function Onboarding() {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const redirectParam = new URLSearchParams(location.search).get('redirect') || '';
+  const redirectTarget = (() => {
+    try {
+      const decoded = redirectParam ? decodeURIComponent(redirectParam) : '';
+      if (decoded && decoded.startsWith('/')) return decoded;
+      return '';
+    } catch {
+      return '';
+    }
+  })();
   const [step, setStep] = useState<OnboardingStep>('siwa');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,7 +133,7 @@ export default function Onboarding() {
                     if (verification.authToken) localStorage.setItem('x_auth_token', verification.authToken);
                     
                     if (hasPin) {
-                        navigate('/dashboard');
+                        navigate(redirectTarget || '/dashboard');
                     } else {
                         setStep('pin-setup');
                     }
@@ -494,7 +506,7 @@ export default function Onboarding() {
                   </a>
                 )}
               </div>
-              <Button size="lg" onClick={() => navigate('/dashboard')} className="w-full">
+              <Button size="lg" onClick={() => navigate(redirectTarget || '/dashboard')} className="w-full">
                 Enter Dashboard
               </Button>
             </motion.div>

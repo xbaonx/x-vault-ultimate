@@ -44,17 +44,37 @@ export default function Receive() {
 
   useEffect(() => {
     const fetchAddress = async () => {
+      if (!userId || !deviceId) {
+        if (walletIdFromQuery) {
+          localStorage.setItem('x_wallet_id', walletIdFromQuery);
+        }
+        const redirect = `${location.pathname}${location.search}`;
+        navigate(`/onboarding?redirect=${encodeURIComponent(redirect)}`, { replace: true });
+        return;
+      }
+
       try {
         const data = await walletService.getAddressByChain(userId, deviceId, selectedChainId, walletId || undefined);
         setAddress(data.address);
       } catch (error) {
         console.error("Failed to fetch address", error);
+        const anyErr = error as any;
+        if (anyErr?.response?.status === 401 || anyErr?.response?.status === 403) {
+          localStorage.removeItem('x_user_id');
+          localStorage.removeItem('x_device_id');
+          if (walletIdFromQuery) {
+            localStorage.setItem('x_wallet_id', walletIdFromQuery);
+          }
+          const redirect = `${location.pathname}${location.search}`;
+          navigate(`/onboarding?redirect=${encodeURIComponent(redirect)}`, { replace: true });
+          return;
+        }
       } finally {
         setLoading(false);
       }
     };
     fetchAddress();
-  }, [userId, deviceId, walletId, selectedChainId]);
+  }, [userId, deviceId, walletId, selectedChainId, walletIdFromQuery, location.pathname, location.search, navigate]);
 
   const handleCopy = () => {
     if (address) {

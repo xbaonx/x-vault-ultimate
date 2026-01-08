@@ -40,7 +40,11 @@ export default function Send() {
       if (!userId || !deviceId) {
         setError('Please sign in on this device to continue.');
         setLoading(false);
-        navigate('/onboarding', { replace: true });
+        if (walletIdFromQuery) {
+          localStorage.setItem('x_wallet_id', walletIdFromQuery);
+        }
+        const redirect = `${location.pathname}${location.search}`;
+        navigate(`/onboarding?redirect=${encodeURIComponent(redirect)}`, { replace: true });
         return;
       }
 
@@ -67,7 +71,11 @@ export default function Send() {
         if (anyErr?.response?.status === 401 || anyErr?.response?.status === 403) {
           localStorage.removeItem('x_user_id');
           localStorage.removeItem('x_device_id');
-          navigate('/onboarding', { replace: true });
+          if (walletIdFromQuery) {
+            localStorage.setItem('x_wallet_id', walletIdFromQuery);
+          }
+          const redirect = `${location.pathname}${location.search}`;
+          navigate(`/onboarding?redirect=${encodeURIComponent(redirect)}`, { replace: true });
           return;
         }
         setError("Failed to load assets.");
