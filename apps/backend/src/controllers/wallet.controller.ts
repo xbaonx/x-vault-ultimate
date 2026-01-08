@@ -6,6 +6,7 @@ import { ProviderService } from '../services/provider.service';
 import { deriveAaAddressFromCredentialPublicKey } from '../utils/aa-address';
 import { AaAddressMapService } from '../services/aa-address-map.service';
 import { TokenDiscoveryService } from '../services/token-discovery.service';
+import { TokenPriceService } from '../services/token-price.service';
 import { User } from '../entities/User';
 import { Wallet } from '../entities/Wallet';
 import { Device } from '../entities/Device';
@@ -17,19 +18,6 @@ const ERC20_ABI = [
   "function decimals() view returns (uint8)",
   "function symbol() view returns (string)"
 ];
-
-let portfolioPriceCache: { updatedAt: number; prices: Record<string, number> } | null = null;
-
-async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<any> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    return await res.json();
-  } finally {
-    clearTimeout(id);
-  }
-}
 
 const TOKEN_MAP: Record<number, { address: string; symbol: string; decimals: number }[]> = {
     // Base
@@ -306,6 +294,51 @@ export class WalletController {
           const snapshotRepo = AppDataSource.getRepository(WalletSnapshot);
           const snapshot = await snapshotRepo.findOne({ where: { serialNumber: baseSerialNumber } });
           if (snapshot?.portfolio && typeof snapshot.portfolio === 'object') {
+            // Recompute USD values using DB prices (snapshot may be stale / schema may change)
+            try {
+              const cachedAssets: any[] = Array.isArray(snapshot.portfolio.assets) ? snapshot.portfolio.assets : [];
+              const byChain: Record<number, { native: number; erc20: string[] }> = {};
+              for (const a of cachedAssets) {
+                const chainId = Number(a?.chainId || 0);
+                if (!chainId) continue;
+
+                if (!byChain[chainId]) byChain[chainId] = { native: 0, erc20: [] };
+                if (a?.isNative) {
+                  byChain[chainId].native = 1;
+                } else if (a?.tokenAddress) {
+                  byChain[chainId].erc20.push(String(a.tokenAddress).trim().toLowerCase());
+                }
+              }
+
+              const priceByChain: Record<number, Record<string, number>> = {};
+              for (const [chainIdStr, v] of Object.entries(byChain)) {
+                const chainId = Number(chainIdStr);
+                const addresses: string[] = [];
+                if (v.native) addresses.push(TokenPriceService.nativeAddressKey());
+                addresses.push(...v.erc20);
+                priceByChain[chainId] = await TokenPriceService.getUsdPrices({ chainId, addresses });
+              }
+
+              let recomputedTotalUsd = 0;
+              const recomputedAssets = cachedAssets.map((a) => {
+                const chainId = Number(a?.chainId || 0);
+                const balance = Number(a?.balance || 0);
+
+                const key = a?.isNative
+                  ? TokenPriceService.nativeAddressKey()
+                  : String(a?.tokenAddress || '').trim().toLowerCase();
+
+                const price = chainId && key ? (priceByChain[chainId]?.[key] || 0) : 0;
+                const valueUsd = Number(Number(balance * price).toFixed(2));
+                recomputedTotalUsd += valueUsd;
+                return { ...a, valueUsd };
+              });
+
+              (snapshot.portfolio as any).assets = recomputedAssets;
+              snapshot.totalBalanceUsd = Number(Number(recomputedTotalUsd).toFixed(2));
+            } catch {
+            }
+
             const txRepo = AppDataSource.getRepository(Transaction);
             const dbTransactions = await txRepo.find({
               where: { userId: user.id },
@@ -346,44 +379,6 @@ export class WalletController {
             history: []
          });
          return;
-      }
-
-      // Fetch Real Prices
-      const prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, POL: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
-      let ethPrice = 3000;
-      let maticPrice = 1.0;
-      
-      try {
-          const now = Date.now();
-          if (portfolioPriceCache && now - portfolioPriceCache.updatedAt < 60_000) {
-              Object.assign(prices, portfolioPriceCache.prices);
-              ethPrice = prices.ETH;
-              maticPrice = prices.MATIC;
-              prices.POL = prices.MATIC;
-          } else {
-              const symbols = ['ETH', 'MATIC'];
-              const requests = symbols.map(sym =>
-                  fetchJsonWithTimeout(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`, 1500)
-                    .catch(() => null)
-              );
-
-              const results = await Promise.all(requests);
-
-              results.forEach((data, index) => {
-                  if (data && data.data && data.data.amount) {
-                      const price = parseFloat(data.data.amount);
-                      prices[symbols[index]] = price;
-                      if (symbols[index] === 'ETH') ethPrice = price;
-                      if (symbols[index] === 'MATIC') maticPrice = price;
-                  }
-              });
-
-              prices.POL = prices.MATIC;
-
-              portfolioPriceCache = { updatedAt: now, prices: { ...prices } };
-          }
-      } catch (e) {
-          console.warn("Failed to fetch prices, using fallbacks");
       }
 
       // Define chains to scan
@@ -462,13 +457,17 @@ export class WalletController {
                   const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
                   
                   if (nativeBalance > 0) {
-                      const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? maticPrice : ethPrice;
-                      const valueUsd = nativeBalance * price;
+                      const nativePrice = await TokenPriceService.getUsdPrice({
+                        chainId: chain.chainId,
+                        address: TokenPriceService.nativeAddressKey(),
+                      });
+                      const valueUsd = nativeBalance * (nativePrice || 0);
                       
                       totalBalanceUsd += valueUsd;
                       assets.push({
                           symbol: chain.symbol,
                           balance: nativeBalance,
+                          balanceRaw: balanceWei.toString(),
                           network: chain.name.toLowerCase(),
                           valueUsd: valueUsd,
                           decimals: 18,
@@ -481,29 +480,38 @@ export class WalletController {
               }
 
               // 2. ERC-20 Token Balances
-              let discovered: Array<{ symbol: string; name: string; amount: number; value: number; contractAddress: string; decimals: number }> = [];
+              let discovered: Array<{ symbol: string; name: string; amount: number; contractAddress: string; decimals: number; balanceRaw: string }> = [];
               try {
                 discovered = await TokenDiscoveryService.getErc20Assets({
                   chainId: chain.chainId,
                   address: scanAddress,
                   timeoutMs: 2500,
                   maxTokens: 40,
-                  prices,
                 });
               } catch {
                 discovered = [];
               }
 
               if (discovered.length) {
+                const addrList = discovered
+                  .map((t) => String(t.contractAddress || '').trim().toLowerCase())
+                  .filter(Boolean);
+                const pricesByAddr = await TokenPriceService.getUsdPrices({
+                  chainId: chain.chainId,
+                  addresses: addrList,
+                });
                 for (const t of discovered) {
                   const sym = String(t.symbol || '').toUpperCase();
                   if (!sym || sym === 'USDZ') continue;
 
-                  const valueUsd = Number(Number(t.value || 0).toFixed(2));
+                  const tokenAddr = String(t.contractAddress || '').trim().toLowerCase();
+                  const price = pricesByAddr[tokenAddr] || 0;
+                  const valueUsd = Number(Number((t.amount || 0) * price).toFixed(2));
                   totalBalanceUsd += valueUsd;
                   assets.push({
                     symbol: sym,
                     balance: t.amount,
+                    balanceRaw: (t as any).balanceRaw,
                     network: chain.name.toLowerCase(),
                     valueUsd,
                     tokenAddress: t.contractAddress,
@@ -517,6 +525,10 @@ export class WalletController {
                 // Fallback to curated list for non-Alchemy RPCs
                 const tokens = TOKEN_MAP[chain.chainId];
                 if (tokens) {
+                  const tokenPrices = await TokenPriceService.getUsdPrices({
+                    chainId: chain.chainId,
+                    addresses: tokens.map((t) => String(t.address || '').trim().toLowerCase()),
+                  });
                   await Promise.all(tokens.map(async (token) => {
                     try {
                       const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
@@ -528,13 +540,15 @@ export class WalletController {
 
                       if (tokenBalanceWei > 0n) {
                         const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
-                        const price = prices[token.symbol] || 0;
+                        const tokenAddr = String(token.address || '').trim().toLowerCase();
+                        const price = tokenPrices[tokenAddr] || 0;
                         const value = formattedBalance * price;
 
                         totalBalanceUsd += value;
                         assets.push({
                           symbol: token.symbol,
                           balance: formattedBalance,
+                          balanceRaw: tokenBalanceWei.toString(),
                           network: chain.name.toLowerCase(),
                           valueUsd: value,
                           tokenAddress: token.address,

@@ -11,6 +11,7 @@ import { config } from '../config';
 import { ProviderService } from '../services/provider.service';
 import { PaymasterController } from './paymaster.controller';
 import { verifyAuthenticationResponse } from '@simplewebauthn/server';
+import { TokenPriceService } from '../services/token-price.service';
 
 const ENTRYPOINT_ABI = [
   'function getUserOpHash((address sender,uint256 nonce,bytes initCode,bytes callData,uint256 callGasLimit,uint256 verificationGasLimit,uint256 preVerificationGas,uint256 maxFeePerGas,uint256 maxPriorityFeePerGas,bytes paymasterAndData,bytes signature) userOp) view returns (bytes32)',
@@ -33,53 +34,6 @@ const XACCOUNT_ABI = [
  const GAS_FEE_BPS = 30n; // 0.3%
  const PLATFORM_FEE_BPS = 50n; // 0.5%
  const BPS_DENOM = 10_000n;
-
- let spotPriceCache: { updatedAt: number; prices: Record<string, number> } | null = null;
-
- async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<any> {
-   const controller = new AbortController();
-   const id = setTimeout(() => controller.abort(), timeoutMs);
-   try {
-     const res = await fetch(url, { signal: controller.signal });
-     return await res.json();
-   } finally {
-     clearTimeout(id);
-   }
- }
-
- async function getSpotUsdPrice(symbol: string): Promise<number> {
-   const sym = String(symbol || '').toUpperCase();
-   const now = Date.now();
-   if (spotPriceCache && now - spotPriceCache.updatedAt < 60_000) {
-     const cached = spotPriceCache.prices[sym];
-     if (typeof cached === 'number' && Number.isFinite(cached) && cached > 0) return cached;
-   }
-
-   const fallbacks: Record<string, number> = {
-     ETH: 3000,
-     MATIC: 1.0,
-     POL: 1.0,
-     BNB: 300,
-     AVAX: 30,
-   };
-
-   const mapped = sym === 'POL' ? 'MATIC' : sym;
-   let price = fallbacks[mapped] ?? 0;
-   try {
-     const data = await fetchJsonWithTimeout(`https://api.coinbase.com/v2/prices/${mapped}-USD/spot`, 1500).catch(() => null);
-     const amount = data?.data?.amount ? parseFloat(data.data.amount) : NaN;
-     if (Number.isFinite(amount) && amount > 0) {
-       price = amount;
-     }
-   } catch {
-     // ignore
-   }
-
-   const prices = spotPriceCache?.prices ? { ...spotPriceCache.prices } : {};
-   prices[sym] = price;
-   spotPriceCache = { updatedAt: now, prices };
-   return price;
- }
 
 function base64UrlEncode(buf: Buffer): string {
   return buf
@@ -297,7 +251,7 @@ export class AaController {
         return res.status(500).json({ error: `TREASURY_ADDRESS_${chainConfig.chainId} not configured` });
       }
 
-       const usdzBalance = Number(user.usdzBalance || 0);
+      const usdzBalance = Number(user.usdzBalance || 0);
 
       let callData: string;
 
@@ -308,7 +262,10 @@ export class AaController {
 
         let platformFeeOnChainWei = 0n;
         if (platformFeeWei > 0n) {
-          const price = await getSpotUsdPrice(chainConfig.symbol);
+          const price = await TokenPriceService.getUsdPrice({
+            chainId: chainConfig.chainId,
+            address: TokenPriceService.nativeAddressKey(),
+          });
           const platformFeeUsd = parseFloat(ethers.formatEther(platformFeeWei)) * (price || 0);
           feeBreakdown.platformFeeUsd = platformFeeUsd;
           if (platformFeeUsd > 0 && usdzBalance >= platformFeeUsd) {
@@ -358,29 +315,18 @@ export class AaController {
 
           let platformFeeOnChain = 0n;
           if (platformFee > 0n) {
-            const isStable = ['USDC', 'USDT', 'DAI', 'USDZ'].includes(assetSymbol.toUpperCase());
-            if (isStable) {
-              const tokenAmount = Number(ethers.formatUnits(platformFee, decimals));
-              const platformFeeUsd = tokenAmount; // 1 token ~= $1
-              feeBreakdown.platformFeeUsd = platformFeeUsd;
-              if (platformFeeUsd > 0 && usdzBalance >= platformFeeUsd) {
-                feeBreakdown.platformFeeChargedUsdZ = true;
-              } else {
-                platformFeeOnChain = platformFee;
-                feeBreakdown.platformFeeChargedOnChain = true;
-              }
+            const tokenAmount = Number(ethers.formatUnits(platformFee, decimals));
+            const tokenAddress = String(transaction.to || '').trim().toLowerCase();
+            const price = tokenAddress && tokenAddress.startsWith('0x')
+              ? await TokenPriceService.getUsdPrice({ chainId: chainConfig.chainId, address: tokenAddress })
+              : 0;
+            const platformFeeUsd = tokenAmount * (price || 0);
+            feeBreakdown.platformFeeUsd = platformFeeUsd;
+            if (platformFeeUsd > 0 && usdzBalance >= platformFeeUsd) {
+              feeBreakdown.platformFeeChargedUsdZ = true;
             } else {
-              // USDZ is treated as 1 USD; attempt to convert platform fee to USD and deduct.
-              const tokenAmount = Number(ethers.formatUnits(platformFee, decimals));
-              const price = await getSpotUsdPrice(assetSymbol);
-              const platformFeeUsd = tokenAmount * (price || 0);
-              feeBreakdown.platformFeeUsd = platformFeeUsd;
-              if (platformFeeUsd > 0 && usdzBalance >= platformFeeUsd) {
-                feeBreakdown.platformFeeChargedUsdZ = true;
-              } else {
-                platformFeeOnChain = platformFee;
-                feeBreakdown.platformFeeChargedOnChain = true;
-              }
+              platformFeeOnChain = platformFee;
+              feeBreakdown.platformFeeChargedOnChain = true;
             }
           }
 

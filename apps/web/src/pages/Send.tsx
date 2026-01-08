@@ -11,6 +11,7 @@ export default function Send() {
   const [sending, setSending] = useState(false);
   const [portfolio, setPortfolio] = useState<any>(null);
   const [selectedAsset, setSelectedAsset] = useState<any>(null);
+  const [selectedAssetKey, setSelectedAssetKey] = useState<string>('');
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -32,10 +33,21 @@ export default function Send() {
       }
 
       try {
-        const data = await walletService.getPortfolio(userId, deviceId, walletId || undefined);
+        let data = await walletService.getPortfolio(userId, deviceId, walletId || undefined);
+
+        const assets = Array.isArray((data as any)?.assets) ? (data as any).assets : [];
+        const first = assets.length ? assets[0] : null;
+        const hasRaw = first && String((first as any).balanceRaw || '').trim().length > 0;
+        if (!hasRaw) {
+          data = await walletService.getPortfolio(userId, deviceId, walletId || undefined, true);
+        }
+
         setPortfolio(data);
-        if (data.assets && data.assets.length > 0) {
-            setSelectedAsset(data.assets[0]);
+        if ((data as any).assets && (data as any).assets.length > 0) {
+            setSelectedAsset((data as any).assets[0]);
+            const a0 = (data as any).assets[0];
+            const key = `${a0.chainId}:${a0.isNative ? 'native' : String(a0.tokenAddress || '').toLowerCase()}`;
+            setSelectedAssetKey(key);
         }
       } catch (err) {
         console.error("Failed to fetch portfolio", err);
@@ -54,10 +66,27 @@ export default function Send() {
     fetchPortfolio();
   }, [userId, deviceId]);
 
+  useEffect(() => {
+    if (!portfolio?.assets || !selectedAssetKey) return;
+    const found = (portfolio.assets as any[]).find((a) => {
+      const key = `${a.chainId}:${a.isNative ? 'native' : String(a.tokenAddress || '').toLowerCase()}`;
+      return key === selectedAssetKey;
+    });
+    if (found) setSelectedAsset(found);
+  }, [portfolio, selectedAssetKey]);
+
   const handleSend = async () => {
     setError(null);
     setSuccess(null);
     setFee(null);
+
+    if (!selectedAsset) {
+      setError('No asset selected');
+      return;
+    }
+
+    const decimals = Number(selectedAsset.decimals ?? 18);
+    const balanceRaw = BigInt(String(selectedAsset.balanceRaw ?? '0'));
 
     // Validation
     if (!recipient || !ethers.isAddress(recipient)) {
@@ -68,13 +97,23 @@ export default function Send() {
         setError("Invalid amount");
         return;
     }
-    if (parseFloat(amount) > selectedAsset.balance) {
-        setError("Insufficient balance");
-        return;
+
+    let amountWei: bigint;
+    try {
+      amountWei = ethers.parseUnits(amount, decimals);
+    } catch {
+      setError('Invalid amount');
+      return;
     }
-    if (!selectedAsset) {
-        setError("No asset selected");
-        return;
+
+    if (amountWei <= 0n) {
+      setError('Invalid amount');
+      return;
+    }
+
+    if (balanceRaw > 0n && amountWei > balanceRaw) {
+      setError('Insufficient balance');
+      return;
     }
 
     setSending(true);
@@ -86,26 +125,31 @@ export default function Send() {
             // Native Transfer (ETH, POL)
             transaction = {
                 to: recipient,
-                value: ethers.parseEther(amount).toString(),
+                value: amountWei.toString(),
                 data: '0x',
                 chainId: selectedAsset.chainId,
                 isNative: true,
                 assetSymbol: selectedAsset.symbol,
-                decimals: 18,
+                decimals,
                 walletId: walletId || undefined,
             };
         } else {
+            const tokenAddress = String(selectedAsset.tokenAddress || '').trim();
+            if (!tokenAddress || !ethers.isAddress(tokenAddress)) {
+              setError('Invalid token address');
+              setSending(false);
+              return;
+            }
             // ERC-20 Transfer
             const iface = new ethers.Interface([
                 "function transfer(address to, uint256 amount) returns (bool)"
             ]);
-            const decimals = selectedAsset.decimals || 18;
             const amountWei = ethers.parseUnits(amount, decimals);
             
             const data = iface.encodeFunctionData("transfer", [recipient, amountWei]);
 
             transaction = {
-                to: selectedAsset.tokenAddress, // Contract Address
+                to: tokenAddress, // Contract Address
                 value: '0', // 0 Native Value
                 data: data,
                 chainId: selectedAsset.chainId,
@@ -126,7 +170,8 @@ export default function Send() {
           const errMsg = e?.response?.data?.error || e?.message || '';
           const status = e?.response?.status;
 
-          if (status === 401 && String(errMsg).toLowerCase().includes('spending pin required')) {
+          const lower = String(errMsg).toLowerCase();
+          if (status === 401 && lower.includes('spending pin') && lower.includes('required')) {
             const pin = window.prompt('Enter your Spending PIN');
             if (!pin) {
               throw e;
@@ -186,11 +231,14 @@ export default function Send() {
                 <div className="relative">
                     <select 
                         className="w-full bg-surface border border-white/10 rounded-xl p-4 appearance-none outline-none focus:border-primary transition-colors text-white font-medium"
-                        value={selectedAsset ? JSON.stringify(selectedAsset) : ''}
-                        onChange={(e) => setSelectedAsset(JSON.parse(e.target.value))}
+                        value={selectedAssetKey}
+                        onChange={(e) => setSelectedAssetKey(e.target.value)}
                     >
                         {portfolio?.assets.map((asset: any) => (
-                            <option key={`${asset.symbol}-${asset.network}`} value={JSON.stringify(asset)}>
+                            <option
+                              key={`${asset.chainId}:${asset.isNative ? 'native' : String(asset.tokenAddress || '').toLowerCase()}`}
+                              value={`${asset.chainId}:${asset.isNative ? 'native' : String(asset.tokenAddress || '').toLowerCase()}`}
+                            >
                                 {asset.symbol} ({asset.network}) - Balance: {asset.balance}
                             </option>
                         ))}
@@ -220,7 +268,19 @@ export default function Send() {
                             Available: {selectedAsset.balance} {selectedAsset.symbol}
                         </span>
                         <button 
-                            onClick={() => setAmount(selectedAsset.balance.toString())}
+                            onClick={() => {
+                              try {
+                                const d = Number(selectedAsset.decimals ?? 18);
+                                const raw = BigInt(String(selectedAsset.balanceRaw ?? '0'));
+                                if (raw > 0n) {
+                                  setAmount(ethers.formatUnits(raw, d));
+                                } else {
+                                  setAmount(String(selectedAsset.balance ?? ''));
+                                }
+                              } catch {
+                                setAmount(String(selectedAsset.balance ?? ''));
+                              }
+                            }}
                             className="text-xs text-primary font-medium hover:text-primary/80"
                         >
                             Max
@@ -253,30 +313,21 @@ export default function Send() {
                 <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
                     <div className="text-sm font-semibold">Fee Breakdown</div>
                     <div className="text-xs text-secondary flex justify-between">
-                        <span>Gas fee (0.3%)</span>
+                        <span>Gas fee ({Number(fee.gasFeeBps ?? 0) / 100}%)</span>
                         <span className="font-mono">
-                            {fee.assetSymbol === selectedAsset?.symbol
-                                ? ethers.formatUnits(fee.gasFee, selectedAsset?.decimals || 18)
-                                : fee.gasFee}
-                            {' '}{fee.assetSymbol}
+                            {ethers.formatUnits(fee.gasFee, selectedAsset?.decimals || 18)}{' '}{fee.assetSymbol}
                         </span>
                     </div>
                     <div className="text-xs text-secondary flex justify-between">
-                        <span>Platform fee (0.5%)</span>
+                        <span>Platform fee ({Number(fee.platformFeeBps ?? 0) / 100}%)</span>
                         <span className="font-mono">
-                            {fee.assetSymbol === selectedAsset?.symbol
-                                ? ethers.formatUnits(fee.platformFee, selectedAsset?.decimals || 18)
-                                : fee.platformFee}
-                            {' '}{fee.assetSymbol}
+                            {ethers.formatUnits(fee.platformFee, selectedAsset?.decimals || 18)}{' '}{fee.assetSymbol}
                         </span>
                     </div>
                     <div className="text-xs text-secondary flex justify-between">
                         <span>Recipient receives (net)</span>
                         <span className="font-mono">
-                            {fee.assetSymbol === selectedAsset?.symbol
-                                ? ethers.formatUnits(fee.netAmount, selectedAsset?.decimals || 18)
-                                : fee.netAmount}
-                            {' '}{fee.assetSymbol}
+                            {ethers.formatUnits(fee.netAmount, selectedAsset?.decimals || 18)}{' '}{fee.assetSymbol}
                         </span>
                     </div>
                     <div className="text-xs text-secondary">

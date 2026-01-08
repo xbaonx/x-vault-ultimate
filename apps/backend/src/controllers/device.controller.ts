@@ -16,8 +16,10 @@ import { config } from '../config';
 import { ethers } from 'ethers';
 import { ProviderService } from '../services/provider.service';
 import { deriveAaAddressFromCredentialPublicKey } from '../utils/aa-address';
-import { AaAddressMapService } from '../services/aa-address-map.service';
+import { DepositWatcherService } from '../services/deposit-watcher.service';
 import { TokenDiscoveryService } from '../services/token-discovery.service';
+import { TokenPriceService } from '../services/token-price.service';
+import { AaAddressMapService } from '../services/aa-address-map.service';
 import { WalletSnapshot } from '../entities/WalletSnapshot';
 import { signDeviceJwt } from '../utils/jwt';
 
@@ -682,19 +684,6 @@ export class DeviceController {
           const refreshUsdzBalance = Math.max(0, device.user.usdzBalance || 0);
           refreshAssets['usdz'] = { amount: Number(refreshUsdzBalance.toFixed(2)), value: Number(refreshUsdzBalance.toFixed(2)) };
 
-          let prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
-          try {
-            const symbols = ['ETH', 'MATIC', 'DAI', 'USDT', 'USDC'];
-            const requests = symbols.map(sym => fetch(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`).then(r => r.json()).catch(() => null));
-            const results = await Promise.all(requests);
-            results.forEach((data, index) => {
-              if (data && data.data && data.data.amount) {
-                prices[symbols[index]] = parseFloat(data.data.amount);
-              }
-            });
-          } catch {
-          }
-
           const chains = Object.values(config.blockchain.chains || {});
           await Promise.all(chains.map(async (chain) => {
             try {
@@ -714,12 +703,15 @@ export class DeviceController {
                 ]);
                 const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
                 if (nativeBalance > 0) {
-                  const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? prices['MATIC'] : prices['ETH'];
+                  const price = await TokenPriceService.getUsdPrice({
+                    chainId: chain.chainId,
+                    address: TokenPriceService.nativeAddressKey(),
+                  });
                   const key = chain.symbol;
                   if (!refreshAssets[key]) refreshAssets[key] = { amount: 0, value: 0, name: key };
                   refreshAssets[key].amount += nativeBalance;
-                  refreshAssets[key].value += nativeBalance * price;
-                  refreshTotalBalanceUsd += nativeBalance * price;
+                  refreshAssets[key].value += nativeBalance * (price || 0);
+                  refreshTotalBalanceUsd += nativeBalance * (price || 0);
                 }
               } catch {
               }
@@ -729,17 +721,26 @@ export class DeviceController {
                 address: chainAddress,
                 timeoutMs: 2500,
                 maxTokens: 40,
-                prices,
               });
 
               if (discovered.length) {
+                const addrList = discovered
+                  .map((t: any) => String(t.contractAddress || '').trim().toLowerCase())
+                  .filter(Boolean);
+                const pricesByAddr = await TokenPriceService.getUsdPrices({
+                  chainId: chain.chainId,
+                  addresses: addrList,
+                });
                 for (const t of discovered) {
                   const sym = String(t.symbol || '').toUpperCase();
                   if (!sym || sym === 'USDZ') continue;
                   if (!refreshAssets[sym]) refreshAssets[sym] = { amount: 0, value: 0, name: t.name || sym };
                   refreshAssets[sym].amount += t.amount;
-                  refreshAssets[sym].value += t.value;
-                  refreshTotalBalanceUsd += t.value;
+                  const tokenAddr = String((t as any).contractAddress || '').trim().toLowerCase();
+                  const price = pricesByAddr[tokenAddr] || 0;
+                  const valueUsd = Number((Number(t.amount || 0) * price).toFixed(2));
+                  refreshAssets[sym].value += valueUsd;
+                  refreshTotalBalanceUsd += valueUsd;
                 }
               }
             } catch {

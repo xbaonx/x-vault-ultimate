@@ -11,6 +11,7 @@ import { ChainCursor } from "./entities/ChainCursor";
 import { DepositEvent } from "./entities/DepositEvent";
 import { AaAddressMap } from "./entities/AaAddressMap";
 import { WalletSnapshot } from "./entities/WalletSnapshot";
+import { TokenPrice } from "./entities/TokenPrice";
 
 const dbSslEnabled = (process.env.DB_SSL || "").toLowerCase() === "true";
 const dbSslRejectUnauthorized = (process.env.DB_SSL_REJECT_UNAUTHORIZED || "").toLowerCase() === "true";
@@ -26,5 +27,5 @@ export const AppDataSource = new DataSource({
   synchronize: true,
   logging: false,
   ssl: config.nodeEnv === 'production' ? { rejectUnauthorized: false } : false,
-  entities: [User, Device, Wallet, Transaction, AppleConfig, PollingSession, PassRegistration, ChainCursor, DepositEvent, AaAddressMap, WalletSnapshot],
+  entities: [User, Device, Wallet, Transaction, AppleConfig, PollingSession, PassRegistration, ChainCursor, DepositEvent, AaAddressMap, WalletSnapshot, TokenPrice],
 });

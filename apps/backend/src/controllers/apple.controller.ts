@@ -14,6 +14,7 @@ import { AaAddressMapService } from '../services/aa-address-map.service';
 import { DepositWatcherService } from '../services/deposit-watcher.service';
 import { TokenDiscoveryService } from '../services/token-discovery.service';
 import { ProviderService } from '../services/provider.service';
+import { TokenPriceService } from '../services/token-price.service';
 import { computeApplePassAuthToken, verifyApplePassAuthToken } from '../utils/apple-pass-auth';
 
 const ERC20_ABI = [
@@ -21,45 +22,6 @@ const ERC20_ABI = [
   "function decimals() view returns (uint8)",
   "function symbol() view returns (string)"
 ];
-
-let applePriceCache: { updatedAt: number; prices: Record<string, number> } | null = null;
-
-async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<any> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    return await res.json();
-  } finally {
-    clearTimeout(id);
-  }
-}
-
-async function getPrices(): Promise<Record<string, number>> {
-  const now = Date.now();
-  if (applePriceCache && now - applePriceCache.updatedAt < 60_000) {
-    return applePriceCache.prices;
-  }
-
-  const prices: Record<string, number> = { ETH: 3000, MATIC: 1.0, POL: 1.0, DAI: 1.0, USDT: 1.0, USDC: 1.0 };
-  try {
-    const [ethRes, maticRes] = await Promise.all([
-      fetchJsonWithTimeout(`https://api.coinbase.com/v2/prices/ETH-USD/spot`, 1500).catch(() => null),
-      fetchJsonWithTimeout(`https://api.coinbase.com/v2/prices/MATIC-USD/spot`, 1500).catch(() => null),
-    ]);
-
-    const eth = ethRes?.data?.amount ? parseFloat(ethRes.data.amount) : undefined;
-    const matic = maticRes?.data?.amount ? parseFloat(maticRes.data.amount) : undefined;
-    if (typeof eth === 'number' && Number.isFinite(eth)) prices.ETH = eth;
-    if (typeof matic === 'number' && Number.isFinite(matic)) prices.MATIC = matic;
-    prices.POL = prices.MATIC;
-  } catch {
-    // ignore
-  }
-
-  applePriceCache = { updatedAt: now, prices: { ...prices } };
-  return prices;
-}
 
 const TOKEN_MAP: Record<number, { address: string; symbol: string; decimals: number }[]> = {
     // Base
@@ -421,7 +383,6 @@ export class ApplePassController {
             } catch {
             }
 
-            const prices = await getPrices();
             const chains = Object.values(config.blockchain.chains || {});
 
             if (chains.length === 0) {
@@ -452,12 +413,15 @@ export class ApplePassController {
 
                   const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
                   if (nativeBalance > 0) {
-                    const price = chain.symbol === 'MATIC' || chain.symbol === 'POL' ? prices['MATIC'] : prices['ETH'];
+                    const price = await TokenPriceService.getUsdPrice({
+                      chainId: chain.chainId,
+                      address: TokenPriceService.nativeAddressKey(),
+                    });
                     const key = chain.symbol;
                     if (!assets[key]) assets[key] = { amount: 0, value: 0, name: key };
                     assets[key].amount += nativeBalance;
-                    assets[key].value += nativeBalance * price;
-                    totalBalanceUsd += nativeBalance * price;
+                    assets[key].value += nativeBalance * (price || 0);
+                    totalBalanceUsd += nativeBalance * (price || 0);
                   }
                 } catch {
                 }
@@ -468,17 +432,26 @@ export class ApplePassController {
                   address: chainAddress,
                   timeoutMs: 2500,
                   maxTokens: 40,
-                  prices,
                 });
 
                 if (discovered.length) {
+                  const addrList = discovered
+                    .map((t: any) => String(t.contractAddress || '').trim().toLowerCase())
+                    .filter(Boolean);
+                  const pricesByAddr = await TokenPriceService.getUsdPrices({
+                    chainId: chain.chainId,
+                    addresses: addrList,
+                  });
                   for (const t of discovered) {
                     const sym = String(t.symbol || '').toUpperCase();
                     if (!sym || sym === 'USDZ') continue;
                     if (!assets[sym]) assets[sym] = { amount: 0, value: 0, name: t.name || sym };
                     assets[sym].amount += t.amount;
-                    assets[sym].value += t.value;
-                    totalBalanceUsd += t.value;
+                    const tokenAddr = String((t as any).contractAddress || '').trim().toLowerCase();
+                    const price = pricesByAddr[tokenAddr] || 0;
+                    const valueUsd = Number((Number(t.amount || 0) * price).toFixed(2));
+                    assets[sym].value += valueUsd;
+                    totalBalanceUsd += valueUsd;
                   }
                 } else {
                   // Fallback to curated TOKEN_MAP for non-Alchemy RPCs.
@@ -494,8 +467,9 @@ export class ApplePassController {
 
                         if (tokenBalanceWei > 0n) {
                           const formattedBalance = parseFloat(ethers.formatUnits(tokenBalanceWei, token.decimals));
-                          const price = prices[token.symbol] || 0;
-                          const value = formattedBalance * price;
+                          const tokenAddr = String(token.address || '').trim().toLowerCase();
+                          const price = await TokenPriceService.getUsdPrice({ chainId: chain.chainId, address: tokenAddr });
+                          const value = formattedBalance * (price || 0);
 
                           if (!assets[token.symbol]) assets[token.symbol] = { amount: 0, value: 0, name: token.symbol };
                           assets[token.symbol].amount += formattedBalance;

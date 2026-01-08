@@ -13,8 +13,6 @@ type TokenMetadata = {
   decimals?: number;
 };
 
-type PricesMap = Record<string, number>;
-
 async function fetchJsonWithTimeout(url: string, body: any, timeoutMs: number): Promise<any> {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), Math.max(250, timeoutMs));
@@ -66,8 +64,7 @@ export class TokenDiscoveryService {
     address: string;
     timeoutMs?: number;
     maxTokens?: number;
-    prices?: PricesMap;
-  }): Promise<Array<{ symbol: string; name: string; amount: number; value: number; contractAddress: string; decimals: number }>> {
+  }): Promise<Array<{ symbol: string; name: string; amount: number; contractAddress: string; decimals: number; balanceRaw: string }>> {
     const timeoutMs = params.timeoutMs ?? 2500;
     const maxTokens = params.maxTokens ?? 25;
 
@@ -139,9 +136,6 @@ export class TokenDiscoveryService {
       }),
     );
 
-    const stableSymbols = new Set(['USDC', 'USDT', 'DAI', 'USDZ']);
-    const prices = params.prices || {};
-
     const assets = metas
       .map((m) => {
         const decimals = typeof m.meta.decimals === 'number' ? m.meta.decimals : 18;
@@ -153,15 +147,9 @@ export class TokenDiscoveryService {
         const amount = Number(amountStr);
         if (!Number.isFinite(amount) || amount <= 0) return null;
 
-        const upper = symbol.toUpperCase();
-
-        // Pricing: use provided prices map when available. Stablecoins treated as ~$1.
-        const price = stableSymbols.has(upper) ? 1 : (prices[upper] || 0);
-        const value = price > 0 ? amount * price : 0;
-
-        return { symbol, name, amount, value, contractAddress: m.contractAddress, decimals };
+        return { symbol, name, amount, contractAddress: m.contractAddress, decimals, balanceRaw: raw.toString() };
       })
-      .filter(Boolean) as Array<{ symbol: string; name: string; amount: number; value: number; contractAddress: string; decimals: number }>;
+      .filter(Boolean) as Array<{ symbol: string; name: string; amount: number; contractAddress: string; decimals: number; balanceRaw: string }>;
 
     return assets;
   }
