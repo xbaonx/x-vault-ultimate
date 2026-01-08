@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, Info } from 'lucide-react';
 import { ethers } from 'ethers';
 import { Button } from '../components/ui/button';
@@ -7,6 +7,7 @@ import { walletService } from '../services/api';
 
 export default function Send() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [portfolio, setPortfolio] = useState<any>(null);
@@ -20,7 +21,18 @@ export default function Send() {
 
   const userId = localStorage.getItem('x_user_id') || '';
   const deviceId = localStorage.getItem('x_device_id') || '';
-  const walletId = localStorage.getItem('x_wallet_id') || '';
+
+  const walletIdFromQuery = new URLSearchParams(location.search).get('walletId') || '';
+  const [walletId, setWalletId] = useState<string>(() => {
+    return walletIdFromQuery || localStorage.getItem('x_wallet_id') || '';
+  });
+
+  useEffect(() => {
+    if (walletIdFromQuery && walletIdFromQuery !== walletId) {
+      localStorage.setItem('x_wallet_id', walletIdFromQuery);
+      setWalletId(walletIdFromQuery);
+    }
+  }, [walletIdFromQuery, walletId]);
 
   // 1. Fetch Portfolio to populate asset list
   useEffect(() => {
@@ -64,7 +76,7 @@ export default function Send() {
       }
     };
     fetchPortfolio();
-  }, [userId, deviceId]);
+  }, [userId, deviceId, walletId]);
 
   useEffect(() => {
     if (!portfolio?.assets || !selectedAssetKey) return;

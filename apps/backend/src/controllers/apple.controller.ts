@@ -279,6 +279,7 @@ export class ApplePassController {
           const wallets = await walletRepo.find({ where: { user: { id: user.id } }, order: { createdAt: 'ASC' } });
 
           let walletSalt = 0;
+          let walletIdForPass: string | undefined = undefined;
           try {
             for (const w of wallets) {
               const derivedSerial = await deriveAaAddressFromCredentialPublicKey({
@@ -289,6 +290,7 @@ export class ApplePassController {
               });
               if (String(derivedSerial).toLowerCase() === String(serialAddress).toLowerCase()) {
                 walletSalt = Number((w as any).aaSalt ?? 0);
+                walletIdForPass = w.id;
                 break;
               }
             }
@@ -561,6 +563,7 @@ export class ApplePassController {
             address: serialAddress,
             balance: totalBalanceUsd.toFixed(2),
             deviceId: deviceId,
+            walletId: walletIdForPass,
             assets: assets,
             smartContract: "0x4337...Vault",
             securityDelay: "Active: 48h Window",

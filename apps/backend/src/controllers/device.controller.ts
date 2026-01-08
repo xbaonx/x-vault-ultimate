@@ -628,12 +628,14 @@ export class DeviceController {
     }
 
     let walletSalt = 0;
+    let resolvedWalletId: string | undefined = walletId || undefined;
     try {
       const walletRepo = AppDataSource.getRepository(Wallet);
       const wallet = walletId
         ? await walletRepo.findOne({ where: { id: walletId, user: { id: device.user.id } } })
         : await walletRepo.findOne({ where: { user: { id: device.user.id }, isActive: true } });
       walletSalt = Number((wallet as any)?.aaSalt ?? 0);
+      resolvedWalletId = wallet?.id || resolvedWalletId;
     } catch {
       walletSalt = 0;
     }
@@ -773,6 +775,7 @@ export class DeviceController {
       address: serialAddress,
       balance: totalBalanceUsd.toFixed(2),
       deviceId: deviceId,
+      walletId: resolvedWalletId,
       assets: assets,
       smartContract: "0x4337...Vault",
       securityDelay: "Active: 48h Window",

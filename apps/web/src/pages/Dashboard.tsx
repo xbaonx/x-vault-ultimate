@@ -367,14 +367,14 @@ export default function Dashboard() {
         
         <div className="flex justify-center gap-4">
           <Button 
-            onClick={() => navigate('/app/send')}
+            onClick={() => navigate(`/app/send${selectedWalletId ? `?walletId=${encodeURIComponent(selectedWalletId)}` : ''}`)}
             className="rounded-full w-14 h-14 p-0 flex flex-col items-center justify-center gap-1 bg-surface border border-white/10 hover:bg-white/10"
           >
             <ArrowUpRight className="w-5 h-5 text-primary" />
             <span className="text-[10px] text-secondary">Send</span>
           </Button>
           <Button 
-            onClick={() => navigate('/app/receive')}
+            onClick={() => navigate(`/app/receive${selectedWalletId ? `?walletId=${encodeURIComponent(selectedWalletId)}` : ''}`)}
             className="rounded-full w-14 h-14 p-0 flex flex-col items-center justify-center gap-1 bg-surface border border-white/10 hover:bg-white/10"
           >
             <ArrowDownLeft className="w-5 h-5 text-success" />

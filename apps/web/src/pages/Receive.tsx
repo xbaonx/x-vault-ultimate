@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Copy, Share2, CheckCircle, Wallet } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { Button } from '../components/ui/button';
@@ -17,10 +17,16 @@ const CHAINS = [
 
 export default function Receive() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [address, setAddress] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [selectedChainId, setSelectedChainId] = useState<number>(1);
+
+  const walletIdFromQuery = new URLSearchParams(location.search).get('walletId') || '';
+  const [walletId, setWalletId] = useState<string>(() => {
+    return walletIdFromQuery || localStorage.getItem('x_wallet_id') || '';
+  });
 
   const qrValue = address
     ? `ethereum:pay-${address}@${selectedChainId}?value=0`
@@ -28,7 +34,13 @@ export default function Receive() {
 
   const userId = localStorage.getItem('x_user_id') || '';
   const deviceId = localStorage.getItem('x_device_id') || '';
-  const walletId = localStorage.getItem('x_wallet_id') || '';
+
+  useEffect(() => {
+    if (walletIdFromQuery && walletIdFromQuery !== walletId) {
+      localStorage.setItem('x_wallet_id', walletIdFromQuery);
+      setWalletId(walletIdFromQuery);
+    }
+  }, [walletIdFromQuery, walletId]);
 
   useEffect(() => {
     const fetchAddress = async () => {

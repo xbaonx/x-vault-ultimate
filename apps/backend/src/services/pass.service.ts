@@ -70,6 +70,7 @@ export class PassService {
       address: string; 
       balance: string;
       deviceId?: string;
+      walletId?: string;
       assets?: Record<string, { amount: number, value: number }>;
       smartContract?: string;
       securityDelay?: string;
@@ -83,6 +84,15 @@ export class PassService {
       const effectiveOrigin = (config.nodeEnv === 'production' && trustedBaseUrl)
         ? trustedBaseUrl
         : (inferredOrigin || trustedBaseUrl);
+
+      const appOrigin = String(config.security.origin || 'https://zaur.at').trim().replace(/\/+$/, '');
+      const buildAppUrl = (pathName: string) => {
+        const path = pathName.startsWith('/') ? pathName : `/${pathName}`;
+        const base = `${appOrigin}${path}`;
+        return userData.walletId
+          ? `${base}?walletId=${encodeURIComponent(userData.walletId)}`
+          : base;
+      };
       const modelPath = path.resolve(__dirname, '../../assets/pass.model');
       const hasModel = fs.existsSync(modelPath);
 
@@ -305,7 +315,7 @@ export class PassService {
                  key: 'action_send',
                  label: '📤 Send Assets',
                  value: 'Send Now →',
-                 attributedValue: '<a href="https://zaur.at/app/send">Send Now →</a>'
+                 attributedValue: `<a href="${buildAppUrl('/app/send')}">Send Now →</a>`
              });
 
              // [2] Receive
@@ -313,7 +323,7 @@ export class PassService {
                  key: 'action_receive',
                  label: '📥 Receive Assets',
                  value: 'Show QR Code →',
-                 attributedValue: '<a href="https://zaur.at/app/receive">Show QR Code →</a>'
+                 attributedValue: `<a href="${buildAppUrl('/app/receive')}">Show QR Code →</a>`
              });
 
              // [3] Swap
@@ -321,7 +331,7 @@ export class PassService {
                  key: 'action_swap',
                  label: '🔄 Swap Assets',
                  value: 'Best Rates →',
-                 attributedValue: '<a href="https://zaur.at/app/swap">Best Rates →</a>'
+                 attributedValue: `<a href="${buildAppUrl('/app/swap')}">Best Rates →</a>`
              });
 
              // ---------------------------------------------------------
