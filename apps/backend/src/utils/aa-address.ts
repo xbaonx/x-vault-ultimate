@@ -22,6 +22,16 @@ function decodeP256PublicKeyXY(cosePublicKey: Buffer): { x: bigint; y: bigint } 
   };
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return Promise.reject(new Error(message));
+  }
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), timeoutMs)),
+  ]);
+}
+
 export async function deriveAaAddressFromCredentialPublicKey(params: {
   credentialPublicKey: Buffer;
   chainId: number;
@@ -46,24 +56,31 @@ export async function deriveAaAddressFromCredentialPublicKey(params: {
 
   let lastError: unknown;
   for (const factoryAddress of factoryAddresses) {
-    const remainingMs = deadlineAt - Date.now();
+    let remainingMs = deadlineAt - Date.now();
     if (remainingMs <= 0) break;
 
     try {
-      const code = await Promise.race([
+      const code = await withTimeout(
         provider.getCode(factoryAddress),
-        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('AA Derivation Timeout')), remainingMs)),
-      ]);
+        remainingMs,
+        `AA Derivation Timeout (getCode) chainId=${chainId}`,
+      );
 
       if (!code || code === '0x') {
         throw new Error(`AA Factory not deployed on chainId=${chainId} at ${factoryAddress}`);
       }
 
+      remainingMs = deadlineAt - Date.now();
+      if (remainingMs <= 0) {
+        throw new Error('AA Derivation Timeout');
+      }
+
       const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);
-      const address = await Promise.race([
+      const address = await withTimeout(
         factory['getAddress(uint256,uint256,uint256)'](x, y, salt),
-        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('AA Derivation Timeout')), remainingMs)),
-      ]);
+        remainingMs,
+        `AA Derivation Timeout (getAddress) chainId=${chainId}`,
+      );
       return String(address);
     } catch (e) {
       lastError = e;

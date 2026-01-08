@@ -95,6 +95,7 @@ export class WalletController {
             credentialPublicKey: Buffer.from(device.credentialPublicKey),
             chainId,
             salt: wallet.aaSalt ?? 0,
+            timeoutMs: 6000,
           });
 
           res.status(200).json({ address: aaAddress, walletId: wallet.id, chainId });
