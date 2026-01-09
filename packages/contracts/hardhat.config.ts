@@ -1,12 +1,14 @@
-import { HardhatUserConfig } from "hardhat/config";
+import type { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 
 import dotenv from 'dotenv';
-dotenv.config({ path: '.env.local' });
+dotenv.config({ path: process.env.CONTRACTS_ENV_PATH || '.env.local' });
 dotenv.config();
 
 const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY;
 const accounts = DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [];
+
+const VIA_IR = String(process.env.HARDHAT_VIA_IR ?? '').trim() !== '0';
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -16,7 +18,7 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 200,
       },
-      viaIR: true,
+      viaIR: VIA_IR,
       evmVersion: "shanghai",
     },
   },
