@@ -16,6 +16,22 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { adminApi, type AppleConfigStatus, type DashboardStats, type UserData, type TransactionData, type UserDetailData } from '../services/api';
 
+const CHAIN_LABELS: Record<number, string> = {
+  1: 'Ethereum',
+  8453: 'Base',
+  137: 'Polygon',
+  42161: 'Arbitrum',
+  10: 'Optimism',
+  56: 'BSC',
+  43114: 'Avalanche',
+  59144: 'Linea',
+};
+
+function formatChainLabel(chainId: number): string {
+  const name = CHAIN_LABELS[chainId];
+  return name ? `${name} (${chainId})` : String(chainId);
+}
+
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -549,7 +565,7 @@ export default function AdminDashboard() {
                                                     .sort(([a], [b]) => Number(a) - Number(b))
                                                     .map(([chainId, addr]) => (
                                                       <div key={chainId}>
-                                                        <span className="text-secondary mr-2">{chainId}:</span>
+                                                        <span className="text-secondary mr-2">{formatChainLabel(Number(chainId))}:</span>
                                                         <span>{addr}</span>
                                                       </div>
                                                     ))}

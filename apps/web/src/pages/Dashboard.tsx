@@ -19,14 +19,7 @@ export default function Dashboard() {
   const [pullDistance, setPullDistance] = useState(0);
   const [pulling, setPulling] = useState(false);
 
-  const CHAINS = [
-    { chainId: 1, name: 'Ethereum' },
-    { chainId: 8453, name: 'Base' },
-    { chainId: 137, name: 'Polygon' },
-    { chainId: 42161, name: 'Arbitrum' },
-    { chainId: 10, name: 'Optimism' },
-  ];
-  const [selectedChainId, setSelectedChainId] = useState<number>(1);
+  const selectedChainId = 8453;
   
   // Wallet Management
   const [wallets, setWallets] = useState<any[]>([]);
@@ -185,7 +178,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchPortfolio();
-  }, [selectedWalletId, selectedChainId]);
+  }, [selectedWalletId]);
 
   useEffect(() => {
     let startY = 0;
@@ -345,17 +338,6 @@ export default function Dashboard() {
         </div>
 
         <div className="flex items-center gap-2">
-          <select
-            value={selectedChainId}
-            onChange={(e) => setSelectedChainId(Number(e.target.value))}
-            className="bg-surface border border-white/10 rounded-lg px-2 py-1 text-xs text-white"
-          >
-            {CHAINS.map((c) => (
-              <option key={c.chainId} value={c.chainId}>
-                {c.name}
-              </option>
-            ))}
-          </select>
           <div className="bg-surface px-3 py-1.5 rounded-full border border-white/10 text-sm font-mono text-secondary">
             {shortenAddress(address)}
           </div>
