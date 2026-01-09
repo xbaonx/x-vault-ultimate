@@ -158,14 +158,20 @@ async function deployDeterministic(
     );
   }
 
+  const codeWaitMsRaw = String(getEnvByChainId('DEPLOY_CODE_WAIT_MS', chainId) ?? '').trim();
+  const codePollMsRaw = String(getEnvByChainId('DEPLOY_CODE_POLL_MS', chainId) ?? '').trim();
+  const codeWaitMs = codeWaitMsRaw ? Number(codeWaitMsRaw) : 60_000;
+  const codePollMs = codePollMsRaw ? Number(codePollMsRaw) : 2_000;
+
+  const startedAt = Date.now();
   let deployedCode = await provider.getCode(predicted);
-  for (let i = 0; i < 12 && (!deployedCode || deployedCode === '0x'); i++) {
-    await new Promise((r) => setTimeout(r, 750));
+  while ((!deployedCode || deployedCode === '0x') && Date.now() - startedAt < codeWaitMs) {
+    await new Promise((r) => setTimeout(r, codePollMs));
     deployedCode = await provider.getCode(predicted);
   }
   if (!deployedCode || deployedCode === '0x') {
     throw new Error(
-      `[DeterministicDeploy] Tx mined but no code at predicted address. predicted=${predicted} tx=${tx.hash}`
+      `[DeterministicDeploy] Tx mined but no code at predicted address after waiting ${codeWaitMs}ms. predicted=${predicted} tx=${tx.hash}`
     );
   }
   return predicted;
