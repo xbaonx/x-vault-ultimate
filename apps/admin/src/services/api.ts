@@ -75,6 +75,8 @@ export type UserDetailData = {
     isActive: boolean;
     createdAt: string;
     updatedAt: string;
+    aaAddress?: string | null;
+    aaAddresses?: Record<number, string>;
   }>;
   devices: Array<{
     id: string;

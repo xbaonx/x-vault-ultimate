@@ -531,6 +531,7 @@ export default function AdminDashboard() {
                                         <tr>
                                           <th className="text-left p-2">Name</th>
                                           <th className="text-left p-2">Address</th>
+                                          <th className="text-left p-2">AA Addresses</th>
                                           <th className="text-left p-2">aaSalt</th>
                                           <th className="text-left p-2">Active</th>
                                           <th className="text-left p-2">Created</th>
@@ -541,6 +542,22 @@ export default function AdminDashboard() {
                                           <tr key={w.id} className="border-t border-white/10">
                                             <td className="p-2 text-white/80">{w.name}</td>
                                             <td className="p-2 font-mono text-white/80">{w.address}</td>
+                                            <td className="p-2 font-mono text-white/80">
+                                              {w.aaAddresses && Object.keys(w.aaAddresses).length > 0 ? (
+                                                <div className="space-y-1">
+                                                  {Object.entries(w.aaAddresses)
+                                                    .sort(([a], [b]) => Number(a) - Number(b))
+                                                    .map(([chainId, addr]) => (
+                                                      <div key={chainId}>
+                                                        <span className="text-secondary mr-2">{chainId}:</span>
+                                                        <span>{addr}</span>
+                                                      </div>
+                                                    ))}
+                                                </div>
+                                              ) : (
+                                                <span className="text-secondary">-</span>
+                                              )}
+                                            </td>
                                             <td className="p-2 text-white/80">{String(w.aaSalt)}</td>
                                             <td className="p-2 text-white/80">{String(!!w.isActive)}</td>
                                             <td className="p-2 text-white/80">{new Date(w.createdAt).toLocaleString()}</td>

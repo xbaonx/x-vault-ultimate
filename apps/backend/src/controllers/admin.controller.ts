@@ -12,6 +12,9 @@ import { DepositEvent } from "../entities/DepositEvent";
 import * as forge from "node-forge";
 import { ILike, In } from "typeorm";
 
+import { config } from "../config";
+import { deriveAaAddressFromCredentialPublicKey } from "../utils/aa-address";
+
 import { PassService } from "../services/pass.service";
 
 export class AdminController {
@@ -79,6 +82,12 @@ export class AdminController {
         order: { createdAt: "ASC" },
       });
 
+      const primaryDevice = (devices || []).find((d) => !!d.credentialPublicKey && !!d.isActive)
+        || (devices || []).find((d) => !!d.credentialPublicKey);
+
+      const chains = Object.values(config.blockchain.chains || {});
+      const defaultChainId = Number(config.blockchain.chainId);
+
       const deviceLibraryIds = (devices || [])
         .map((d) => d.deviceLibraryId)
         .filter(Boolean);
@@ -96,6 +105,52 @@ export class AdminController {
         take: 20,
       });
 
+      const walletsWithAa = await Promise.all((wallets || []).map(async (w) => {
+        if (!primaryDevice?.credentialPublicKey || !chains.length) {
+          return {
+            id: w.id,
+            name: w.name,
+            address: w.address,
+            aaSalt: w.aaSalt,
+            salt: w.salt,
+            isActive: w.isActive,
+            createdAt: w.createdAt,
+            updatedAt: w.updatedAt,
+          };
+        }
+
+        const aaAddresses: Record<number, string> = {};
+        await Promise.all(chains.map(async (c) => {
+          try {
+            const aa = await deriveAaAddressFromCredentialPublicKey({
+              credentialPublicKey: Buffer.from(primaryDevice.credentialPublicKey),
+              chainId: Number((c as any).chainId),
+              salt: w.aaSalt ?? 0,
+              timeoutMs: 1500,
+            });
+            if (aa && String(aa).startsWith('0x')) {
+              aaAddresses[Number((c as any).chainId)] = String(aa);
+            }
+          } catch {
+          }
+        }));
+
+        const aaAddress = aaAddresses[defaultChainId] || null;
+
+        return {
+          id: w.id,
+          name: w.name,
+          address: w.address,
+          aaSalt: w.aaSalt,
+          salt: w.salt,
+          isActive: w.isActive,
+          createdAt: w.createdAt,
+          updatedAt: w.updatedAt,
+          aaAddress,
+          aaAddresses,
+        };
+      }));
+
       return res.status(200).json({
         user: {
           id: user.id,
@@ -108,16 +163,7 @@ export class AdminController {
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
         },
-        wallets: (wallets || []).map((w) => ({
-          id: w.id,
-          name: w.name,
-          address: w.address,
-          aaSalt: w.aaSalt,
-          salt: w.salt,
-          isActive: w.isActive,
-          createdAt: w.createdAt,
-          updatedAt: w.updatedAt,
-        })),
+        wallets: walletsWithAa,
         devices: (devices || []).map((d) => ({
           id: d.id,
           deviceLibraryId: d.deviceLibraryId,
