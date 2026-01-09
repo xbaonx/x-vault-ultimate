@@ -47,6 +47,12 @@ services:
         value: Zaur Wallet
       - key: REQUIRE_UV
         value: 1
+      - key: GAS_MARKUP_BPS
+        value: 12000
+      - key: PAYMASTER_POSTOP_GAS
+        value: 15000
+      - key: FEE_MAX_MULTIPLIER_BPS
+        value: 12000
       - key: ENTRY_POINT_ADDRESS_8453
         value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
       - key: ENTRY_POINT_ADDRESS_1

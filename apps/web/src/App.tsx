@@ -17,6 +17,11 @@ function App() {
         <Route path="/app/send" element={<Send />} />
         <Route path="/app/receive" element={<Receive />} />
         <Route path="/app/swap" element={<Swap />} />
+
+        {/* Route aliases (some passes/links may use these paths) */}
+        <Route path="/send" element={<Send />} />
+        <Route path="/receive" element={<Receive />} />
+        <Route path="/swap" element={<Swap />} />
       </Routes>
     </Router>
   );

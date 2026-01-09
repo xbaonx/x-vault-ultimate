@@ -332,27 +332,84 @@ export default function Send() {
             {fee && (
                 <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
                     <div className="text-sm font-semibold">Fee Breakdown</div>
-                    <div className="text-xs text-secondary flex justify-between">
-                        <span>Gas fee ({Number(fee.gasFeeBps ?? 0) / 100}%)</span>
-                        <span className="font-mono">
-                            {ethers.formatUnits(fee.gasFee, selectedAsset?.decimals || 18)}{' '}{fee.assetSymbol}
-                        </span>
-                    </div>
-                    <div className="text-xs text-secondary flex justify-between">
-                        <span>Platform fee ({Number(fee.platformFeeBps ?? 0) / 100}%)</span>
-                        <span className="font-mono">
-                            {ethers.formatUnits(fee.platformFee, selectedAsset?.decimals || 18)}{' '}{fee.assetSymbol}
-                        </span>
-                    </div>
-                    <div className="text-xs text-secondary flex justify-between">
-                        <span>Recipient receives (net)</span>
-                        <span className="font-mono">
-                            {ethers.formatUnits(fee.netAmount, selectedAsset?.decimals || 18)}{' '}{fee.assetSymbol}
-                        </span>
-                    </div>
-                    <div className="text-xs text-secondary">
-                        Platform fee mode: {fee.platformFeeChargedOnChain ? 'on-chain' : fee.platformFeeChargedUsdZ ? 'USDZ' : 'n/a'}
-                    </div>
+                    {String(fee?.model || '') === 'gas_estimate_v1' ? (
+                      <>
+                        <div className="text-xs text-secondary flex justify-between">
+                          <span>Gas</span>
+                          <span className="font-mono">Sponsored by Paymaster</span>
+                        </div>
+
+                        <div className="text-xs text-secondary flex justify-between">
+                          <span>Gas reimbursement (estimate)</span>
+                          <span className="font-mono">
+                            {ethers.formatEther(BigInt(String(fee.gasReimbursementWei || '0')))}{' '}{fee.nativeSymbol || selectedAsset?.networkSymbol || 'NATIVE'}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-secondary flex justify-between">
+                          <span>Platform fee (2x gas)</span>
+                          <span className="font-mono">
+                            {ethers.formatEther(BigInt(String(fee.platformFeeWeiTotal || '0')))}{' '}{fee.nativeSymbol || selectedAsset?.networkSymbol || 'NATIVE'}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-secondary flex justify-between">
+                          <span>Paid with USDZ</span>
+                          <span className="font-mono">{Number(fee.platformFeeUsdChargedUsdZ || 0).toFixed(2)} USDZ</span>
+                        </div>
+
+                        <div className="text-xs text-secondary flex justify-between">
+                          <span>Platform fee paid on-chain</span>
+                          <span className="font-mono">
+                            {ethers.formatEther(BigInt(String(fee.platformFeeWeiOnChain || '0')))}{' '}{fee.nativeSymbol || selectedAsset?.networkSymbol || 'NATIVE'}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-secondary flex justify-between">
+                          <span>On-chain fee charged</span>
+                          <span className="font-mono">
+                            {fee?.chargedOnChain?.asset === 'token'
+                              ? `${ethers.formatUnits(BigInt(String(fee?.chargedOnChain?.amount || '0')), Number(fee?.chargedOnChain?.decimals ?? selectedAsset?.decimals ?? 18))} ${fee?.chargedOnChain?.symbol || fee.assetSymbol}`
+                              : `${ethers.formatEther(BigInt(String(fee?.chargedOnChain?.amount || '0')))} ${fee?.chargedOnChain?.symbol || fee.nativeSymbol || 'NATIVE'}`}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-secondary flex justify-between">
+                          <span>Recipient receives</span>
+                          <span className="font-mono">
+                            {ethers.formatUnits(BigInt(String(fee.recipientReceives || '0')), selectedAsset?.decimals || 18)}{' '}{fee.assetSymbol}
+                          </span>
+                        </div>
+
+                        {fee?.note ? (
+                          <div className="text-xs text-secondary">{String(fee.note)}</div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-xs text-secondary flex justify-between">
+                            <span>Gas fee ({Number(fee.gasFeeBps ?? 0) / 100}%)</span>
+                            <span className="font-mono">
+                                {ethers.formatUnits(fee.gasFee, selectedAsset?.decimals || 18)}{' '}{fee.assetSymbol}
+                            </span>
+                        </div>
+                        <div className="text-xs text-secondary flex justify-between">
+                            <span>Platform fee ({Number(fee.platformFeeBps ?? 0) / 100}%)</span>
+                            <span className="font-mono">
+                                {ethers.formatUnits(fee.platformFee, selectedAsset?.decimals || 18)}{' '}{fee.assetSymbol}
+                            </span>
+                        </div>
+                        <div className="text-xs text-secondary flex justify-between">
+                            <span>Recipient receives (net)</span>
+                            <span className="font-mono">
+                                {ethers.formatUnits(fee.netAmount, selectedAsset?.decimals || 18)}{' '}{fee.assetSymbol}
+                            </span>
+                        </div>
+                        <div className="text-xs text-secondary">
+                            Platform fee mode: {fee.platformFeeChargedOnChain ? 'on-chain' : fee.platformFeeChargedUsdZ ? 'USDZ' : 'n/a'}
+                        </div>
+                      </>
+                    )}
                 </div>
             )}
 

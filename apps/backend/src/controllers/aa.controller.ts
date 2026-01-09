@@ -38,9 +38,9 @@ const ERC1967_IMPLEMENTATION_SLOT =
   'function transfer(address to, uint256 amount) returns (bool)'
  ];
 
- const GAS_FEE_BPS = 30n; // 0.3%
- const PLATFORM_FEE_BPS = 50n; // 0.5%
+ const GAS_MARKUP_BPS = BigInt(String(process.env.GAS_MARKUP_BPS || '12000').trim());
  const BPS_DENOM = 10_000n;
+ const PAYMASTER_POSTOP_GAS = BigInt(String(process.env.PAYMASTER_POSTOP_GAS || '15000').trim());
 
 function base64UrlEncode(buf: Buffer): string {
   return buf
@@ -76,6 +76,12 @@ function parseDerEcdsaSignature(signatureDer: Buffer): { r: bigint; s: bigint } 
   const s = BigInt('0x' + sBytes.toString('hex'));
 
   return { r, s };
+}
+
+function pow10(exp: number): bigint {
+  let out = 1n;
+  for (let i = 0; i < exp; i++) out *= 10n;
+  return out;
 }
 
 function decodeP256PublicKeyXY(cosePublicKey: Buffer): { x: bigint; y: bigint } {
@@ -269,15 +275,24 @@ export class AaController {
       const decimals = Number(transaction.decimals || 18);
 
       const feeBreakdown: any = {
+        model: 'gas_estimate_v1',
         assetSymbol,
-        gasFeeBps: Number(GAS_FEE_BPS),
-        platformFeeBps: Number(PLATFORM_FEE_BPS),
-        gasFee: '0',
-        platformFee: '0',
-        platformFeeChargedOnChain: false,
-        platformFeeChargedUsdZ: false,
-        netAmount: '0',
-        treasury: treasuryAddress || ''
+        treasury: treasuryAddress || '',
+        nativeSymbol: chainConfig.symbol,
+        gasSponsored: true,
+        gasMarkupBps: Number(GAS_MARKUP_BPS),
+        gasReimbursementWei: '0',
+        platformFeeWeiTotal: '0',
+        platformFeeUsdTotal: 0,
+        platformFeeUsdChargedUsdZ: 0,
+        platformFeeUsdRemaining: 0,
+        platformFeeWeiOnChain: '0',
+        chargedOnChain: {
+          asset: 'native',
+          symbol: chainConfig.symbol,
+          amount: '0',
+        },
+        recipientReceives: '0',
       };
 
       if (!treasuryAddress || !ethers.isAddress(treasuryAddress)) {
@@ -290,40 +305,73 @@ export class AaController {
       let batchValue: any[];
       let batchFunc: any[];
 
+      const callGasLimit = BigInt(transaction.callGasLimit || 800_000);
+      const verificationGasLimit = 1_000_000n;
+      const preVerificationGas = 60_000n;
+      let maxFeePerGas = BigInt(transaction.maxFeePerGas || 0);
+      let maxPriorityFeePerGas = BigInt(transaction.maxPriorityFeePerGas || 0);
+      if (maxFeePerGas === 0n || maxPriorityFeePerGas === 0n) {
+        const fee = await provider.getFeeData();
+        maxFeePerGas = fee.maxFeePerGas ?? fee.gasPrice ?? 0n;
+        maxPriorityFeePerGas = fee.maxPriorityFeePerGas ?? 0n;
+      }
+
+      const gasUnits = callGasLimit + verificationGasLimit + preVerificationGas + PAYMASTER_POSTOP_GAS;
+      const gasCostWei = gasUnits * maxFeePerGas;
+      const gasReimbursementWei = (gasCostWei * GAS_MARKUP_BPS) / BPS_DENOM;
+      const platformFeeWeiTotal = gasReimbursementWei * 2n;
+
+      const nativeUsdPrice = await TokenPriceService.getUsdPrice({
+        chainId: chainConfig.chainId,
+        address: TokenPriceService.nativeAddressKey(),
+      });
+
+      const PRICE_SCALE = 1_000_000_000n;
+      const WEI_PER_ETH = 1_000_000_000_000_000_000n;
+      const nativeUsdPriceScaled = nativeUsdPrice > 0 ? BigInt(Math.round(nativeUsdPrice * Number(PRICE_SCALE))) : 0n;
+      const usdzBalanceScaled = usdzBalance > 0 ? BigInt(Math.floor(usdzBalance * Number(PRICE_SCALE))) : 0n;
+
+      const platformFeeUsdTotalScaled = nativeUsdPriceScaled > 0n
+        ? (platformFeeWeiTotal * nativeUsdPriceScaled) / WEI_PER_ETH
+        : 0n;
+
+      const platformFeeUsdChargedUsdZScaled = platformFeeUsdTotalScaled > 0n
+        ? (usdzBalanceScaled < platformFeeUsdTotalScaled ? usdzBalanceScaled : platformFeeUsdTotalScaled)
+        : 0n;
+
+      const platformFeeUsdRemainingScaled = platformFeeUsdTotalScaled - platformFeeUsdChargedUsdZScaled;
+
+      const platformFeeWeiOnChain = (nativeUsdPriceScaled > 0n && platformFeeUsdRemainingScaled > 0n)
+        ? ((platformFeeUsdRemainingScaled * WEI_PER_ETH + nativeUsdPriceScaled - 1n) / nativeUsdPriceScaled)
+        : (nativeUsdPriceScaled > 0n ? 0n : platformFeeWeiTotal);
+
+      const platformFeeUsdTotal = Number(platformFeeUsdTotalScaled) / Number(PRICE_SCALE);
+      const platformFeeUsdChargedUsdZ = Number(platformFeeUsdChargedUsdZScaled) / Number(PRICE_SCALE);
+      const platformFeeUsdRemaining = Number(platformFeeUsdRemainingScaled) / Number(PRICE_SCALE);
+
+      const totalOnChainNativeEquivalentWei = gasReimbursementWei + platformFeeWeiOnChain;
+
+      feeBreakdown.gasReimbursementWei = gasReimbursementWei.toString();
+      feeBreakdown.platformFeeWeiTotal = platformFeeWeiTotal.toString();
+      feeBreakdown.platformFeeUsdTotal = platformFeeUsdTotal;
+      feeBreakdown.platformFeeUsdChargedUsdZ = platformFeeUsdChargedUsdZ;
+      feeBreakdown.platformFeeUsdRemaining = platformFeeUsdRemaining;
+      feeBreakdown.platformFeeWeiOnChain = platformFeeWeiOnChain.toString();
+
       if (isNative) {
         const grossWei = BigInt(transaction.value || 0);
-        const gasFeeWei = (grossWei * GAS_FEE_BPS) / BPS_DENOM;
-        const platformFeeWei = (grossWei * PLATFORM_FEE_BPS) / BPS_DENOM;
-
-        let platformFeeOnChainWei = 0n;
-        if (platformFeeWei > 0n) {
-          const price = await TokenPriceService.getUsdPrice({
-            chainId: chainConfig.chainId,
-            address: TokenPriceService.nativeAddressKey(),
-          });
-          const platformFeeUsd = parseFloat(ethers.formatEther(platformFeeWei)) * (price || 0);
-          feeBreakdown.platformFeeUsd = platformFeeUsd;
-          if (platformFeeUsd > 0 && usdzBalance >= platformFeeUsd) {
-            feeBreakdown.platformFeeChargedUsdZ = true;
-          } else {
-            platformFeeOnChainWei = platformFeeWei;
-            feeBreakdown.platformFeeChargedOnChain = true;
-          }
-        }
-
-        const feeWei = gasFeeWei + platformFeeOnChainWei;
-
-        const netWei = grossWei - gasFeeWei - platformFeeOnChainWei;
+        const feeWei = totalOnChainNativeEquivalentWei;
+        const netWei = grossWei - feeWei;
         if (netWei < 0n) {
           return res.status(400).json({ error: 'Amount too small for fees' });
         }
 
-        feeBreakdown.gasFee = gasFeeWei.toString();
-        feeBreakdown.platformFee = platformFeeWei.toString();
-        feeBreakdown.netAmount = netWei.toString();
-        if (!feeBreakdown.platformFeeChargedUsdZ) {
-          feeBreakdown.platformFeeChargedOnChain = platformFeeWei > 0n;
-        }
+        feeBreakdown.chargedOnChain = {
+          asset: 'native',
+          symbol: chainConfig.symbol,
+          amount: feeWei.toString(),
+        };
+        feeBreakdown.recipientReceives = netWei.toString();
 
         batchDest = [transaction.to, treasuryAddress];
         batchValue = [netWei, feeWei];
@@ -343,49 +391,66 @@ export class AaController {
         } else {
           const recipient = decoded.args[0] as string;
           const gross = BigInt(decoded.args[1]);
-          const gasFee = (gross * GAS_FEE_BPS) / BPS_DENOM;
-          const platformFee = (gross * PLATFORM_FEE_BPS) / BPS_DENOM;
+          const tokenAddressLower = String(transaction.to || '').trim().toLowerCase();
+          const tokenUsdPrice = (nativeUsdPrice > 0 && tokenAddressLower && tokenAddressLower.startsWith('0x'))
+            ? await TokenPriceService.getUsdPrice({ chainId: chainConfig.chainId, address: tokenAddressLower })
+            : 0;
 
-          let platformFeeOnChain = 0n;
-          if (platformFee > 0n) {
-            const tokenAmount = Number(ethers.formatUnits(platformFee, decimals));
-            const tokenAddress = String(transaction.to || '').trim().toLowerCase();
-            const price = tokenAddress && tokenAddress.startsWith('0x')
-              ? await TokenPriceService.getUsdPrice({ chainId: chainConfig.chainId, address: tokenAddress })
-              : 0;
-            const platformFeeUsd = tokenAmount * (price || 0);
-            feeBreakdown.platformFeeUsd = platformFeeUsd;
-            if (platformFeeUsd > 0 && usdzBalance >= platformFeeUsd) {
-              feeBreakdown.platformFeeChargedUsdZ = true;
-            } else {
-              platformFeeOnChain = platformFee;
-              feeBreakdown.platformFeeChargedOnChain = true;
+          if (nativeUsdPrice > 0 && tokenUsdPrice > 0) {
+            const tokenUsdPriceScaled = BigInt(Math.round(tokenUsdPrice * Number(PRICE_SCALE)));
+            const totalOnChainFeeUsdScaled = (totalOnChainNativeEquivalentWei * nativeUsdPriceScaled) / WEI_PER_ETH;
+            const scaleToken = pow10(decimals);
+            const feeToken = tokenUsdPriceScaled > 0n
+              ? ((totalOnChainFeeUsdScaled * scaleToken + tokenUsdPriceScaled - 1n) / tokenUsdPriceScaled)
+              : 0n;
+            const net = gross - feeToken;
+            if (net < 0n) {
+              return res.status(400).json({ error: 'Amount too small for fees' });
             }
+
+            feeBreakdown.chargedOnChain = {
+              asset: 'token',
+              symbol: assetSymbol,
+              tokenAddress: tokenAddressLower,
+              decimals,
+              amount: feeToken.toString(),
+            };
+            feeBreakdown.recipientReceives = net.toString();
+
+            const tokenAddress = transaction.to;
+            const transferNet = erc20.encodeFunctionData('transfer', [recipient, net]);
+            const transferFee = erc20.encodeFunctionData('transfer', [treasuryAddress, feeToken]);
+
+            batchDest = [tokenAddress, tokenAddress];
+            batchValue = [0n, 0n];
+            batchFunc = [transferNet, transferFee];
+          } else {
+            const feeWei = totalOnChainNativeEquivalentWei;
+            const balanceWei = await provider.getBalance(sender);
+            if (balanceWei < feeWei) {
+              return res.status(402).json({
+                error: `Insufficient ${chainConfig.symbol} balance to cover fees`,
+                requiredWei: feeWei.toString(),
+                balanceWei: balanceWei.toString(),
+                symbol: chainConfig.symbol,
+              });
+            }
+
+            feeBreakdown.note = 'Token has no USD price feed; fees charged in native asset.';
+            feeBreakdown.chargedOnChain = {
+              asset: 'native',
+              symbol: chainConfig.symbol,
+              amount: feeWei.toString(),
+            };
+            feeBreakdown.recipientReceives = gross.toString();
+
+            const tokenAddress = transaction.to;
+            const transferGross = erc20.encodeFunctionData('transfer', [recipient, gross]);
+
+            batchDest = [tokenAddress, treasuryAddress];
+            batchValue = [0n, feeWei];
+            batchFunc = [transferGross, '0x'];
           }
-
-          const fee = gasFee + platformFeeOnChain;
-
-          const net = gross - gasFee - platformFeeOnChain;
-          if (net < 0n) {
-            return res.status(400).json({ error: 'Amount too small for fees' });
-          }
-
-          feeBreakdown.gasFee = gasFee.toString();
-          feeBreakdown.platformFee = platformFee.toString();
-          feeBreakdown.netAmount = net.toString();
-
-          if (!feeBreakdown.platformFeeChargedUsdZ) {
-            feeBreakdown.platformFeeChargedOnChain = platformFeeOnChain > 0n;
-          }
-
-          const onChainFee = fee;
-          const tokenAddress = transaction.to;
-          const transferNet = erc20.encodeFunctionData('transfer', [recipient, net]);
-          const transferFee = erc20.encodeFunctionData('transfer', [treasuryAddress, onChainFee]);
-
-          batchDest = [tokenAddress, tokenAddress];
-          batchValue = [0n, 0n];
-          batchFunc = [transferNet, transferFee];
         }
       }
 
@@ -414,21 +479,14 @@ export class AaController {
         nonce,
         initCode,
         callData,
-        callGasLimit: BigInt(transaction.callGasLimit || 800_000),
-        verificationGasLimit: 1_000_000n,
-        preVerificationGas: 60_000n,
-        maxFeePerGas: BigInt(transaction.maxFeePerGas || 0),
-        maxPriorityFeePerGas: BigInt(transaction.maxPriorityFeePerGas || 0),
+        callGasLimit,
+        verificationGasLimit,
+        preVerificationGas,
+        maxFeePerGas,
+        maxPriorityFeePerGas,
         paymasterAndData: '0x',
         signature: '0x'
       };
-
-      // If user didn't specify fees, estimate basic EIP-1559
-      if (userOp.maxFeePerGas === 0n || userOp.maxPriorityFeePerGas === 0n) {
-        const fee = await provider.getFeeData();
-        userOp.maxFeePerGas = fee.maxFeePerGas ?? 0n;
-        userOp.maxPriorityFeePerGas = fee.maxPriorityFeePerGas ?? 0n;
-      }
 
       // Attach paymaster sponsorship BEFORE computing userOpHash/challenge.
       // userOpHash includes hash(paymasterAndData), so paymasterAndData must be final here.
@@ -645,19 +703,18 @@ export class AaController {
             .getOne();
 
           const fee = (quoteTx as any)?.txData?.fee;
-          const platformFeeUsd = Number(fee?.platformFeeUsd || 0);
-          const wantsUsdZ = Boolean(fee?.platformFeeChargedUsdZ);
-          if (wantsUsdZ && platformFeeUsd > 0) {
+          const platformFeeUsdChargedUsdZ = Number(fee?.platformFeeUsdChargedUsdZ || 0);
+          if (platformFeeUsdChargedUsdZ > 0) {
             const currentUsdZ = Number(userEntity.usdzBalance || 0);
-            if (currentUsdZ < platformFeeUsd) {
+            if (currentUsdZ < platformFeeUsdChargedUsdZ) {
               return res.status(402).json({
                 error: 'Insufficient USDZ for platform fee; re-quote required',
-                requiredUsd: platformFeeUsd,
+                requiredUsd: platformFeeUsdChargedUsdZ,
                 usdzBalance: currentUsdZ,
               });
             }
 
-            userEntity.usdzBalance = Math.max(0, currentUsdZ - platformFeeUsd);
+            userEntity.usdzBalance = Math.max(0, currentUsdZ - platformFeeUsdChargedUsdZ);
             await AppDataSource.getRepository(User).save(userEntity);
           }
         } catch {

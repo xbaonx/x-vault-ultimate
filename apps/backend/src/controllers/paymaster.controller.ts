@@ -8,12 +8,16 @@ import { User } from '../entities/User';
 import { Device } from '../entities/Device';
 import { Transaction } from '../entities/Transaction';
 import { ProviderService } from '../services/provider.service';
+import { TokenPriceService } from '../services/token-price.service';
 
 import bcrypt from 'bcryptjs';
 
- const GAS_FEE_BPS = 30n; // 0.3%
- const PLATFORM_FEE_BPS = 50n; // 0.5%
+ const GAS_MARKUP_BPS = BigInt(String(process.env.GAS_MARKUP_BPS || '12000').trim());
+ const FEE_MAX_MULTIPLIER_BPS = BigInt(String(process.env.FEE_MAX_MULTIPLIER_BPS || '12000').trim());
  const BPS_DENOM = 10_000n;
+ const PAYMASTER_POSTOP_GAS = BigInt(String(process.env.PAYMASTER_POSTOP_GAS || '15000').trim());
+ const PRICE_SCALE = 1_000_000_000n;
+ const WEI_PER_ETH = 1_000_000_000_000_000_000n;
 
  const XACCOUNT_IFACE = new ethers.Interface([
    'function execute(address dest, uint256 value, bytes func)',
@@ -22,6 +26,10 @@ import bcrypt from 'bcryptjs';
 
  const ERC20_IFACE = new ethers.Interface([
    'function transfer(address to, uint256 amount) returns (bool)'
+ ]);
+
+ const ERC20_DECIMALS_IFACE = new ethers.Interface([
+  'function decimals() view returns (uint8)'
  ]);
 
  const XFACTORY_ABI = [
@@ -84,31 +92,37 @@ export class PaymasterController {
   private static parseFeeFromXAccountCallData(callData: string, treasury: string): {
     feeAmount: bigint;
     grossAmount: bigint;
+    isNativeFee: boolean;
+    firstDest: string;
+    nonTreasuryNativeValue: bigint;
   } {
     if (!treasury || !ethers.isAddress(treasury)) {
-      return { feeAmount: 0n, grossAmount: 0n };
+      return { feeAmount: 0n, grossAmount: 0n, isNativeFee: false, firstDest: '', nonTreasuryNativeValue: 0n };
     }
 
     try {
       const decoded = XACCOUNT_IFACE.parseTransaction({ data: callData });
-      if (!decoded) return { feeAmount: 0n, grossAmount: 0n };
+      if (!decoded) return { feeAmount: 0n, grossAmount: 0n, isNativeFee: false, firstDest: '', nonTreasuryNativeValue: 0n };
 
       if (decoded.name === 'execute') {
         // No structured fee recipient, can't reliably enforce.
-        return { feeAmount: 0n, grossAmount: 0n };
+        return { feeAmount: 0n, grossAmount: 0n, isNativeFee: false, firstDest: '', nonTreasuryNativeValue: 0n };
       }
 
       if (decoded.name !== 'executeBatch') {
-        return { feeAmount: 0n, grossAmount: 0n };
+        return { feeAmount: 0n, grossAmount: 0n, isNativeFee: false, firstDest: '', nonTreasuryNativeValue: 0n };
       }
 
       const dests = decoded.args[0] as string[];
       const values = decoded.args[1] as bigint[];
       const funcs = decoded.args[2] as string[];
 
+      const firstDest = dests && dests.length > 0 ? String(dests[0] || '') : '';
+
       // Native: fee is value to treasury
       let nativeFee = 0n;
       let nativeNet = 0n;
+      let nonTreasuryNativeValue = 0n;
       for (let i = 0; i < dests.length; i++) {
         const d = String(dests[i]).toLowerCase();
         const v = BigInt(values[i] ?? 0);
@@ -116,12 +130,13 @@ export class PaymasterController {
           nativeFee += v;
         } else {
           nativeNet += v;
+          nonTreasuryNativeValue += v;
         }
       }
 
       if (nativeFee > 0n || nativeNet > 0n) {
         const gross = nativeNet + nativeFee;
-        return { feeAmount: nativeFee, grossAmount: gross };
+        return { feeAmount: nativeFee, grossAmount: gross, isNativeFee: true, firstDest, nonTreasuryNativeValue };
       }
 
       // ERC20: fee is transfer(to=treasury)
@@ -141,10 +156,21 @@ export class PaymasterController {
       }
 
       const gross = tokenNet + tokenFee;
-      return { feeAmount: tokenFee, grossAmount: gross };
+      return { feeAmount: tokenFee, grossAmount: gross, isNativeFee: false, firstDest, nonTreasuryNativeValue: 0n };
     } catch {
-      return { feeAmount: 0n, grossAmount: 0n };
+      return { feeAmount: 0n, grossAmount: 0n, isNativeFee: false, firstDest: '', nonTreasuryNativeValue: 0n };
     }
+  }
+
+  private static async getTokenDecimals(provider: ethers.Provider, tokenAddress: string): Promise<number> {
+    try {
+      const contract = new ethers.Contract(tokenAddress, ERC20_DECIMALS_IFACE, provider);
+      const d = await contract.decimals();
+      const n = Number(d);
+      if (Number.isFinite(n) && n >= 0 && n <= 255) return n;
+    } catch {
+    }
+    return 18;
   }
 
   static async sponsorUserOperationInternal(params: {
@@ -232,28 +258,108 @@ export class PaymasterController {
       };
     }
 
-    const { value } = PaymasterController.decodeCallData(userOp.callData);
-
     // Require fee payment embedded in callData (executeBatch).
-    const { feeAmount, grossAmount } = PaymasterController.parseFeeFromXAccountCallData(userOp.callData, treasuryAddress);
-    if (grossAmount <= 0n) {
+    const { feeAmount, grossAmount, isNativeFee, firstDest, nonTreasuryNativeValue } =
+      PaymasterController.parseFeeFromXAccountCallData(userOp.callData, treasuryAddress);
+    if (grossAmount <= 0n || feeAmount <= 0n) {
       return {
         statusCode: 200,
         body: { paymasterAndData: '0x', message: 'Missing fee payment; sponsorship declined' }
       };
     }
 
-    const minFee = (grossAmount * GAS_FEE_BPS) / BPS_DENOM;
-    const maxFee = (grossAmount * (GAS_FEE_BPS + PLATFORM_FEE_BPS)) / BPS_DENOM;
-    if (feeAmount < minFee || feeAmount > maxFee) {
+    const callGasLimit = BigInt(userOp.callGasLimit || 0);
+    const verificationGasLimit = BigInt(userOp.verificationGasLimit || 0);
+    const preVerificationGas = BigInt(userOp.preVerificationGas || 0);
+    const maxFeePerGas = BigInt(userOp.maxFeePerGas || 0);
+    if (callGasLimit <= 0n || verificationGasLimit <= 0n || preVerificationGas <= 0n || maxFeePerGas <= 0n) {
+      return {
+        statusCode: 200,
+        body: { paymasterAndData: '0x', message: 'Invalid gas fields; sponsorship declined' }
+      };
+    }
+
+    const gasUnits = callGasLimit + verificationGasLimit + preVerificationGas + PAYMASTER_POSTOP_GAS;
+    const gasCostWei = gasUnits * maxFeePerGas;
+    const gasReimbursementWei = (gasCostWei * GAS_MARKUP_BPS) / BPS_DENOM;
+    const platformFeeWeiTotal = gasReimbursementWei * 2n;
+
+    const nativeUsdPrice = await TokenPriceService.getUsdPrice({
+      chainId: chainConfig.chainId,
+      address: TokenPriceService.nativeAddressKey(),
+    });
+    const nativeUsdPriceScaled = nativeUsdPrice > 0 ? BigInt(Math.round(nativeUsdPrice * Number(PRICE_SCALE))) : 0n;
+    const usdzBalanceScaled = Number(user.usdzBalance || 0) > 0
+      ? BigInt(Math.floor(Number(user.usdzBalance || 0) * Number(PRICE_SCALE)))
+      : 0n;
+
+    const platformFeeUsdTotalScaled = nativeUsdPriceScaled > 0n
+      ? (platformFeeWeiTotal * nativeUsdPriceScaled) / WEI_PER_ETH
+      : 0n;
+
+    const platformFeeUsdChargedUsdZScaled = platformFeeUsdTotalScaled > 0n
+      ? (usdzBalanceScaled < platformFeeUsdTotalScaled ? usdzBalanceScaled : platformFeeUsdTotalScaled)
+      : 0n;
+
+    const platformFeeUsdRemainingScaled = platformFeeUsdTotalScaled - platformFeeUsdChargedUsdZScaled;
+
+    const platformFeeWeiOnChain = (nativeUsdPriceScaled > 0n && platformFeeUsdRemainingScaled > 0n)
+      ? ((platformFeeUsdRemainingScaled * WEI_PER_ETH + nativeUsdPriceScaled - 1n) / nativeUsdPriceScaled)
+      : (nativeUsdPriceScaled > 0n ? 0n : platformFeeWeiTotal);
+
+    const totalOnChainNativeEquivalentWei = gasReimbursementWei + platformFeeWeiOnChain;
+
+    let expectedFee = 0n;
+    if (isNativeFee) {
+      expectedFee = totalOnChainNativeEquivalentWei;
+    } else {
+      const tokenAddress = String(firstDest || '').trim();
+      if (!tokenAddress || !ethers.isAddress(tokenAddress)) {
+        return {
+          statusCode: 200,
+          body: { paymasterAndData: '0x', message: 'Invalid token destination; sponsorship declined' }
+        };
+      }
+
+      if (nativeUsdPriceScaled <= 0n) {
+        return {
+          statusCode: 200,
+          body: { paymasterAndData: '0x', message: 'Missing native USD price; sponsorship declined' }
+        };
+      }
+
+      const tokenAddressLower = tokenAddress.toLowerCase();
+      const tokenUsdPrice = await TokenPriceService.getUsdPrice({ chainId: chainConfig.chainId, address: tokenAddressLower });
+      const tokenUsdPriceScaled = tokenUsdPrice > 0 ? BigInt(Math.round(tokenUsdPrice * Number(PRICE_SCALE))) : 0n;
+      if (tokenUsdPriceScaled <= 0n) {
+        return {
+          statusCode: 200,
+          body: { paymasterAndData: '0x', message: 'Missing token USD price; sponsorship declined' }
+        };
+      }
+
+      const provider = ProviderService.getProvider(chainConfig.chainId);
+      const decimals = await PaymasterController.getTokenDecimals(provider, tokenAddress);
+      const scaleToken = (() => {
+        let out = 1n;
+        for (let i = 0; i < decimals; i++) out *= 10n;
+        return out;
+      })();
+
+      const totalOnChainFeeUsdScaled = (totalOnChainNativeEquivalentWei * nativeUsdPriceScaled) / WEI_PER_ETH;
+      expectedFee = ((totalOnChainFeeUsdScaled * scaleToken + tokenUsdPriceScaled - 1n) / tokenUsdPriceScaled);
+    }
+
+    const maxFee = (expectedFee * FEE_MAX_MULTIPLIER_BPS) / BPS_DENOM;
+    if (feeAmount < expectedFee || feeAmount > maxFee) {
       return {
         statusCode: 200,
         body: { paymasterAndData: '0x', message: 'Fee payment invalid; sponsorship declined' }
       };
     }
 
-    // Optional security: require spending pin for native transfers above threshold.
-    if (value > 0n && (user.spendingPinHash || '').length > 0) {
+    // Optional security: require spending pin for native transfers above threshold (exclude pure-fee native to treasury).
+    if (nonTreasuryNativeValue > 0n && (user.spendingPinHash || '').length > 0) {
       if (!spendingPin) {
         return { statusCode: 401, body: { error: 'Spending PIN required.' } };
       }
