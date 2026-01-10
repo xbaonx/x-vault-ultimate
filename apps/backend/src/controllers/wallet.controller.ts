@@ -59,6 +59,24 @@ function getPricesApiBaseUrl(apiKey: string): string {
   return `https://api.g.alchemy.com/prices/v1/${apiKey}`;
 }
 
+function getNetworkEnumByChainId(chainId: number): string | null {
+  const map: Record<number, string> = {
+    1: 'eth-mainnet',
+    10: 'opt-mainnet',
+    137: 'polygon-mainnet',
+    42161: 'arb-mainnet',
+    8453: 'base-mainnet',
+    56: 'bsc-mainnet',
+    43114: 'avax-mainnet',
+    59144: 'linea-mainnet',
+  };
+
+  const envOverride = String(process.env[`ALCHEMY_PRICES_NETWORK_${chainId}`] || '').trim();
+  if (envOverride) return envOverride;
+
+  return map[chainId] || null;
+}
+
 function getNativeSymbolForPricing(chainId: number, displaySymbol: string): string {
   if (chainId === 137) return 'MATIC';
   return String(displaySymbol || '').trim().toUpperCase();
@@ -89,6 +107,52 @@ async function fetchNativeUsdPriceBySymbol(symbol: string): Promise<number> {
     return Number.isFinite(v) && v > 0 ? v : 0;
   } catch {
     return 0;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+async function fetchErc20UsdPricesByAddress(chainId: number, addresses: string[]): Promise<Record<string, number>> {
+  const apiKey = getAlchemyApiKey();
+  if (!apiKey) return {};
+
+  const network = getNetworkEnumByChainId(chainId);
+  if (!network) return {};
+
+  const baseUrl = getPricesApiBaseUrl(apiKey);
+  const out: Record<string, number> = {};
+
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), 6000);
+  try {
+    const url = `${baseUrl}/tokens/by-address`;
+    const body = {
+      addresses: (addresses || []).map((a) => ({ network, address: a })),
+    };
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) return {};
+
+    const json: any = await res.json();
+    const rows: any[] = Array.isArray(json?.data) ? json.data : [];
+    for (const r of rows) {
+      const addr = String(r?.address || '').trim().toLowerCase();
+      const priceRow = Array.isArray(r?.prices)
+        ? r.prices.find((p: any) => String(p?.currency || '').toUpperCase() === 'USD')
+        : null;
+      const v = priceRow?.value ? Number(priceRow.value) : NaN;
+      if (!addr || !addr.startsWith('0x') || !Number.isFinite(v) || v <= 0) continue;
+      out[addr] = v;
+    }
+    return out;
+  } catch {
+    return {};
   } finally {
     clearTimeout(id);
   }
@@ -603,6 +667,28 @@ export class WalletController {
                   chainId: chain.chainId,
                   addresses: addrList,
                 });
+
+                const missing = addrList.filter((a) => (pricesByAddr[a] || 0) <= 0);
+                if (missing.length) {
+                  for (let i = 0; i < missing.length; i += 25) {
+                    const batch = missing.slice(i, i + 25);
+                    const fetched = await fetchErc20UsdPricesByAddress(chain.chainId, batch);
+                    for (const [addr, priceAny] of Object.entries(fetched as Record<string, number>)) {
+                      const price = Number(priceAny);
+                      if (!Number.isFinite(price) || price <= 0) continue;
+                      try {
+                        await TokenPriceService.upsertUsdPrice({
+                          chainId: chain.chainId,
+                          address: addr,
+                          price,
+                          source: 'alchemy',
+                        });
+                      } catch {
+                      }
+                      pricesByAddr[addr] = price;
+                    }
+                  }
+                }
                 for (const t of discovered) {
                   const sym = String(t.symbol || '').toUpperCase();
                   if (!sym || sym === 'USDZ') continue;
@@ -632,6 +718,30 @@ export class WalletController {
                     chainId: chain.chainId,
                     addresses: tokens.map((t) => String(t.address || '').trim().toLowerCase()),
                   });
+
+                  const missing = tokens
+                    .map((t) => String(t.address || '').trim().toLowerCase())
+                    .filter((a) => (tokenPrices[a] || 0) <= 0);
+                  if (missing.length) {
+                    for (let i = 0; i < missing.length; i += 25) {
+                      const batch = missing.slice(i, i + 25);
+                      const fetched = await fetchErc20UsdPricesByAddress(chain.chainId, batch);
+                      for (const [addr, priceAny] of Object.entries(fetched as Record<string, number>)) {
+                        const price = Number(priceAny);
+                        if (!Number.isFinite(price) || price <= 0) continue;
+                        try {
+                          await TokenPriceService.upsertUsdPrice({
+                            chainId: chain.chainId,
+                            address: addr,
+                            price,
+                            source: 'alchemy',
+                          });
+                        } catch {
+                        }
+                        tokenPrices[addr] = price;
+                      }
+                    }
+                  }
                   await Promise.all(tokens.map(async (token) => {
                     try {
                       const contract = new ethers.Contract(token.address, ERC20_ABI, provider);
