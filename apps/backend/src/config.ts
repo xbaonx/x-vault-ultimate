@@ -12,6 +12,13 @@ dotenv.config();
    return undefined;
  }
 
+ function normalizePrivateKey(k: string | undefined): string {
+   const key = (k || '').trim();
+   if (!key) return '';
+   if (/^[0-9a-fA-F]{64}$/.test(key)) return `0x${key}`;
+   return key;
+ }
+
  function getAlchemyBundlerUrl(chainId: number): string | undefined {
    const apiKey = (process.env.ALCHEMY_API_KEY || '').trim();
    if (!apiKey) return undefined;
@@ -81,7 +88,7 @@ export const config = {
     entryPointAddress: process.env.ENTRY_POINT_ADDRESS || DEFAULT_ENTRY_POINT_ADDRESS,
     paymaster: {
       address: process.env.PAYMASTER_ADDRESS || '',
-      signingKey: process.env.PAYMASTER_SIGNING_KEY || '', // Private key for signing gas sponsorship
+      signingKey: normalizePrivateKey(process.env.PAYMASTER_SIGNING_KEY), // Private key for signing gas sponsorship
     },
     factoryAddress: process.env.FACTORY_ADDRESS || '',
     aa: {
@@ -90,7 +97,7 @@ export const config = {
       factoryAddress: (chainId: number) => getEnvByChainId('FACTORY_ADDRESS', chainId) || (process.env.FACTORY_ADDRESS || '').trim(),
       accountImplementationAddress: (chainId: number) => getEnvByChainId('ACCOUNT_IMPLEMENTATION', chainId) || '',
       paymasterAddress: (chainId: number) => getEnvByChainId('PAYMASTER_ADDRESS', chainId) || '',
-      paymasterSigningKey: (chainId: number) => getEnvByChainId('PAYMASTER_SIGNING_KEY', chainId) || '',
+      paymasterSigningKey: (chainId: number) => normalizePrivateKey(getEnvByChainId('PAYMASTER_SIGNING_KEY', chainId)),
       treasuryAddress: (chainId: number) => getEnvByChainId('TREASURY_ADDRESS', chainId) || '',
     },
     // Multi-chain Configuration

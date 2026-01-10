@@ -25,6 +25,10 @@ services:
         sync: false
       - key: BSC_RPC_URL
         sync: false
+      - key: AVALANCHE_RPC_URL
+        sync: false
+      - key: LINEA_RPC_URL
+        sync: false
       - key: ALCHEMY_API_KEY
         sync: false
       - key: ALCHEMY_WEBHOOK_SIGNING_KEY
@@ -64,6 +68,10 @@ services:
       - key: ENTRY_POINT_ADDRESS_10
         value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
       - key: ENTRY_POINT_ADDRESS_56
+        value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
+      - key: ENTRY_POINT_ADDRESS_43114
+        value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
+      - key: ENTRY_POINT_ADDRESS_59144
         value: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
       - key: FACTORY_ADDRESS
         value: 0x8D030155d70aBE58BDe7C77107a0571391c28b83
@@ -111,6 +119,10 @@ services:
         sync: false
       - key: BUNDLER_URL_56
         sync: false
+      - key: BUNDLER_URL_43114
+        sync: false
+      - key: BUNDLER_URL_59144
+        sync: false
       - key: PAYMASTER_ADDRESS_8453
         value: 0x18CAE447315B22AC5265594E458Cac46DEd27063
       - key: PAYMASTER_ADDRESS_1
@@ -139,6 +151,10 @@ services:
         sync: false
       - key: PAYMASTER_SIGNING_KEY_56
         sync: false
+      - key: PAYMASTER_SIGNING_KEY_43114
+        sync: false
+      - key: PAYMASTER_SIGNING_KEY_59144
+        sync: false
       - key: TREASURY_ADDRESS_8453
         sync: false
       - key: TREASURY_ADDRESS_1
@@ -150,6 +166,10 @@ services:
       - key: TREASURY_ADDRESS_10
         sync: false
       - key: TREASURY_ADDRESS_56
+        value: 0xc3461957ae6b46fa407e0a6db87b45f0af60dc74
+      - key: TREASURY_ADDRESS_43114
+        sync: false
+      - key: TREASURY_ADDRESS_59144
         sync: false
     autoDeploy: true
 
