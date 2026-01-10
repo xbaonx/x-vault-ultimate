@@ -391,6 +391,24 @@ export class WalletController {
                 if (v.native) addresses.push(TokenPriceService.nativeAddressKey());
                 addresses.push(...v.erc20);
                 priceByChain[chainId] = await TokenPriceService.getUsdPrices({ chainId, addresses });
+
+                if (v.native && (priceByChain[chainId]?.[TokenPriceService.nativeAddressKey()] || 0) <= 0) {
+                  const chainMeta = Object.values(config.blockchain.chains).find((c) => c.chainId === chainId);
+                  const symbolForPricing = getNativeSymbolForPricing(chainId, (chainMeta as any)?.symbol || '');
+                  const fetched = await fetchNativeUsdPriceBySymbol(symbolForPricing);
+                  if (fetched > 0) {
+                    try {
+                      await TokenPriceService.upsertUsdPrice({
+                        chainId,
+                        address: TokenPriceService.nativeAddressKey(),
+                        price: fetched,
+                        source: 'alchemy',
+                      });
+                    } catch {
+                    }
+                    priceByChain[chainId][TokenPriceService.nativeAddressKey()] = fetched;
+                  }
+                }
               }
 
               let recomputedTotalUsd = 0;
