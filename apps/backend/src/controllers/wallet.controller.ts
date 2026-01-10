@@ -434,6 +434,20 @@ export class WalletController {
           const snapshotRepo = AppDataSource.getRepository(WalletSnapshot);
           const snapshot = await snapshotRepo.findOne({ where: { serialNumber: baseSerialNumber } });
           if (snapshot?.portfolio && typeof snapshot.portfolio === 'object') {
+            const cachedAssetsForStaleness: any[] = Array.isArray((snapshot.portfolio as any)?.assets)
+              ? ((snapshot.portfolio as any).assets as any[])
+              : [];
+
+            // If we previously stored an empty snapshot, fall through to a live scan occasionally.
+            // This prevents "stuck empty" portfolios after RPC/discovery fixes.
+            if (!cachedAssetsForStaleness.length) {
+              const updatedAtMs = snapshot.updatedAt ? new Date(snapshot.updatedAt as any).getTime() : 0;
+              const ageMs = updatedAtMs ? Date.now() - updatedAtMs : Number.POSITIVE_INFINITY;
+              if (ageMs > 10 * 60 * 1000) {
+                throw new Error('Empty snapshot stale; refreshing');
+              }
+            }
+
             // Recompute USD values using DB prices (snapshot may be stale / schema may change)
             try {
               const cachedAssets: any[] = Array.isArray(snapshot.portfolio.assets) ? snapshot.portfolio.assets : [];
