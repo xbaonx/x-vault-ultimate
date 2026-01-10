@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, Info } from 'lucide-react';
 import { ethers } from 'ethers';
 import { Button } from '../components/ui/button';
-import { walletService } from '../services/api';
+import { api, walletService } from '../services/api';
 
 export default function Send() {
   const navigate = useNavigate();
@@ -18,6 +18,9 @@ export default function Send() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [fee, setFee] = useState<any>(null);
+  const [feePreviewLoading, setFeePreviewLoading] = useState(false);
+  const [feePreviewError, setFeePreviewError] = useState<string | null>(null);
+  const feePreviewReqIdRef = useRef(0);
 
   const userId = localStorage.getItem('x_user_id') || '';
   const deviceId = localStorage.getItem('x_device_id') || '';
@@ -95,10 +98,146 @@ export default function Send() {
     if (found) setSelectedAsset(found);
   }, [portfolio, selectedAssetKey]);
 
+  useEffect(() => {
+    setFeePreviewError(null);
+
+    if (!userId || !deviceId) {
+      setFee(null);
+      setFeePreviewLoading(false);
+      return;
+    }
+
+    if (!selectedAsset) {
+      setFee(null);
+      setFeePreviewLoading(false);
+      return;
+    }
+
+    const r = String(recipient || '').trim();
+    if (!r || !ethers.isAddress(r)) {
+      setFee(null);
+      setFeePreviewLoading(false);
+      return;
+    }
+
+    const amt = String(amount || '').trim();
+    if (!amt) {
+      setFee(null);
+      setFeePreviewLoading(false);
+      return;
+    }
+
+    if (Number.isNaN(Number(amt)) || Number(amt) <= 0) {
+      setFee(null);
+      setFeePreviewLoading(false);
+      return;
+    }
+
+    const decimals = Number(selectedAsset.decimals ?? 18);
+    let amountWei: bigint;
+    try {
+      amountWei = ethers.parseUnits(amt, decimals);
+    } catch {
+      setFee(null);
+      setFeePreviewLoading(false);
+      return;
+    }
+
+    if (amountWei <= 0n) {
+      setFee(null);
+      setFeePreviewLoading(false);
+      return;
+    }
+
+    const balanceRaw = BigInt(String(selectedAsset.balanceRaw ?? '0'));
+    if (balanceRaw > 0n && amountWei > balanceRaw) {
+      setFee(null);
+      setFeePreviewLoading(false);
+      return;
+    }
+
+    const reqId = ++feePreviewReqIdRef.current;
+    setFeePreviewLoading(true);
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        let transaction: any;
+
+        if (selectedAsset.isNative) {
+          transaction = {
+            to: r,
+            value: amountWei.toString(),
+            data: '0x',
+            chainId: selectedAsset.chainId,
+            isNative: true,
+            assetSymbol: selectedAsset.symbol,
+            decimals,
+            walletId: walletId || undefined,
+          };
+        } else {
+          const tokenAddress = String(selectedAsset.tokenAddress || '').trim();
+          if (!tokenAddress || !ethers.isAddress(tokenAddress)) {
+            if (reqId === feePreviewReqIdRef.current) {
+              setFee(null);
+              setFeePreviewLoading(false);
+              setFeePreviewError('Invalid token address');
+            }
+            return;
+          }
+
+          const iface = new ethers.Interface([
+            'function transfer(address to, uint256 amount) returns (bool)'
+          ]);
+          const data = iface.encodeFunctionData('transfer', [r, amountWei]);
+          transaction = {
+            to: tokenAddress,
+            value: '0',
+            data,
+            chainId: selectedAsset.chainId,
+            isNative: false,
+            assetSymbol: selectedAsset.symbol,
+            decimals,
+            walletId: walletId || undefined,
+          };
+        }
+
+        const optionsRes = await api.post(
+          '/aa/userop/options',
+          { transaction },
+          { headers: { 'x-device-library-id': deviceId } }
+        );
+
+        const options = optionsRes.data;
+        if (reqId === feePreviewReqIdRef.current) {
+          setFee(options.fee || null);
+          setFeePreviewLoading(false);
+          setFeePreviewError(null);
+        }
+      } catch (e: any) {
+        if (reqId !== feePreviewReqIdRef.current) return;
+
+        const status = e?.response?.status;
+        const msg = e?.response?.data?.error || e?.message || '';
+        setFee(null);
+        setFeePreviewLoading(false);
+
+        if (status === 401 && String(msg).toLowerCase().includes('spending pin')) {
+          setFeePreviewError('Spending PIN required to estimate fees for this transfer.');
+        } else {
+          setFeePreviewError(String(msg || 'Failed to estimate fee.'));
+        }
+      }
+    }, 450);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [userId, deviceId, selectedAsset, recipient, amount, walletId]);
+
   const handleSend = async () => {
     setError(null);
     setSuccess(null);
-    setFee(null);
+    setFeePreviewError(null);
 
     if (!selectedAsset) {
       setError('No asset selected');
@@ -328,6 +467,18 @@ export default function Send() {
                     Transactions are secured by Passkey (FaceID / TouchID). Ensure you are on the correct network ({selectedAsset?.network}) before sending.
                 </div>
             </div>
+
+            {feePreviewLoading ? (
+              <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-xs text-secondary">
+                Estimating fee...
+              </div>
+            ) : null}
+
+            {feePreviewError ? (
+              <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-xs text-secondary">
+                {feePreviewError}
+              </div>
+            ) : null}
 
             {fee && (
                 <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
