@@ -20,8 +20,8 @@ dotenv.config();
  }
 
  function getAlchemyBundlerUrl(chainId: number): string | undefined {
-   const apiKey = (process.env.ALCHEMY_API_KEY || '').trim();
-   if (!apiKey) return undefined;
+  const apiKey = (process.env.ALCHEMY_API_KEY || '').trim();
+  if (!apiKey) return undefined;
 
    // Alchemy bundler methods (eth_sendUserOperation, etc.) are exposed via the chain RPC endpoints.
    const hostByChainId: Record<number, string> = {
@@ -35,11 +35,25 @@ dotenv.config();
    const host = hostByChainId[chainId];
    if (!host) return undefined;
    return `https://${host}/v2/${apiKey}`;
- }
+}
 
- function getAlchemyRpcUrl(chainId: number): string | undefined {
-  // Same endpoint as bundler for Alchemy; kept separate for clarity.
-  return getAlchemyBundlerUrl(chainId);
+function getAlchemyRpcUrl(chainId: number): string | undefined {
+  const apiKey = (process.env.ALCHEMY_API_KEY || '').trim();
+  if (!apiKey) return undefined;
+
+  // RPC support can be broader than Alchemy's ERC-4337 bundler support.
+  const hostByChainId: Record<number, string> = {
+    1: 'eth-mainnet.g.alchemy.com',
+    10: 'opt-mainnet.g.alchemy.com',
+    137: 'polygon-mainnet.g.alchemy.com',
+    42161: 'arb-mainnet.g.alchemy.com',
+    8453: 'base-mainnet.g.alchemy.com',
+    56: 'bnb-mainnet.g.alchemy.com',
+  };
+
+  const host = hostByChainId[chainId];
+  if (!host) return undefined;
+  return `https://${host}/v2/${apiKey}`;
 }
 
 function isDefaultPublicRpc(url?: string): boolean {
