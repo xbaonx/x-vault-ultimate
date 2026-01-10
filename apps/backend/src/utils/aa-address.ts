@@ -60,27 +60,29 @@ export async function deriveAaAddressFromCredentialPublicKey(params: {
     if (remainingMs <= 0) break;
 
     try {
-      const code = await withTimeout(
-        provider.getCode(factoryAddress),
-        remainingMs,
-        `AA Derivation Timeout (getCode) chainId=${chainId}`,
-      );
-
-      if (!code || code === '0x') {
-        throw new Error(`AA Factory not deployed on chainId=${chainId} at ${factoryAddress}`);
-      }
-
-      remainingMs = deadlineAt - Date.now();
-      if (remainingMs <= 0) {
-        throw new Error('AA Derivation Timeout');
-      }
-
       const factory = new ethers.Contract(factoryAddress, XFACTORY_ABI, provider);
-      const address = await withTimeout(
-        factory['getAddress(uint256,uint256,uint256)'](x, y, salt),
-        remainingMs,
-        `AA Derivation Timeout (getAddress) chainId=${chainId}`,
-      );
+
+      let address: unknown;
+      try {
+        address = await withTimeout(
+          factory['getAddress(uint256,uint256,uint256)'](x, y, salt),
+          remainingMs,
+          `AA Derivation Timeout (getAddress) chainId=${chainId}`,
+        );
+      } catch (e: any) {
+        // Retry once if we likely hit a transient timeout and still have time budget.
+        const msg = String(e?.message || '');
+        remainingMs = deadlineAt - Date.now();
+        if (remainingMs > 250 && msg.toLowerCase().includes('timeout')) {
+          address = await withTimeout(
+            factory['getAddress(uint256,uint256,uint256)'](x, y, salt),
+            remainingMs,
+            `AA Derivation Timeout (getAddress retry) chainId=${chainId}`,
+          );
+        } else {
+          throw e;
+        }
+      }
       return String(address);
     } catch (e) {
       lastError = e;
