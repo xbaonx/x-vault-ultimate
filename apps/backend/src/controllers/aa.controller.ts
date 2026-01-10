@@ -556,6 +556,16 @@ export class AaController {
         }
       }
 
+      const userOpJson = {
+        ...userOp,
+        nonce: BigInt(userOp.nonce || 0).toString(),
+        callGasLimit: BigInt(userOp.callGasLimit || 0).toString(),
+        verificationGasLimit: BigInt(userOp.verificationGasLimit || 0).toString(),
+        preVerificationGas: BigInt(userOp.preVerificationGas || 0).toString(),
+        maxFeePerGas: BigInt(userOp.maxFeePerGas || 0).toString(),
+        maxPriorityFeePerGas: BigInt(userOp.maxPriorityFeePerGas || 0).toString(),
+      };
+
       res.status(200).json({
         sender,
         isDeployed,
@@ -563,7 +573,7 @@ export class AaController {
         entryPoint: entryPointAddress,
         bundlerUrl,
         challenge,
-        userOp,
+        userOp: userOpJson,
         fee: feeBreakdown,
         walletId: wallet?.id || null,
         salt,
