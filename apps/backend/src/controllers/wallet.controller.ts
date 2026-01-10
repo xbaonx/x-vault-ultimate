@@ -589,6 +589,14 @@ export class WalletController {
               }
 
               if (!scanAddress || !scanAddress.startsWith('0x')) {
+                console.warn('[Portfolio] Missing scanAddress; skipping chain', {
+                  chainId: chain.chainId,
+                  chain: chain.name,
+                  hasPasskey: !!device?.credentialPublicKey,
+                  walletId: wallet?.id,
+                  salt: wallet?.aaSalt ?? 0,
+                  baseSerialNumber,
+                });
                 return;
               }
 
@@ -652,7 +660,7 @@ export class WalletController {
                 discovered = await TokenDiscoveryService.getErc20Assets({
                   chainId: chain.chainId,
                   address: scanAddress,
-                  timeoutMs: 2500,
+                  timeoutMs: 6000,
                   maxTokens: 40,
                 });
               } catch {

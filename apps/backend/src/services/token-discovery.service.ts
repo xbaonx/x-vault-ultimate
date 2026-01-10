@@ -23,6 +23,15 @@ async function fetchJsonWithTimeout(url: string, body: any, timeoutMs: number): 
       body: JSON.stringify(body),
       signal: controller.signal,
     });
+    if (!resp.ok) {
+      let text = '';
+      try {
+        text = await resp.text();
+      } catch {
+        text = '';
+      }
+      return { error: { message: `HTTP ${resp.status} ${resp.statusText}${text ? `: ${text.slice(0, 200)}` : ''}` } };
+    }
     return await resp.json();
   } finally {
     clearTimeout(t);
@@ -88,11 +97,22 @@ export class TokenDiscoveryService {
       );
 
       if (json?.error) {
+        console.warn('[TokenDiscovery] alchemy_getTokenBalances error', {
+          chainId: params.chainId,
+          address: params.address,
+          rpcUrl: rpcUrl?.split('?')[0],
+          error: json.error,
+        });
         return [];
       }
 
       balances = (json?.result?.tokenBalances || []) as TokenBalanceEntry[];
     } catch {
+      console.warn('[TokenDiscovery] alchemy_getTokenBalances failed (exception)', {
+        chainId: params.chainId,
+        address: params.address,
+        rpcUrl: rpcUrl?.split('?')[0],
+      });
       return [];
     }
 
@@ -124,6 +144,12 @@ export class TokenDiscoveryService {
           );
 
           if (json?.error) {
+            console.warn('[TokenDiscovery] alchemy_getTokenMetadata error', {
+              chainId: params.chainId,
+              contractAddress: b.contractAddress,
+              rpcUrl: rpcUrl?.split('?')[0],
+              error: json.error,
+            });
             return { contractAddress: b.contractAddress, meta: {} as TokenMetadata, balanceHex: b.tokenBalance };
           }
 
