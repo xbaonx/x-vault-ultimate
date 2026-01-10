@@ -70,16 +70,18 @@ async function fetchNativeUsdPriceBySymbol(symbol: string): Promise<number> {
 
   const baseUrl = getPricesApiBaseUrl(apiKey);
   const qs = new URLSearchParams();
-  qs.set('symbols', JSON.stringify([String(symbol || '').trim().toUpperCase()].filter(Boolean)));
+  const sym = String(symbol || '').trim().toUpperCase();
+  qs.set('symbols', sym ? `[${sym}]` : '[]');
   const url = `${baseUrl}/tokens/by-symbol?${qs.toString()}`;
 
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), 4000);
   try {
     const res = await fetch(url, { method: 'GET', headers: { 'content-type': 'application/json' }, signal: controller.signal });
+    if (!res.ok) return 0;
     const json: any = await res.json();
     const rows: any[] = Array.isArray(json?.data) ? json.data : [];
-    const row = rows.find((r) => String(r?.symbol || '').toUpperCase() === String(symbol || '').trim().toUpperCase());
+    const row = rows.find((r) => String(r?.symbol || '').toUpperCase() === sym);
     const priceRow = Array.isArray(row?.prices)
       ? row.prices.find((p: any) => String(p?.currency || '').toUpperCase() === 'USD')
       : null;

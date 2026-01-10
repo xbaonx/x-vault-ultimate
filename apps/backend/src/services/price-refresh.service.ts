@@ -40,25 +40,41 @@ async function fetchJsonWithTimeout(url: string, options: RequestInit, timeoutMs
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
+    if (!res.ok) {
+      let details = '';
+      try {
+        details = await res.text();
+      } catch {
+        details = '';
+      }
+      throw new Error(`Alchemy Prices HTTP ${res.status} ${res.statusText}${details ? `: ${details.slice(0, 400)}` : ''}`);
+    }
     return await res.json();
   } finally {
     clearTimeout(id);
   }
 }
 
+function encodeSymbolsParam(symbols: string[]): string {
+  const cleaned = (symbols || [])
+    .map((s) => String(s || '').trim().toUpperCase())
+    .filter(Boolean);
+  return `[${cleaned.join(',')}]`;
+}
+
 export class PriceRefreshService {
   private static running = false;
 
-  static async runOnce(): Promise<void> {
-    if (this.running) return;
+  static async runOnce(): Promise<{ nativeUpserts: number; erc20Upserts: number; nativeSymbols: string[] }> {
+    if (this.running) return { nativeUpserts: 0, erc20Upserts: 0, nativeSymbols: [] };
     this.running = true;
     try {
-      if (!AppDataSource.isInitialized) return;
+      if (!AppDataSource.isInitialized) return { nativeUpserts: 0, erc20Upserts: 0, nativeSymbols: [] };
 
       const apiKey = getAlchemyApiKey();
       if (!apiKey) {
         console.warn('[PriceRefresh] ALCHEMY_API_KEY missing; skipping price refresh');
-        return;
+        return { nativeUpserts: 0, erc20Upserts: 0, nativeSymbols: [] };
       }
 
       const baseUrl = getPricesApiBaseUrl(apiKey);
@@ -90,10 +106,13 @@ export class PriceRefreshService {
         ),
       ).slice(0, 25);
 
+      let nativeUpserts = 0;
+      let erc20Upserts = 0;
+
       if (nativeSymbols.length) {
         try {
           const qs = new URLSearchParams();
-          qs.set('symbols', JSON.stringify(nativeSymbols));
+          qs.set('symbols', encodeSymbolsParam(nativeSymbols));
           const url = `${baseUrl}/tokens/by-symbol?${qs.toString()}`;
           const json = await fetchJsonWithTimeout(
             url,
@@ -105,11 +124,22 @@ export class PriceRefreshService {
           const priceBySymbol: Record<string, { price: number; lastUpdatedAt?: string }> = {};
           for (const r of rows) {
             const sym = String(r?.symbol || '').toUpperCase();
+            const errMsg = r?.error?.message ? String(r.error.message) : '';
+            if (sym && errMsg) {
+              console.warn(`[PriceRefresh] by-symbol returned error for ${sym}: ${errMsg}`);
+            }
             const priceRow = Array.isArray(r?.prices) ? r.prices.find((p: any) => String(p?.currency || '').toUpperCase() === 'USD') : null;
             const v = priceRow?.value ? Number(priceRow.value) : NaN;
             if (sym && Number.isFinite(v) && v > 0) {
               priceBySymbol[sym] = { price: v, lastUpdatedAt: priceRow?.lastUpdatedAt };
             }
+          }
+
+          if (!Object.keys(priceBySymbol).length) {
+            console.warn('[PriceRefresh] by-symbol returned 0 priced symbols', {
+              requested: nativeSymbols,
+              responseKeys: rows.map((r) => r?.symbol).filter(Boolean),
+            });
           }
 
           for (const c of chains) {
@@ -124,6 +154,7 @@ export class PriceRefreshService {
               source: 'alchemy',
               updatedAt,
             });
+            nativeUpserts++;
           }
         } catch (e) {
           console.warn('[PriceRefresh] native by-symbol refresh failed:', e);
@@ -162,12 +193,15 @@ export class PriceRefreshService {
 
               const updatedAt = priceRow?.lastUpdatedAt ? new Date(priceRow.lastUpdatedAt) : undefined;
               await TokenPriceService.upsertUsdPrice({ chainId, address: addr, price: v, source: 'alchemy', updatedAt });
+              erc20Upserts++;
             }
           } catch (e) {
             console.warn(`[PriceRefresh] by-address failed chainId=${chainId} batch=${i}-${i + batch.length}:`, e);
           }
         }
       }
+
+      return { nativeUpserts, erc20Upserts, nativeSymbols };
     } finally {
       this.running = false;
     }

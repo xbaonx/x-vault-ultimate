@@ -101,8 +101,8 @@ export class AdminController {
 
   static async refreshTokenPrices(req: Request, res: Response) {
     try {
-      await PriceRefreshService.runOnce();
-      return res.status(200).json({ success: true });
+      const result = await PriceRefreshService.runOnce();
+      return res.status(200).json({ success: true, ...(result || {}) });
     } catch (error: any) {
       console.error("Error in refreshTokenPrices:", error);
       return res.status(500).json({ error: error.message || "Internal server error" });
