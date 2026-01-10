@@ -9,6 +9,7 @@ import { PollingSession } from "../entities/PollingSession";
 import { PassRegistration } from "../entities/PassRegistration";
 import { ChainCursor } from "../entities/ChainCursor";
 import { DepositEvent } from "../entities/DepositEvent";
+import { TokenPrice } from "../entities/TokenPrice";
 import * as forge from "node-forge";
 import { ILike, In } from "typeorm";
 
@@ -16,6 +17,7 @@ import { config } from "../config";
 import { deriveAaAddressFromCredentialPublicKey } from "../utils/aa-address";
 
 import { PassService } from "../services/pass.service";
+import { PriceRefreshService } from "../services/price-refresh.service";
 
 export class AdminController {
   static async testGeneratePass(req: Request, res: Response) {
@@ -41,6 +43,69 @@ export class AdminController {
     } catch (error: any) {
         console.error("Error generating test pass:", error);
         res.status(500).json({ error: error.message || "Failed to generate pass" });
+    }
+  }
+
+  static async getTokenPrices(req: Request, res: Response) {
+    if (!AppDataSource.isInitialized) {
+      return res.status(503).json({ error: "Database not initialized" });
+    }
+
+    try {
+      const chainId = Number((req.query as any)?.chainId || 0);
+      const addressRaw = String((req.query as any)?.address || '').trim().toLowerCase();
+      const limitRaw = Number((req.query as any)?.limit || 100);
+      const offsetRaw = Number((req.query as any)?.offset || 0);
+
+      const limit = Number.isFinite(limitRaw) ? Math.min(200, Math.max(1, limitRaw)) : 100;
+      const offset = Number.isFinite(offsetRaw) ? Math.max(0, offsetRaw) : 0;
+
+      const repo = AppDataSource.getRepository(TokenPrice);
+      const qb = repo
+        .createQueryBuilder('p')
+        .where('p.currency = :currency', { currency: 'USD' });
+
+      if (Number.isFinite(chainId) && chainId > 0) {
+        qb.andWhere('p.chainId = :chainId', { chainId });
+      }
+
+      if (addressRaw) {
+        qb.andWhere('LOWER(p.address) = :address', { address: addressRaw });
+      }
+
+      qb.orderBy('p.updatedAt', 'DESC')
+        .addOrderBy('p.chainId', 'ASC')
+        .addOrderBy('p.address', 'ASC')
+        .skip(offset)
+        .take(limit);
+
+      const [rows, total] = await qb.getManyAndCount();
+
+      return res.status(200).json({
+        total,
+        items: rows.map((r) => ({
+          id: r.id,
+          chainId: r.chainId,
+          address: r.address,
+          currency: r.currency,
+          price: r.price,
+          source: r.source,
+          updatedAt: r.updatedAt,
+        })),
+      });
+    } catch (error: any) {
+      console.error("Error in getTokenPrices:", error);
+      return res.status(500).json({ error: error.message || "Internal server error" });
+    }
+  }
+
+  static async refreshTokenPrices(req: Request, res: Response) {
+    try {
+      await PriceRefreshService.runOnce();
+      return res.status(200).json({ success: true });
+    } catch (error: any) {
+      console.error("Error in refreshTokenPrices:", error);
+      return res.status(500).json({ error: error.message || "Internal server error" });
     }
   }
 

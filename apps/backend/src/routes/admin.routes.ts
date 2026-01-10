@@ -12,6 +12,9 @@ router.get("/users", adminAuth, AdminController.getUsers);
 router.get("/users/:userId", adminAuth, AdminController.getUserDetail);
 router.get("/transactions", adminAuth, AdminController.getTransactions);
 
+router.get("/token-prices", adminAuth, AdminController.getTokenPrices);
+router.post("/token-prices/refresh", adminAuth, AdminController.refreshTokenPrices);
+
 router.get("/apple/config", adminAuth, AdminController.getAppleConfig);
 router.get("/apple/test-pass", adminAuth, AdminController.testGeneratePass);
 
