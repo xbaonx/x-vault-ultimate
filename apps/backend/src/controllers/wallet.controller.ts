@@ -51,6 +51,47 @@ const TOKEN_MAP: Record<number, { address: string; symbol: string; decimals: num
     ]
 };
 
+function getAlchemyApiKey(): string {
+  return String(process.env.ALCHEMY_API_KEY || '').trim();
+}
+
+function getPricesApiBaseUrl(apiKey: string): string {
+  return `https://api.g.alchemy.com/prices/v1/${apiKey}`;
+}
+
+function getNativeSymbolForPricing(chainId: number, displaySymbol: string): string {
+  if (chainId === 137) return 'MATIC';
+  return String(displaySymbol || '').trim().toUpperCase();
+}
+
+async function fetchNativeUsdPriceBySymbol(symbol: string): Promise<number> {
+  const apiKey = getAlchemyApiKey();
+  if (!apiKey) return 0;
+
+  const baseUrl = getPricesApiBaseUrl(apiKey);
+  const qs = new URLSearchParams();
+  qs.set('symbols', JSON.stringify([String(symbol || '').trim().toUpperCase()].filter(Boolean)));
+  const url = `${baseUrl}/tokens/by-symbol?${qs.toString()}`;
+
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), 4000);
+  try {
+    const res = await fetch(url, { method: 'GET', headers: { 'content-type': 'application/json' }, signal: controller.signal });
+    const json: any = await res.json();
+    const rows: any[] = Array.isArray(json?.data) ? json.data : [];
+    const row = rows.find((r) => String(r?.symbol || '').toUpperCase() === String(symbol || '').trim().toUpperCase());
+    const priceRow = Array.isArray(row?.prices)
+      ? row.prices.find((p: any) => String(p?.currency || '').toUpperCase() === 'USD')
+      : null;
+    const v = priceRow?.value ? Number(priceRow.value) : NaN;
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  } catch {
+    return 0;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 export class WalletController {
   static async getAddress(req: Request, res: Response) {
     try {
@@ -274,6 +315,38 @@ export class WalletController {
 
       const address = wallet?.address && wallet.address !== ethers.ZeroAddress ? wallet.address : null;
 
+      const mapTxToHistory = (tx: Transaction) => {
+        const txData: any = (tx as any)?.txData || {};
+        const txObj: any = txData?.tx || null;
+
+        let token = String(txObj?.assetSymbol || tx.asset || '').trim().toUpperCase() || String(tx.asset || '');
+        if (!token) token = 'ETH';
+
+        let amount = '0';
+        try {
+          const decimals = Number(txObj?.decimals ?? 18);
+          const raw = String(txObj?.value ?? tx.value ?? '0');
+          amount = ethers.formatUnits(BigInt(raw || '0'), Number.isFinite(decimals) ? decimals : 18);
+        } catch {
+          amount = parseFloat(tx.value || '0').toString();
+        }
+
+        const type = String(txData?.direction || txData?.type || 'send').includes('receive') ? 'receive' : 'send';
+
+        return {
+          id: tx.id,
+          type,
+          amount,
+          token,
+          date: tx.createdAt,
+          status: tx.status,
+          hash: tx.txHash || tx.userOpHash,
+          txHash: tx.txHash || null,
+          explorerUrl: tx.explorerUrl || null,
+          network: tx.network,
+        };
+      };
+
       const baseSerialChainId = Number(config.blockchain.chainId);
       let baseSerialNumber: string | null = null;
       if (device?.credentialPublicKey) {
@@ -347,18 +420,9 @@ export class WalletController {
               take: 20,
             });
 
-            const history = dbTransactions.map((tx) => ({
-              id: tx.id,
-              type: 'send',
-              amount: parseFloat(tx.value || '0').toString(),
-              token: tx.asset || 'ETH',
-              date: tx.createdAt,
-              status: tx.status,
-              hash: tx.txHash || tx.userOpHash,
-              txHash: tx.txHash || null,
-              explorerUrl: tx.explorerUrl || null,
-              network: tx.network
-            }));
+            const history = dbTransactions
+              .filter((tx) => String(tx.status || '').toLowerCase() !== 'quote')
+              .map(mapTxToHistory);
 
             return res.status(200).json({
               totalBalanceUsd: snapshot.totalBalanceUsd || 0,
@@ -458,11 +522,29 @@ export class WalletController {
                   const nativeBalance = parseFloat(ethers.formatEther(balanceWei));
                   
                   if (nativeBalance > 0) {
-                      const nativePrice = await TokenPriceService.getUsdPrice({
+                      let nativePrice = await TokenPriceService.getUsdPrice({
                         chainId: chain.chainId,
                         address: TokenPriceService.nativeAddressKey(),
                       });
-                      const valueUsd = nativeBalance * (nativePrice || 0);
+
+                      if (!nativePrice) {
+                        const symbolForPricing = getNativeSymbolForPricing(chain.chainId, chain.symbol);
+                        const fetched = await fetchNativeUsdPriceBySymbol(symbolForPricing);
+                        if (fetched > 0) {
+                          nativePrice = fetched;
+                          try {
+                            await TokenPriceService.upsertUsdPrice({
+                              chainId: chain.chainId,
+                              address: TokenPriceService.nativeAddressKey(),
+                              price: fetched,
+                              source: 'alchemy',
+                            });
+                          } catch {
+                          }
+                        }
+                      }
+
+                      const valueUsd = Number(Number(nativeBalance * (nativePrice || 0)).toFixed(2));
                       
                       totalBalanceUsd += valueUsd;
                       assets.push({
@@ -581,18 +663,9 @@ export class WalletController {
           take: 20
       });
 
-      const history = dbTransactions.map((tx: Transaction) => ({
-          id: tx.id,
-          type: 'send', // Mostly sends for now
-          amount: parseFloat(tx.value || '0').toString(),
-          token: tx.asset || 'ETH',
-          date: tx.createdAt,
-          status: tx.status,
-          hash: tx.txHash || tx.userOpHash,
-          txHash: tx.txHash || null,
-          explorerUrl: tx.explorerUrl || null,
-          network: tx.network
-      }));
+      const history = dbTransactions
+        .filter((tx) => String(tx.status || '').toLowerCase() !== 'quote')
+        .map(mapTxToHistory);
 
       // Construct Portfolio
       const portfolio = {
