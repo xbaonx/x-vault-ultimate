@@ -55,11 +55,13 @@ async function fetchJsonWithTimeout(url: string, options: RequestInit, timeoutMs
   }
 }
 
-function encodeSymbolsParam(symbols: string[]): string {
+function appendSymbolsQueryParams(qs: URLSearchParams, symbols: string[]) {
   const cleaned = (symbols || [])
     .map((s) => String(s || '').trim().toUpperCase())
     .filter(Boolean);
-  return `[${cleaned.join(',')}]`;
+  for (const sym of cleaned) {
+    qs.append('symbols', sym);
+  }
 }
 
 export class PriceRefreshService {
@@ -112,7 +114,7 @@ export class PriceRefreshService {
       if (nativeSymbols.length) {
         try {
           const qs = new URLSearchParams();
-          qs.set('symbols', encodeSymbolsParam(nativeSymbols));
+          appendSymbolsQueryParams(qs, nativeSymbols);
           const url = `${baseUrl}/tokens/by-symbol?${qs.toString()}`;
           const json = await fetchJsonWithTimeout(
             url,
@@ -124,7 +126,7 @@ export class PriceRefreshService {
           const priceBySymbol: Record<string, { price: number; lastUpdatedAt?: string }> = {};
           for (const r of rows) {
             const sym = String(r?.symbol || '').toUpperCase();
-            const errMsg = r?.error?.message ? String(r.error.message) : '';
+            const errMsg = r?.error ? String(r.error) : '';
             if (sym && errMsg) {
               console.warn(`[PriceRefresh] by-symbol returned error for ${sym}: ${errMsg}`);
             }

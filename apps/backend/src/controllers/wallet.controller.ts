@@ -71,7 +71,7 @@ async function fetchNativeUsdPriceBySymbol(symbol: string): Promise<number> {
   const baseUrl = getPricesApiBaseUrl(apiKey);
   const qs = new URLSearchParams();
   const sym = String(symbol || '').trim().toUpperCase();
-  qs.set('symbols', sym ? `[${sym}]` : '[]');
+  if (sym) qs.append('symbols', sym);
   const url = `${baseUrl}/tokens/by-symbol?${qs.toString()}`;
 
   const controller = new AbortController();
