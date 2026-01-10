@@ -10,11 +10,11 @@ import {
   LineChart,
   Line
 } from 'recharts';
-import { Users, CreditCard, Activity, DollarSign, Settings, Bell, Key } from 'lucide-react';
+import { Users, CreditCard, Activity, DollarSign, Settings, Bell, Key, Coins, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { adminApi, type AppleConfigStatus, type DashboardStats, type UserData, type TransactionData, type UserDetailData } from '../services/api';
+import { adminApi, type AppleConfigStatus, type DashboardStats, type UserData, type TransactionData, type UserDetailData, type TokenPriceListResponse } from '../services/api';
 
 const CHAIN_LABELS: Record<number, string> = {
   1: 'Ethereum',
@@ -44,8 +44,13 @@ export default function AdminDashboard() {
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
   const [usersList, setUsersList] = useState<UserData[]>([]);
   const [transactionsList, setTransactionsList] = useState<TransactionData[]>([]);
+  const [tokenPrices, setTokenPrices] = useState<TokenPriceListResponse | null>(null);
   const [loadingData, setLoadingData] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
+
+  const [pricesChainId, setPricesChainId] = useState('');
+  const [pricesAddress, setPricesAddress] = useState('');
+  const [pricesRefreshing, setPricesRefreshing] = useState(false);
 
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [userDetail, setUserDetail] = useState<UserDetailData | null>(null);
@@ -109,6 +114,15 @@ export default function AdminDashboard() {
       } else if (activeTab === 'transactions') {
         const txs = await adminApi.getTransactions(key);
         setTransactionsList(txs);
+      } else if (activeTab === 'prices') {
+        const chainIdNum = Number(pricesChainId || 0);
+        const res = await adminApi.getTokenPrices(key, {
+          chainId: Number.isFinite(chainIdNum) && chainIdNum > 0 ? chainIdNum : undefined,
+          address: pricesAddress.trim() ? pricesAddress.trim().toLowerCase() : undefined,
+          limit: 200,
+          offset: 0,
+        });
+        setTokenPrices(res);
       } else if (activeTab === 'settings') {
         loadAppleConfig(key);
       }
@@ -119,6 +133,19 @@ export default function AdminDashboard() {
       }
     } finally {
       setLoadingData(false);
+    }
+  };
+
+  const handleRefreshPrices = async () => {
+    if (!sessionKey || pricesRefreshing) return;
+    setPricesRefreshing(true);
+    try {
+      await adminApi.refreshTokenPrices(sessionKey);
+      await fetchData(sessionKey);
+    } catch (e: any) {
+      setDataError(e?.message || 'Failed to refresh prices');
+    } finally {
+      setPricesRefreshing(false);
     }
   };
 
@@ -281,6 +308,15 @@ export default function AdminDashboard() {
             <Settings className="mr-2 h-4 w-4" />
             Settings
           </Button>
+
+          <Button
+            variant={activeTab === 'prices' ? 'secondary' : 'ghost'}
+            className="w-full justify-start"
+            onClick={() => setActiveTab('prices')}
+          >
+            <Coins className="mr-2 h-4 w-4" />
+            Prices
+          </Button>
         </nav>
       </aside>
 
@@ -292,6 +328,7 @@ export default function AdminDashboard() {
             {activeTab === 'users' && 'Users'}
             {activeTab === 'transactions' && 'Transactions'}
             {activeTab === 'settings' && 'Settings'}
+            {activeTab === 'prices' && 'Token Prices'}
           </h1>
           <Button variant="outline" size="icon">
             <Bell className="h-4 w-4" />
@@ -903,6 +940,86 @@ export default function AdminDashboard() {
               </CardContent>
             </Card>
           </div>
+        )}
+
+        {activeTab === 'prices' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Token Prices (DB)</CardTitle>
+              <CardDescription>
+                View USD prices stored in the backend database (native uses address "native").
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-3 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs text-secondary">ChainId</label>
+                    <Input
+                      value={pricesChainId}
+                      onChange={(e) => setPricesChainId(e.target.value)}
+                      placeholder="e.g. 56"
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-xs text-secondary">Address (0x... or native)</label>
+                    <Input
+                      value={pricesAddress}
+                      onChange={(e) => setPricesAddress(e.target.value)}
+                      placeholder="native or 0x..."
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!sessionKey || loadingData}
+                    onClick={() => fetchData(sessionKey)}
+                  >
+                    Load
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!sessionKey || pricesRefreshing}
+                    onClick={handleRefreshPrices}
+                  >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${pricesRefreshing ? 'animate-spin' : ''}`} />
+                    Refresh prices
+                  </Button>
+                </div>
+              </div>
+
+              <div className="border border-white/10 rounded-lg overflow-hidden">
+                <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-secondary bg-white/5">
+                  <div className="col-span-2">Chain</div>
+                  <div className="col-span-4">Address</div>
+                  <div className="col-span-2">Price (USD)</div>
+                  <div className="col-span-2">Source</div>
+                  <div className="col-span-2">Updated</div>
+                </div>
+                <div>
+                  {(tokenPrices?.items || []).length === 0 ? (
+                    <div className="px-3 py-6 text-sm text-secondary">No prices found.</div>
+                  ) : (
+                    (tokenPrices?.items || []).map((p) => (
+                      <div key={p.id} className="grid grid-cols-12 gap-2 px-3 py-2 text-sm border-t border-white/5">
+                        <div className="col-span-2">{formatChainLabel(p.chainId)}</div>
+                        <div className="col-span-4 font-mono text-xs break-all">{p.address}</div>
+                        <div className="col-span-2">{Number(p.price || 0).toFixed(6)}</div>
+                        <div className="col-span-2">{p.source}</div>
+                        <div className="col-span-2 text-xs text-secondary">{new Date(p.updatedAt).toLocaleString()}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </main>
     </div>

@@ -123,6 +123,21 @@ export type TransactionData = {
   createdAt: string;
 };
 
+export type TokenPriceRow = {
+  id: string;
+  chainId: number;
+  address: string;
+  currency: string;
+  price: number;
+  source: string;
+  updatedAt: string;
+};
+
+export type TokenPriceListResponse = {
+  total: number;
+  items: TokenPriceRow[];
+};
+
 function buildHeaders(adminKey?: string) {
   const headers: Record<string, string> = {};
   if (adminKey) headers['x-admin-key'] = adminKey;
@@ -142,6 +157,51 @@ export const adminApi = {
     if (!res.ok) {
       throw new Error('Failed to fetch dashboard stats');
     }
+    return res.json();
+  },
+
+  getTokenPrices: async (
+    adminKey: string,
+    params?: { chainId?: number; address?: string; limit?: number; offset?: number }
+  ): Promise<TokenPriceListResponse> => {
+    const qs = new URLSearchParams();
+    if (params?.chainId) qs.set('chainId', String(params.chainId));
+    if (params?.address) qs.set('address', String(params.address));
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.offset) qs.set('offset', String(params.offset));
+    const url = `${API_URL}/admin/token-prices${qs.toString() ? `?${qs.toString()}` : ''}`;
+
+    const res = await fetch(url, {
+      headers: buildHeaders(adminKey),
+    });
+
+    if (res.status === 401) {
+      throw new Error('Invalid Admin Key. Please check your key.');
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || 'Failed to fetch token prices');
+    }
+
+    return res.json();
+  },
+
+  refreshTokenPrices: async (adminKey: string): Promise<{ success: boolean }> => {
+    const res = await fetch(`${API_URL}/admin/token-prices/refresh`, {
+      method: 'POST',
+      headers: buildHeaders(adminKey),
+    });
+
+    if (res.status === 401) {
+      throw new Error('Invalid Admin Key. Please check your key.');
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || 'Failed to refresh token prices');
+    }
+
     return res.json();
   },
 
