@@ -49,6 +49,8 @@ function getAlchemyRpcUrl(chainId: number): string | undefined {
     42161: 'arb-mainnet.g.alchemy.com',
     8453: 'base-mainnet.g.alchemy.com',
     56: 'bnb-mainnet.g.alchemy.com',
+    43114: 'avax-mainnet.g.alchemy.com',
+    59144: 'linea-mainnet.g.alchemy.com',
   };
 
   const host = hostByChainId[chainId];
