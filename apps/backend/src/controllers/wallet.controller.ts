@@ -78,7 +78,7 @@ function getNetworkEnumByChainId(chainId: number): string | null {
 }
 
 function getNativeSymbolForPricing(chainId: number, displaySymbol: string): string {
-  if (chainId === 137) return 'MATIC';
+  if (chainId === 137) return 'POL';
   return String(displaySymbol || '').trim().toUpperCase();
 }
 

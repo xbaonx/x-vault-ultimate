@@ -31,7 +31,7 @@ function getNetworkEnumByChainId(chainId: number): string | null {
 
 function getNativeSymbolForPricing(chainId: number, displaySymbol: string): string {
   // Polygon native asset is still priced as MATIC on most price feeds.
-  if (chainId === 137) return 'MATIC';
+  if (chainId === 137) return 'POL';
   return String(displaySymbol || '').trim().toUpperCase();
 }
 
