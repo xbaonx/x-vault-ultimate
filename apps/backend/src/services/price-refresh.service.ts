@@ -64,6 +64,34 @@ function appendSymbolsQueryParams(qs: URLSearchParams, symbols: string[]) {
   }
 }
 
+function formatAlchemyRowError(err: unknown): string {
+  if (!err) return '';
+  if (typeof err === 'string') return err;
+  if (typeof err === 'number' || typeof err === 'boolean') return String(err);
+  if (typeof err === 'object') {
+    const anyErr = err as any;
+    if (typeof anyErr?.message === 'string') return anyErr.message;
+    if (typeof anyErr?.error === 'string') return anyErr.error;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return String(err);
+    }
+  }
+  return String(err);
+}
+
+function formatErrorForLog(e: unknown): string {
+  if (!e) return '';
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'string') return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
+}
+
 export class PriceRefreshService {
   private static running = false;
 
@@ -126,7 +154,7 @@ export class PriceRefreshService {
           const priceBySymbol: Record<string, { price: number; lastUpdatedAt?: string }> = {};
           for (const r of rows) {
             const sym = String(r?.symbol || '').toUpperCase();
-            const errMsg = r?.error ? String(r.error) : '';
+            const errMsg = r?.error ? formatAlchemyRowError(r.error) : '';
             if (sym && errMsg) {
               console.warn(`[PriceRefresh] by-symbol returned error for ${sym}: ${errMsg}`);
             }
@@ -159,7 +187,7 @@ export class PriceRefreshService {
             nativeUpserts++;
           }
         } catch (e) {
-          console.warn('[PriceRefresh] native by-symbol refresh failed:', e);
+          console.warn('[PriceRefresh] native by-symbol refresh failed:', formatErrorForLog(e));
         }
       }
 
