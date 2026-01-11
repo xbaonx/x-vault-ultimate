@@ -85,16 +85,24 @@ export class TokenDiscoveryService {
     // Alchemy supports token specification "erc20".
     let balances: TokenBalanceEntry[] = [];
     try {
-      const json = await fetchJsonWithTimeout(
-        rpcUrl,
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'alchemy_getTokenBalances',
-          params: [params.address, 'erc20'],
-        },
-        timeoutMs,
-      );
+      const request = async () =>
+        await fetchJsonWithTimeout(
+          rpcUrl,
+          {
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'alchemy_getTokenBalances',
+            params: [params.address, 'erc20'],
+          },
+          timeoutMs,
+        );
+
+      let json = await request();
+      const msg = String(json?.error?.message || '');
+      if (json?.error && msg.includes('429')) {
+        await new Promise((r) => setTimeout(r, 350));
+        json = await request();
+      }
 
       if (json?.error) {
         console.warn('[TokenDiscovery] alchemy_getTokenBalances error', {

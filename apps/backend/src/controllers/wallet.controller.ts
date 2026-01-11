@@ -416,15 +416,23 @@ export class WalletController {
       const baseSerialChainId = Number(config.blockchain.chainId);
       let baseSerialNumber: string | null = null;
       if (device?.credentialPublicKey) {
-        try {
-          baseSerialNumber = await deriveAaAddressFromCredentialPublicKey({
+        const deriveBase = async (timeoutMs: number) =>
+          await deriveAaAddressFromCredentialPublicKey({
             credentialPublicKey: Buffer.from(device.credentialPublicKey),
             chainId: baseSerialChainId,
             salt: wallet?.aaSalt ?? 0,
-            timeoutMs: 1500,
+            timeoutMs,
           });
+
+        try {
+          baseSerialNumber = await deriveBase(6000);
         } catch {
-          baseSerialNumber = null;
+          try {
+            await new Promise((r) => setTimeout(r, 150));
+            baseSerialNumber = await deriveBase(8000);
+          } catch {
+            baseSerialNumber = null;
+          }
         }
       }
 
@@ -549,10 +557,9 @@ export class WalletController {
       const assets: any[] = [];
       let totalBalanceUsd = 0;
 
-      // Scan all chains in parallel
-      await Promise.all(chains.map(async (chain) => {
-          try {
-              let scanAddress: string | null = null;
+      const scanChain = async (chain: any) => {
+        try {
+          let scanAddress: string | null = null;
 
               // IMPORTANT: If device has passkey, portfolio should scan AA address (not legacy EOA).
               if (device?.credentialPublicKey) {
@@ -614,8 +621,8 @@ export class WalletController {
                 return;
               }
 
-              // Use singleton provider
-              const provider = ProviderService.getProvider(chain.chainId);
+          // Use singleton provider
+          const provider = ProviderService.getProvider(chain.chainId);
               
               // 1. Native Balance
               // Set a short timeout for RPC calls to avoid hanging
@@ -799,10 +806,24 @@ export class WalletController {
                 }
               }
 
-          } catch (err) {
-              console.warn(`Failed to fetch balance for ${chain.name}:`, err);
+        } catch (err) {
+          console.warn(`Failed to fetch balance for ${chain.name}:`, err);
+        }
+      };
+
+      const concurrencyRaw = String(process.env.PORTFOLIO_SCAN_CONCURRENCY || '').trim();
+      const concurrency = Math.max(1, Math.min(4, Number(concurrencyRaw || 2)));
+      const queue = [...chains];
+      const workerCount = Math.min(concurrency, queue.length);
+      await Promise.all(
+        Array.from({ length: workerCount }).map(async () => {
+          while (queue.length) {
+            const chain = queue.shift();
+            if (!chain) return;
+            await scanChain(chain);
           }
-      }));
+        }),
+      );
 
       // Sort assets by value (descending)
       assets.sort((a, b) => b.valueUsd - a.valueUsd);
